@@ -26,7 +26,7 @@ The tension we accept: Tacit code is nearly unreadable to humans by design. Miti
 - **Syntactic sugar** — one canonical form per operation, no alternatives
 - **Prose error messages** — errors are structured data (code, AST path, expected vs actual, candidate fixes)
 - **Operator precedence** — prefix/postfix notation, no PEMDAS, no parentheses for grouping
-- **Source-as-text** — programs are serialized ASTs; no lexer, no parser, no syntax errors possible
+- **Free-form surface syntax** — programs are stored as a canonical text projection of the AST; AI authors through purpose-built views. No stylistic variance, no formatter debates, no syntax errors that aren't structural
 
 ### What we keep (genuinely load-bearing)
 
@@ -35,18 +35,19 @@ The tension we accept: Tacit code is nearly unreadable to humans by design. Miti
 
 ### What we add (miserable for humans, great for AI)
 
-- **Refinement types** — every value carries verified constraints (e.g., `int where 0 ≤ x < len(array)`)
-- **Effect tracking** — every function's type includes its effect set; no hidden side effects
-- **Capability-based security** — privileged operations require explicit capability tokens; no ambient authority
-- **Content-addressing** — every function, type, and value identified by cryptographic hash; names are hints
+- **AST as source of truth, with multiple views** — the canonical form is the AST, not any textual surface. Views are purpose-built projections: an *authoring view* optimized for AI generation tokens, an *inspection view* annotated for reading and debugging, and (later) reasoning-specific views like data-flow or dependency projections. Storage is one canonical text view. No surface is privileged as "source code"
+- **Effect tracking (Lite and Full)** — every function's type includes its effect set; no hidden side effects. Simple fixed lattice in Lite (`IO`, `Alloc`, `Mut`, `Exn`, `Div`) with basic effect polymorphism for higher-order functions
+- **Refinement types (Full only)** — every value carries verified constraints (e.g., `int where 0 ≤ x < len(array)`)
+- **Capability-based security (Full only)** — privileged operations require explicit capability tokens; no ambient authority
+- **Content-addressing** — every function, type, and value identified by the BLAKE3 hash of its canonical text form; names are hints, not identifiers
 - **Explicit evaluation order and memory layout** — no compiler magic; optimizations are local rewrites with provable equivalence
 - **Versioned semantics at the expression level** — operators and stdlib functions carry version tags
 - **Progressive disclosure of type info** — minimal signature by default, full spec on demand
 
 ### Two variants
 
-- **Tacit-Lite** — compressed AST representation without the heavy correctness machinery. Smaller models (Sonnet/Haiku class) can write this proficiently. Pure token-efficiency play. This is the practical target.
-- **Tacit-Full** — adds refinement types, proof obligations, full effect discipline, capability threading. Requires Opus-class models plus a specialized verifier (Z3 or similar). Research-grade; correctness-critical domains.
+- **Tacit-Lite** — canonical text AST, structural types, simple effect tracking, two views (authoring and inspection). Designed to stand alone as a practical language for low-to-medium complexity programs, not merely a stepping stone to Full. Smaller models (Sonnet/Haiku class) should be able to write it proficiently from a primer alone.
+- **Tacit-Full** — adds refinement types (SMT-backed), capability tokens, proof obligations, and richer effect discipline (handlers, user-defined effects, row polymorphism). Requires Opus-class models plus a specialized verifier (Z3 or similar). Research-grade; correctness-critical domains.
 
 **Default focus: Tacit-Lite.** Tacit-Full is a stretch goal after Lite is working.
 
@@ -76,12 +77,24 @@ Rationale:
 - Cross-platform code generation for free
 - Skipping C as intermediate — LLVM IR gives low-level primitives with better semantics than C
 
-### Storage format: **Binary AST**
+### Storage format: **Canonical text AST**
 
-- Content-addressed nodes (BLAKE3 hashes, 32 bytes each)
-- Integer variable IDs assigned by scope depth and usage frequency
-- Huffman-style frequency-based encoding for common constructs
-- File extension: `.tac` (binary) with optional `.tacd` sidecar for display metadata (names, comments)
+- The AST is the source of truth. The canonical form is a strict text projection — every AST configuration has exactly one canonical text serialization (fixed ordering, fixed integer encoding, no whitespace variance).
+- Content addressing: BLAKE3 hash of the canonical text of any subtree identifies that subtree. Stable across tools, files, and time.
+- Integer variable IDs assigned by scope depth and usage frequency; names live in optional sidecar display metadata.
+- File extension: `.tac` (canonical text) with optional `.tacd` sidecar for display metadata (names, comments).
+- Binary storage is explicitly deferred. If profiling later shows parse overhead is load-bearing, a derived binary cache can be added without changing the canonical form.
+
+### Views: **Two from day one**
+
+- **Authoring view** — dense, token-efficient, the format AI reads and writes. Optimized for fewest tokens per AST node under a modern BPE tokenizer.
+- **Inspection view** — indented, type-annotated, effect-annotated. Used by `tacit-view` for debugging and code review. The two views are lossless projections of the same AST; switching between them preserves all semantic content.
+- Additional purpose-built views (data-flow, dependency, trace) are deferred. But the view *system* is a core compiler subsystem from day one — real infrastructure, not retrofitted UI.
+
+### Standard library approach
+
+- **v0 links against libc** (and macOS equivalents). Pragmatic compromise: Phase 1's goal is a working end-to-end pipeline, not philosophical purity. Every libc wrapper gets a hand-written effect signature.
+- **Scratch stdlib** (direct syscalls, no libc) is a late stretch goal — see Phase 10. Honors the AI-first premise (no ecosystem dependencies shaped for humans, no C-era assumptions) and gives full control over primitive effect signatures. Deferrable until the language proves itself.
 
 ### Training corpus for AI fluency
 
@@ -109,76 +122,91 @@ Explicitly excluded: C, C++, Java, Go, JavaScript. Each either lacks the semanti
 
 Deliverables:
 - Formal grammar for Tacit-Lite AST (as a Rust enum hierarchy initially)
-- Binary serialization format specification
-- Content-addressing scheme specification
+- Canonical storage view grammar and canonicalization rules
+- Authoring view grammar with token-efficiency analysis under a target BPE tokenizer
+- Inspection view grammar
+- Content-addressing scheme specification (BLAKE3 over canonical text of each subtree)
 - Project repository structure, CI, issue tracking
 - Decision log document for recording design choices and rationale
 
-Exit criteria: Another developer could read the spec and build a parser for the binary format.
+Exit criteria: Another developer could read the spec and build a parser for the canonical storage view, and round-trip it losslessly to the authoring view.
 
 ### Phase 1: Minimum viable compiler (weeks 4-12)
 
-**Goal:** Compile a "hello world" equivalent from binary AST to running native executable.
+**Goal:** Compile a "hello world" equivalent from a canonical-text `.tac` file to a running native executable.
 
 Deliverables:
 - Rust crate with AST data structures matching the Phase 0 spec
-- Binary deserializer (reads `.tac` files into AST)
+- Parser for canonical storage view (reads `.tac` files into AST)
+- Parser and serializer for authoring view, with lossless round-trip to the storage view
 - LLVM IR emitter for basic constructs: integer arithmetic, function definitions, function calls, conditionals, loops
-- Hand-crafted test `.tac` files (written as Rust code that constructs AST and serializes it)
-- Simple CLI: `tacit compile foo.tac -o foo`
+- Minimal libc linkage for hello-world (printf or equivalent)
+- Hand-crafted test programs written in the authoring view
+- CLI: `tacit compile foo.tac -o foo`, `tacit view foo.tac --as authoring|inspection`
 - Documentation of the compiler architecture
 
 Deliberately out of scope: type checking, effects, capabilities, any optimization beyond what LLVM does automatically.
 
-Exit criteria: Round-trip works — you can construct an AST in Rust, serialize it, compile the binary, run it, and see expected output.
+Exit criteria: You can write a program in the authoring view, canonicalize it to the storage view, compile the result, run it, and see expected output.
 
-### Phase 2: Type system (Tacit-Lite) (weeks 13-20)
+### Phase 2: Type and effect system (Tacit-Lite) (weeks 13-22)
 
-**Goal:** Static type checking for the Lite variant.
+**Goal:** Static type *and* effect checking for the Lite variant.
 
 Deliverables:
 - Type inference for function signatures from bodies
 - Structural type checking (no refinements yet)
 - Basic generic types
-- Structured error reporting format (JSON-emittable)
+- **Simple effect system:** fixed lattice (`IO`, `Alloc`, `Mut`, `Exn`, `Div`), inference, basic effect polymorphism for higher-order functions
+- Effect signatures for the libc-wrapper stdlib
+- Structured error reporting format (JSON-emittable), covering both type and effect errors
 - Type-directed overload resolution for operators
+- View rendering of effect sets (dense in authoring view, verbose in inspection view)
 
-Exit criteria: Non-trivial programs (sorting algorithms, basic data structures) typecheck and compile.
+Deliberately out of scope: effect handlers, user-defined effects, row polymorphism — all deferred to Full. Scope discipline here is critical; it's easy to nerd-snipe into research-grade effect systems.
 
-### Phase 3: AI authoring primer (weeks 21-24)
+Exit criteria: Non-trivial programs (sorting algorithms, basic data structures, file I/O) typecheck with correct effect annotations and compile.
+
+### Phase 3: AI authoring primer (weeks 23-26)
 
 **Goal:** Enable an existing model to write Tacit-Lite in-context.
 
 Deliverables:
-- 8-15K token primer document structured as:
+- ~10-17K token primer document (written in the authoring view) structured as:
   - One-page semantic summary
   - Progressive examples (Python/Rust ↔ Tacit-Lite pairs) from trivial to complex
   - Idiom catalog (canonical form for each common pattern)
+  - Effect-reasoning examples (propagation, requiring purity, fixing effect errors)
   - Negative examples with structured explanations
   - Compiler error catalog with fix patterns
-- Evaluation harness: corpus of tasks with test cases, auto-check that generated Tacit compiles and passes tests
+- Evaluation harness: corpus of tasks with test cases; auto-check that generated Tacit compiles, typechecks with correct effects, and passes tests
+- End-to-end token measurement: primer + generation tokens, compared against equivalent Python solutions
 - Baseline measurements: Sonnet and Haiku performance with primer alone
 
-Exit criteria: Sonnet achieves > 70% pass rate on a defined task corpus using only the primer in context.
+Exit criteria: Sonnet achieves > 70% pass rate on a defined task corpus using only the primer in context, AND end-to-end token usage is at least 30% lower than equivalent Python.
 
-### Phase 4: Version control tooling (weeks 25-28)
+### Phase 4: Inspection and debugging tooling (weeks 27-30)
 
-**Goal:** Make Tacit usable in collaborative development.
+**Goal:** Make Tacit debuggable by AI and inspectable by humans.
 
 Deliverables:
-- `tacit-diff` command implementing structural diff over AST
-- `tacit-merge` command implementing semantic three-way merge
-- `tacit-blame` command traversing AST history
-- Git integration: `.gitattributes` config and driver registration scripts
-- Inspection tool: `tacit-view foo.tac` renders AST as human-readable text (for debugging)
+- `tacit-view foo.tac` — render AST in any registered view (authoring, inspection, and future views like data-flow or dependency)
+- `tacit-debug` — **AI-first CLI debugger**: step through execution, inspect values and types at any AST node, emit structured JSON output designed for AI consumption rather than human terminal readability
+- `tacit-diff` — structural diff over AST (ignores cosmetic renames, node ID reshuffling)
+- `tacit-blame` — AST history traversal
+- Git integration: `.gitattributes` config so standard git operations fall back gracefully on canonical text
 
-Exit criteria: A developer can clone a Tacit repo, view diffs, merge branches, and use GitHub's existing review infrastructure with reasonable fidelity.
+Deferred to stretch: `tacit-merge` (semantic three-way AST merge). Collaborative development isn't a v0 concern, and multiple AI agents concurrently editing the same file isn't a current use case.
 
-### Phase 5: Synthetic training corpus (weeks 29-36)
+Exit criteria: An AI agent can diagnose a failing Tacit program end-to-end using only `tacit-debug` output; a human can read diffs and inspect state through `tacit-view`.
+
+### Phase 5 (conditional): Synthetic training corpus (weeks 31-38)
 
 **Goal:** Generate large-scale aligned pairs for fine-tuning and evaluation.
 
-Deliverables:
+**Conditional on Phase 3 outcome.** The primary bet is primer-only prompting. If Phase 3 hits its >70% pass-rate target with the primer alone, Phase 5 is deferred indefinitely; fine-tuning becomes a long-term goal only if the project sees public success. If the primer approach falls short, Phase 5 becomes urgent.
+
+Deliverables (if undertaken):
 - Rust-to-Tacit-Lite rule-based transpiler (deterministic, not LLM-based)
 - Corpus of ~1M aligned Rust/Tacit-Lite pairs from public Rust codebases
 - Secondary corpus from Haskell / OCaml (~200K pairs)
@@ -206,8 +234,8 @@ Exit criteria: Tacit-Lite performs within 20% of hand-written Rust on standard b
 
 Deliverables (incremental, each a sub-phase):
 - Refinement type system (SMT-backed via Z3)
-- Effect system and inference
-- Capability tokens and enforcement
+- Advanced effect discipline: effect handlers, user-defined effects, row polymorphism (building on Lite's simple effect system)
+- Capability tokens and enforcement (effects with runtime witnesses)
 - Proof obligation generation and discharge
 - Updated primer for Tacit-Full authoring (probably 30-50K tokens)
 - Integration with a proof assistant for complex obligations
@@ -235,18 +263,46 @@ Deliverables:
 - Merge algorithm for round-trips through AI edits
 - Use case validation: measurable token savings on real coding workflows
 
+### Phase 10 (stretch): Scratch standard library
+
+**Goal:** Remove libc dependency; call OS syscalls directly.
+
+Rationale: Honors the AI-first premise — no ecosystem dependencies shaped for humans, no C-era assumptions. Gives full control over effect signatures of primitives. Deferrable until the language has proven itself.
+
+Deliverables:
+- Per-platform syscall bindings (Linux x86_64 and arm64, macOS arm64/x86_64)
+- Memory allocator, I/O primitives, string and collection types implemented in Tacit
+- Hand-authored effect signatures for every primitive operation
+- Migration path for existing code from the libc-backed stdlib
+
+No fixed timeline. Deferrable indefinitely.
+
+### Phase 11 (stretch): Collaborative development
+
+**Goal:** Support multiple agents (AI or human) working on the same codebase.
+
+Deliverables:
+- `tacit-merge` — semantic three-way AST merge (pulled forward from Phase 4's deferred list)
+- Conflict resolution heuristics at the AST node level
+- Integration with review tooling (GitHub-like interfaces that render views of diffs)
+
+Prerequisites: real use cases justifying the complexity. Not a v0 concern.
+
 ---
 
 ## Open Questions
 
 These need answers before or during Phase 0:
 
-1. **Exact binary format details.** Variable-length integer encoding scheme, endianness, hash algorithm (BLAKE3 preferred, but confirm), versioning of the format itself.
-2. **Scope of the standard library for v0.** Minimal (just what Phase 1 needs) or broader?
-3. **Module system specifics.** How do imports work? Is there a registry? How are versions resolved?
-4. **Testing conventions.** How are tests expressed in Tacit? As regular functions with a marker, or as a separate construct?
-5. **Metadata sidecar format.** JSON? A separate binary format? How tightly coupled to the `.tac` file?
-6. **License.** Permissive (MIT/Apache-2.0) or copyleft? Affects corpus choices in Phase 5.
+1. **Authoring view format.** S-expressions over integer IDs? Single-glyph operators? Tokenizer-specific encoding optimized for a target model's BPE? Must round-trip losslessly with the canonical storage view. This is the single most consequential Phase 0 decision — primer, eval harness, and model fluency all depend on it.
+2. **Canonical storage view format.** Exact grammar, integer encoding, canonicalization rules (ordering, whitespace, field ordering in records), hash algorithm (BLAKE3 preferred, but confirm).
+3. **Effect polymorphism surface syntax.** How effect variables appear in signatures, especially in higher-order functions; how effect mismatches are rendered in the inspection view.
+4. **Scope of the standard library for v0.** Minimal (just what Phase 1 needs) or broader? Specifically, which libc operations get effect-annotated wrappers?
+5. **Module system specifics.** How do imports work? Is there a registry? How are versions resolved? How does content-addressing interact with modules?
+6. **Testing conventions.** How are tests expressed in Tacit? As regular functions with a marker, or as a separate construct?
+7. **Metadata sidecar format.** JSON? A separate canonical-text format? How tightly coupled to the `.tac` file?
+8. **License.** Permissive (MIT/Apache-2.0) or copyleft? Affects corpus choices if Phase 5 is undertaken.
+9. **Target tokenizer for authoring view optimization.** Optimize for a specific model family (Claude's tokenizer, GPT's tiktoken) or aim for tokenizer-agnostic density? A specific target yields sharper wins but creates a dependency.
 
 ---
 
@@ -263,6 +319,12 @@ Mitigation: Pin LLVM version. The `inkwell` crate handles a lot of this.
 
 **Risk: Scope creep toward Tacit-Full before Tacit-Lite is solid.**
 Mitigation: Discipline. Phase 7 is explicitly stretch. Do not start refinement types before Phase 6 is complete.
+
+**Risk: Effect system creep in Phase 2.**
+Mitigation: Phase 2 is scoped to simple effects — fixed lattice, basic polymorphism, no handlers. Effect systems are notorious for nerd-sniping compiler authors into research-grade complexity (Koka took years to nail handler-style effects). If we find ourselves designing row polymorphism or user-defined effects, stop and move it to Phase 7.
+
+**Risk: View system treated as UI instead of core infrastructure.**
+Mitigation: Two views in Phase 0/1, not one. If the authoring view is the only thing implemented and the inspection view is postponed, it effectively *becomes* the canonical form and the view abstraction rots. Keep both real from the start, even if the inspection view is minimal.
 
 **Risk: The token savings don't materialize in practice.**
 Mitigation: Phase 3's evaluation harness measures real tokens on real tasks. If savings are less than 30% vs equivalent Python, reconsider the project's premise before continuing.
