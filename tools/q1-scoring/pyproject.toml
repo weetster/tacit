@@ -1,0 +1,11 @@
+[project]
+name = "q1-scoring"
+version = "0.1.0"
+description = "Tokenizer-based scoring for Q1 authoring view candidates"
+requires-python = ">=3.10"
+dependencies = [
+    "tiktoken>=0.7",
+]
+
+[tool.uv]
+package = false
