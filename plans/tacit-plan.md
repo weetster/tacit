@@ -36,17 +36,29 @@ The tension we accept: Tacit code is nearly unreadable to humans by design. Miti
 ### What we add (miserable for humans, great for AI)
 
 - **AST as source of truth, with multiple views** — the canonical form is the AST, not any textual surface. Views are purpose-built projections: an *authoring view* optimized for AI generation tokens, an *inspection view* annotated for reading and debugging, and (later) reasoning-specific views like data-flow or dependency projections. Storage is one canonical text view. No surface is privileged as "source code"
-- **Effect tracking (Lite and Full)** — every function's type includes its effect set; no hidden side effects. Simple fixed lattice in Lite (`IO`, `Alloc`, `Mut`, `Exn`, `Div`) with basic effect polymorphism for higher-order functions
+- **Effect tracking (Lite and Full)** — every function's type includes its effect set; no hidden side effects. Simple fixed lattice in Lite (`IO`, `Alloc`, `Mut`, `Div`) with basic effect polymorphism for higher-order functions
 - **Refinement types (Full only)** — every value carries verified constraints (e.g., `int where 0 ≤ x < len(array)`)
 - **Capability-based security (Full only)** — privileged operations require explicit capability tokens; no ambient authority
 - **Content-addressing** — every function, type, and value identified by the BLAKE3 hash of its canonical text form; names are hints, not identifiers
 - **Explicit evaluation order and memory layout** — no compiler magic; optimizations are local rewrites with provable equivalence
 - **Versioned semantics at the expression level** — operators and stdlib functions carry version tags
 - **Progressive disclosure of type info** — minimal signature by default, full spec on demand
+- **Content-addressed modules** — a definition (function, type, value) is the atom, not a file. Each definition is identified by the BLAKE3 hash of its canonical text. Imports resolve to hashes; names are local aliases in display metadata. No dependency-version resolution — every version of a definition has a different hash, so "upgrade" is rebinding a local name to a new hash, and conflicts become structural questions about type compatibility. Cycles are impossible at the definition level (hash-of-A cannot transitively depend on hash-of-A); mutual recursion is hashed as a group. Registries are optional name→hash lookup services; hashes are authoritative. Module boundaries carry capability scopes in Full.
+
+### Semantic commitments
+
+These decisions define the shape of Tacit-Lite. They are deliberately chosen to keep local reasoning tractable for AI — every relevant fact about a function's behavior should be derivable from its signature, without whole-program analysis.
+
+- **Memory model: ownership and borrowing.** Rust-style, but stricter. All lifetime information lives in the signature so an AI can read memory behavior without whole-program reasoning. No implicit lifetime elision — elision is a human ergonomic that hides information. When lifetimes appear, they are explicit scope IDs.
+- **Errors are result types, not exceptions.** Every failure path is visible in the return type. No unwinding. Panic aborts the process and is not a normal control-flow construct. The effect lattice deliberately does *not* contain `Exn`.
+- **Numeric types have explicit widths.** `i8`/`i16`/`i32`/`i64`/`u8`/... etc. No default integer type; declarations must specify a width. Overflow traps by default; wrapping and saturating are explicit operators. No implicit coercion between numeric types.
+- **Strings are UTF-8 byte sequences.** Indexing returns bytes. Grapheme, code-point, and locale-aware operations live in explicit stdlib modules, not on the base string type.
+- **Concurrency: none in Lite.** Single-threaded, deterministic execution. Structured concurrency via effect handlers is a Tacit-Full feature (Phase 7). Explicitly deferred, not undefined.
+- **No foreign function interface beyond libc.** Phase 1 links libc pragmatically; the long-term path is standard modules written in Tacit, culminating in the scratch stdlib (Phase 10) that replaces libc with direct syscalls. Arbitrary C interop is never supported. This is a permanent design constraint, not a phase-ordering decision.
 
 ### Two variants
 
-- **Tacit-Lite** — canonical text AST, structural types, simple effect tracking, two views (authoring and inspection). Designed to stand alone as a practical language for low-to-medium complexity programs, not merely a stepping stone to Full. Smaller models (Sonnet/Haiku class) should be able to write it proficiently from a primer alone.
+- **Tacit-Lite** — canonical text AST, structural types, simple effect tracking, single-threaded execution, two views (authoring and inspection). Designed to stand alone as a practical language for low-to-medium complexity programs, not merely a stepping stone to Full. Smaller models (Sonnet/Haiku class) should be able to write it proficiently from a primer alone.
 - **Tacit-Full** — adds refinement types (SMT-backed), capability tokens, proof obligations, and richer effect discipline (handlers, user-defined effects, row polymorphism). Requires Opus-class models plus a specialized verifier (Z3 or similar). Research-grade; correctness-critical domains.
 
 **Default focus: Tacit-Lite.** Tacit-Full is a stretch goal after Lite is working.
@@ -81,9 +93,27 @@ Rationale:
 
 - The AST is the source of truth. The canonical form is a strict text projection — every AST configuration has exactly one canonical text serialization (fixed ordering, fixed integer encoding, no whitespace variance).
 - Content addressing: BLAKE3 hash of the canonical text of any subtree identifies that subtree. Stable across tools, files, and time.
-- Integer variable IDs assigned by scope depth and usage frequency; names live in optional sidecar display metadata.
+- Integer variable IDs assigned by scope depth and usage frequency; names live in optional sidecar display metadata. Display names (for both variables and definitions) are auto-generated by the authoring AI from the intent of the code; they are advisory labels bound to hashes, not identifiers. Different projects can bind different names to the same canonical hash.
 - File extension: `.tac` (canonical text) with optional `.tacd` sidecar for display metadata (names, comments).
 - Binary storage is explicitly deferred. If profiling later shows parse overhead is load-bearing, a derived binary cache can be added without changing the canonical form.
+
+### File organization
+
+Files are purely a human convenience; layout carries no semantic weight. Moving a definition between files changes no hashes and breaks no imports. This makes reorganization semantically free — a property worth exploiting rather than worrying about.
+
+- **v0 default: one `.tac` file per project.** Simplest option; the compiler truly doesn't care. Defensible for the small codebases Phase 1–3 will produce.
+- **Layout as a derived artifact.** Once projects grow (rough threshold: ~2K lines of canonical text), a deterministic layout tool partitions definitions into files along call-graph or shared-type boundaries. Layout becomes reproducible output, like formatting — not an authoring decision.
+- **AI does not reason about file layout during authoring.** It operates on content-addressed definitions; file location is ambient. This keeps authoring focused on semantics and avoids inconsistent layout choices across agents or sessions.
+- **No cross-project dependency story in v0.** When cross-project imports arrive, a local hash-indexed cache (an object store, à la `.git/objects/`) becomes necessary to hold fetched dependencies and preserve historical references. Not a Phase 1 concern; design when dependency needs actually materialize.
+
+### Object store (deferred)
+
+Content-addressed storage keyed by definition hash — conceptually analogous to `.git/objects/`. Becomes necessary for:
+
+- **Dependency caching** once cross-project imports exist.
+- **Historical references** — keeping old hashes alive as long as anything still points to them.
+
+Not needed for v0's single-project, no-external-deps compiler. An in-memory hash index built at parse time is sufficient. Specify and implement when the project grows a dependency model.
 
 ### Views: **Two from day one**
 
@@ -157,7 +187,7 @@ Deliverables:
 - Type inference for function signatures from bodies
 - Structural type checking (no refinements yet)
 - Basic generic types
-- **Simple effect system:** fixed lattice (`IO`, `Alloc`, `Mut`, `Exn`, `Div`), inference, basic effect polymorphism for higher-order functions
+- **Simple effect system:** fixed lattice (`IO`, `Alloc`, `Mut`, `Div`), inference, basic effect polymorphism for higher-order functions
 - Effect signatures for the libc-wrapper stdlib
 - Structured error reporting format (JSON-emittable), covering both type and effect errors
 - Type-directed overload resolution for operators
@@ -235,6 +265,7 @@ Exit criteria: Tacit-Lite performs within 20% of hand-written Rust on standard b
 Deliverables (incremental, each a sub-phase):
 - Refinement type system (SMT-backed via Z3)
 - Advanced effect discipline: effect handlers, user-defined effects, row polymorphism (building on Lite's simple effect system)
+- Structured concurrency via effect handlers (not present in Lite)
 - Capability tokens and enforcement (effects with runtime witnesses)
 - Proof obligation generation and discharge
 - Updated primer for Tacit-Full authoring (probably 30-50K tokens)
@@ -297,12 +328,11 @@ These need answers before or during Phase 0:
 1. **Authoring view format.** S-expressions over integer IDs? Single-glyph operators? Tokenizer-specific encoding optimized for a target model's BPE? Must round-trip losslessly with the canonical storage view. This is the single most consequential Phase 0 decision — primer, eval harness, and model fluency all depend on it.
 2. **Canonical storage view format.** Exact grammar, integer encoding, canonicalization rules (ordering, whitespace, field ordering in records), hash algorithm (BLAKE3 preferred, but confirm).
 3. **Effect polymorphism surface syntax.** How effect variables appear in signatures, especially in higher-order functions; how effect mismatches are rendered in the inspection view.
-4. **Scope of the standard library for v0.** Minimal (just what Phase 1 needs) or broader? Specifically, which libc operations get effect-annotated wrappers?
-5. **Module system specifics.** How do imports work? Is there a registry? How are versions resolved? How does content-addressing interact with modules?
-6. **Testing conventions.** How are tests expressed in Tacit? As regular functions with a marker, or as a separate construct?
-7. **Metadata sidecar format.** JSON? A separate canonical-text format? How tightly coupled to the `.tac` file?
-8. **License.** Permissive (MIT/Apache-2.0) or copyleft? Affects corpus choices if Phase 5 is undertaken.
-9. **Target tokenizer for authoring view optimization.** Optimize for a specific model family (Claude's tokenizer, GPT's tiktoken) or aim for tokenizer-agnostic density? A specific target yields sharper wins but creates a dependency.
+4. **Scope of libc wrappers for v0.** Which libc operations get effect-annotated wrappers in Phase 1? The set grows over time, but the initial cut for the minimum viable compiler is still unspecified. (The broader question — "should the stdlib depend on libc at all" — is settled: yes, until Phase 10's scratch stdlib replaces it. Arbitrary C FFI beyond libc is never supported.)
+5. **Testing conventions.** How are tests expressed in Tacit? As regular functions with a marker, or as a separate construct?
+6. **Metadata sidecar format.** JSON? A separate canonical-text format? How tightly coupled to the `.tac` file?
+7. **License.** Permissive (MIT/Apache-2.0) or copyleft? Affects corpus choices if Phase 5 is undertaken.
+8. **Target tokenizer for authoring view optimization.** Optimize for a specific model family (Claude's tokenizer, GPT's tiktoken) or aim for tokenizer-agnostic density? A specific target yields sharper wins but creates a dependency.
 
 ---
 
