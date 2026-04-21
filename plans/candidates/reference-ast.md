@@ -2,9 +2,12 @@
 
 **Status:** Draft for Q1 (Phase 0, Stage 1)
 **Purpose:** Single shared AST that all three authoring-view candidates encode, against which token counts are measured.
-**Tokenizer:** tiktoken `cl100k_base` (Q7 not yet resolved; Claude tokenizer unavailable in current environment — substitute when accessible and re-score).
+**Tokenizers:** measured under both tiktoken `cl100k_base` and Claude `claude-opus-4-7` (via the Anthropic `count_tokens` endpoint, which is free).
 
-**Scoring tool:** [`tools/q1-scoring/score.py`](../../tools/q1-scoring/score.py). Encoding strings live in the script and must be kept in sync with this doc.
+**Scoring tools:**
+- [`tools/q1-scoring/score.py`](../../tools/q1-scoring/score.py) — tiktoken
+- [`tools/q1-scoring/score_claude.py`](../../tools/q1-scoring/score_claude.py) — Claude API
+- [`tools/q1-scoring/candidates.py`](../../tools/q1-scoring/candidates.py) — shared encoding strings; keep in sync with this doc.
 
 ## Format choice
 
@@ -99,7 +102,9 @@ Token counts under cl100k:
 - **bpe-compact (no spaces around `.` / `:`)**: 36 tokens (1.06×) — same total, but fragments `pair.fst` into `' pair'`, `'.f'`, `'st'`. Same count is coincidental on this sample; compact form likely degrades on identifier-heavy fragments.
 - **bpe-hybrid (DeBruijn leaves)**: 37 tokens (1.09×) — **worse** than the display-name version. The hybrid swaps ` id` (1 token) for ` 0` (2 tokens) at every var-ref position; with three var refs to `id` and three to `pair`, the supposed leaf savings are negative. The "Hybrid worth considering" section in the BPE candidate doc should be revised — display names tokenize *better* than raw DeBruijn ints in BPE-friendly contexts.
 
-## Results summary (cl100k_base, 21-node reference AST)
+## Results summary (21-node reference AST)
+
+### Under tiktoken `cl100k_base`
 
 | Encoding         | Chars | Tokens | Ratio | Notes |
 |------------------|------:|-------:|------:|-------|
@@ -109,13 +114,41 @@ Token counts under cl100k:
 | bpe-compact      |   93  |   36   | 1.06× | same count, but identifier fragmentation (`.f`/`st`) |
 | bpe-hybrid       |   83  |   37   | 1.09× | DeBruijn leaves *cost* tokens vs display names |
 
-**Headline:** glyph-prefix wins this sample by ~6% over the BPE candidates and ~30% over int-IDs. The win margin is small enough that the supplementary fragments listed below could plausibly flip the ordering.
+### Under Claude `claude-opus-4-7`
+
+Net counts subtract a 12-token envelope baseline (single-char `"x"` user message); ratios use Net.
+
+| Encoding         | Chars | Net Tokens | Ratio | Notes |
+|------------------|------:|-----------:|------:|-------|
+| sexpr-int-ids    |   74  |   61       | 1.39× | still worst — same structural fragmentation pattern |
+| glyph-prefix     |   58  |   46       | 1.05× | tied with bpe-optimized; lost its tiktoken lead |
+| bpe-optimized    |  103  |   46       | 1.05× | tied with glyph-prefix |
+| **bpe-compact**  |  93  | **44**     | **1.00×** | **winner** — Claude's tokenizer fuses `pair.fst` better than tiktoken |
+| bpe-hybrid       |   83  |   47       | 1.07× | DeBruijn leaves still cost tokens here too |
+
+### Cross-tokenizer comparison
+
+| Encoding         | tiktoken ratio | Claude ratio | Δ | Robustness |
+|------------------|---:|---:|---:|---|
+| sexpr-int-ids    | 1.41× | 1.39× | 0.02 | stable (always worst) |
+| glyph-prefix     | 1.00× | 1.05× | +0.05 | flipped from winner to tied 2nd |
+| bpe-optimized    | 1.06× | 1.05× | -0.01 | stable middle |
+| bpe-compact      | 1.06× | 1.00× | -0.06 | flipped from middle to winner |
+| bpe-hybrid       | 1.09× | 1.07× | -0.02 | stable (worst BPE variant) |
+
+**Headline:** the winner is tokenizer-dependent. tiktoken favors **glyph-prefix** (compact structural form); Claude's tokenizer favors **bpe-compact** (no-spaces keyword form). All four BPE/glyph candidates land within a 7% band on either tokenizer — the choice between them is closer than the win/loss margin suggests. **sexpr-int-ids** is robustly the worst across both tokenizers (~40% above the best).
+
+Two findings hold across both tokenizers:
+- **DeBruijn leaves are worse than display names** in BPE-friendly contexts (bpe-hybrid loses to bpe-optimized on both).
+- **Structural-form encodings (s-expr int-IDs) lose to surface-form encodings (BPE) once the AST is non-trivial** — the gap is wide and tokenizer-stable.
+
+The real Q1 decision should defer to Claude's tokenizer (the production target per Q7), which means **bpe-compact is the current Stage 1 leader** — pending the supplementary fragments below.
 
 ## Scoring procedure
 
 1. Run each encoding through `tiktoken.get_encoding("cl100k_base").encode(...)` and record token counts. — done via `tools/q1-scoring/score.py`.
 2. Record a side-by-side table here with raw counts and ratios relative to the smallest. — done above.
-3. Re-score against Claude's tokenizer when access is restored; flag any large divergence (>15%) as a robustness concern for whichever candidate moves the most.
+3. Re-score against Claude's tokenizer; flag any large divergence (>15%) as a robustness concern for whichever candidate moves the most. — done via `tools/q1-scoring/score_claude.py`. No single candidate moved >15%, but the *winner flipped* from glyph-prefix (tiktoken) to bpe-compact (Claude).
 4. Keep this AST frozen for the duration of Stage 1 scoring — if it changes, all three candidates re-score together so comparisons stay apples-to-apples.
 
 ## Open items
