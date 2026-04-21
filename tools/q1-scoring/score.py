@@ -2,32 +2,37 @@
 
 import tiktoken
 
-from candidates import ENCODINGS, REFERENCE_PROGRAM
+from candidates import SAMPLES
+
+
+def score_sample(enc: tiktoken.Encoding, name: str, sample: dict) -> None:
+    program: str = sample["program"]
+    encodings: dict[str, str] = sample["encodings"]
+
+    print(f"=== Sample: {name} ===")
+    print(f"Reference program:\n{program}\n")
+    print(f"{'Encoding':<20} {'Chars':>6} {'Tokens':>7} {'Ratio':>7}")
+    print("-" * 44)
+
+    counts = {k: len(enc.encode(v)) for k, v in encodings.items()}
+    best = min(counts.values())
+    for k, v in encodings.items():
+        n = counts[k]
+        print(f"{k:<20} {len(v):>6} {n:>7} {n/best:>6.2f}x")
+
+    print("\nPer-token breakdown:")
+    for k, v in encodings.items():
+        toks = enc.encode(v)
+        decoded = [enc.decode([t]) for t in toks]
+        print(f"\n  {k} ({len(toks)} tokens):\n    {decoded}")
+    print()
 
 
 def main() -> None:
     enc = tiktoken.get_encoding("cl100k_base")
-
-    print(f"Reference program:\n{REFERENCE_PROGRAM}\n")
-    print(f"Tokenizer: cl100k_base (tiktoken)\n")
-    print(f"{'Encoding':<20} {'Chars':>6} {'Tokens':>7} {'Ratio':>7}")
-    print("-" * 44)
-
-    counts = {name: len(enc.encode(text)) for name, text in ENCODINGS.items()}
-    best = min(counts.values())
-
-    for name, text in ENCODINGS.items():
-        n = counts[name]
-        ratio = n / best
-        print(f"{name:<20} {len(text):>6} {n:>7} {ratio:>6.2f}x")
-
-    print()
-    print("Per-token breakdown (helps spot fragmentation):")
-    for name, text in ENCODINGS.items():
-        toks = enc.encode(text)
-        decoded = [enc.decode([t]) for t in toks]
-        print(f"\n  {name} ({len(toks)} tokens):")
-        print(f"    {decoded}")
+    print("Tokenizer: cl100k_base (tiktoken)\n")
+    for name, sample in SAMPLES.items():
+        score_sample(enc, name, sample)
 
 
 if __name__ == "__main__":

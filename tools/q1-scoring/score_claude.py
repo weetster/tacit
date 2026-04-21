@@ -10,7 +10,7 @@ Requires ANTHROPIC_API_KEY in the environment.
 
 import anthropic
 
-from candidates import ENCODINGS, REFERENCE_PROGRAM
+from candidates import SAMPLES
 
 MODEL = "claude-opus-4-7"
 
@@ -23,30 +23,35 @@ def count_message_tokens(client: anthropic.Anthropic, text: str) -> int:
     return response.input_tokens
 
 
-def main() -> None:
-    client = anthropic.Anthropic()
+def score_sample(client: anthropic.Anthropic, baseline: int, name: str, sample: dict) -> None:
+    program: str = sample["program"]
+    encodings: dict[str, str] = sample["encodings"]
 
-    print(f"Reference program:\n{REFERENCE_PROGRAM}\n")
-    print(f"Tokenizer: {MODEL} (Anthropic count_tokens API)\n")
-
-    baseline = count_message_tokens(client, "x")
-    print(f"1-char-message baseline (envelope + 1 char): {baseline} tokens\n")
-
+    print(f"=== Sample: {name} ===")
+    print(f"Reference program:\n{program}\n")
     print(f"{'Encoding':<20} {'Chars':>6} {'Raw':>5} {'Net':>5} {'Ratio':>7}")
     print("-" * 50)
 
-    counts = {name: count_message_tokens(client, text) for name, text in ENCODINGS.items()}
-    nets = {name: counts[name] - baseline for name in ENCODINGS}
+    counts = {k: count_message_tokens(client, v) for k, v in encodings.items()}
+    nets = {k: counts[k] - baseline for k in encodings}
     best = min(nets.values())
-
-    for name, text in ENCODINGS.items():
-        raw = counts[name]
-        net = nets[name]
+    for k, v in encodings.items():
+        raw, net = counts[k], nets[k]
         ratio = net / best if best > 0 else float("inf")
-        print(f"{name:<20} {len(text):>6} {raw:>5} {net:>5} {ratio:>6.2f}x")
-
+        print(f"{k:<20} {len(v):>6} {raw:>5} {net:>5} {ratio:>6.2f}x")
     print()
-    print("Net = raw - baseline. Ratios use Net.")
+
+
+def main() -> None:
+    client = anthropic.Anthropic()
+    print(f"Tokenizer: {MODEL} (Anthropic count_tokens API)\n")
+
+    baseline = count_message_tokens(client, "x")
+    print(f"1-char-message baseline (envelope + 1 char): {baseline} tokens")
+    print("Net = raw - baseline. Ratios use Net.\n")
+
+    for name, sample in SAMPLES.items():
+        score_sample(client, baseline, name, sample)
 
 
 if __name__ == "__main__":
