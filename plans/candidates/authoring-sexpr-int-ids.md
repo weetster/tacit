@@ -25,7 +25,7 @@ Bare integers are var refs; literal ints get the `#` sigil. This frees the most 
 | 0  | lam    | 1     | body |
 | 1  | app    | 2     | fn, arg (curried) |
 | 2  | let    | 2     | value, body |
-| 3  | rec    | N     | mutual binding group; hashes as one atom |
+| 3  | rec    | 1+N   | N mutual bindings + body; hashes as one atom ([ADR 0004](../../decisions/0004-rec-arity.md)) |
 | 4  | if     | 3     | cond, then, else |
 | 5  | match  | 1+N   | scrutinee, arms |
 | 6  | arm    | 2     | pattern, body |
@@ -34,6 +34,7 @@ Bare integers are var refs; literal ints get the `#` sigil. This frees the most 
 | 9  | ctor   | 1+N   | @name, args |
 | 10 | hole   | 1     | #diag-id (resolved in sidecar) |
 | 11 | ann    | 2     | expr, type |
+| 12 | module | N     | top-level recursive bindings, no body; hashes as one atom ([ADR 0004](../../decisions/0004-rec-arity.md)) |
 
 ## Examples
 

@@ -93,7 +93,7 @@ Token count under cl100k: **34 tokens** (1.00× — winner on this sample). The 
 
 ## Encoding 3 — BPE-optimized
 
-Per grammar in [authoring-bpe-optimized.md](authoring-bpe-optimized.md). Display names re-introduced for `id`, `pair`, `x` (the candidate's display-name layer); record uses `name : value` pairs; field projection is `expr . name`.
+Per grammar in [authoring-bpe-compact.md](authoring-bpe-compact.md). Display names re-introduced for `id`, `pair`, `x` (the candidate's display-name layer); record uses `name : value` pairs; field projection is `expr . name`.
 
 ```
 let id = lambda x . x in let pair = { fst : id 1 , snd : id 2 } in if pair . fst then pair . snd else 0
@@ -324,8 +324,8 @@ Between 21 and 100 nodes, the competitive picture changes sharply:
 - ~~Supplementary fragments needed.~~ **Closed by Sample 2**, which covers `rec`, `match`/`arm`, `ctor`, `hole`, and `ann`. Outcome: the BPE candidate's lead widened, not narrowed, when `match` was added.
 - ~~Larger sample for BPE amortization.~~ **Closed by Sample 2.** Keyword amortization confirmed: BPE's ratios improved or held flat; glyph-prefix and sexpr-int-ids both worsened meaningfully.
 - ~~Tokenizer substitution (Claude).~~ **Closed** — Q7 resolved to Claude Opus 4.7 and both samples are scored against it.
-- **`rec` arity in canonical: `N` vs. `1+N`.** The draft kind table lists `rec` as `N` (RHSes only, no body); Sample 2 uses `1+N` (bindings + body) so the program has somewhere to *use* the bound names. Reconcile in Stage 2 before freezing the canonical form. Token-count impact is zero (all five encodings render the same choice), so this is purely a spec question.
-- **BPE grammar gaps.** The Stage 1 BPE candidate doc lacks surface syntax for `rec` and `ann`; Sample 2 extended it with `rec { name = expr ; … } in body` and `let name : Type = value in body`. Fold these back into [authoring-bpe-optimized.md](authoring-bpe-optimized.md) so the grammar is self-contained.
-- **Pattern-var rendering in bpe-hybrid.** Sample 2 strips pattern-var names in hybrid (`| Cons => …`) relying on ctor-arity knowledge. Confirm that ctor arities are part of canonical (or carried in a sidecar table) so the reader can recover pattern shape; otherwise patterns need explicit placeholders.
-- **DeBruijn rendering for the BPE-hybrid form.** The hybrid uses `let = ... in ...` with no display name on the binder, since the binding position is positional. Confirm this round-trips losslessly to canonical or pick a different convention before final scoring.
-- **Third data point?** Both samples are lambda-calc-shaped. A radically different-shaped program (long linear chain of `let`s, or heavy string-literal content) would show whether the bpe-compact lead holds on the evaluation corpus. Defer to Stage 4 when the corpus freezes.
+- ~~**`rec` arity in canonical: `N` vs. `1+N`.**~~ **Closed by [ADR 0004](../../decisions/0004-rec-arity.md):** inner `rec` is 1+N (as Sample 2 used); a separate `module` kind covers the top-level N-arity case. Kind tables in both candidate docs updated.
+- ~~**BPE grammar gaps.**~~ **Closed:** Sample 2's `rec { name = expr ; … } in body` and `let name : Type = value in body` extensions folded into [authoring-bpe-compact.md](authoring-bpe-compact.md) (doc renamed from `authoring-bpe-optimized.md` to match the chosen variant per [ADR 0003](../../decisions/0003-authoring-view-bpe-compact.md)).
+- ~~**Pattern-var rendering in bpe-hybrid.**~~ **N/A — bpe-hybrid rejected** in [ADR 0003](../../decisions/0003-authoring-view-bpe-compact.md) (one of the reasons was exactly this sidecar dependency). The chosen bpe-compact form retains display names for pattern variables.
+- ~~**DeBruijn rendering for the BPE-hybrid form.**~~ **N/A — bpe-hybrid rejected.** The chosen bpe-compact form carries display names at every binder; round-trip to canonical DeBruijn goes through the display-name sidecar (Q5).
+- **Third data point?** Both samples are lambda-calc-shaped. A radically different-shaped program (long linear chain of `let`s, or heavy string-literal content) would show whether the bpe-compact lead holds on the evaluation corpus. **Deferred to Stage 4** when the corpus freezes; if the lead reverses there, [ADR 0003](../../decisions/0003-authoring-view-bpe-compact.md) is superseded.

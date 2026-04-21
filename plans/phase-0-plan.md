@@ -18,15 +18,18 @@ Phase 0 is spec + scaffolding — no compiler code yet. The critical-path item i
 
 ## Sequencing
 
-### Stage 1: Resolve blocking open questions (1–2 weeks)
+### Stage 1: Resolve blocking open questions (1–2 weeks) — **Complete (2026-04-21)**
 
-Must be decided before writing any spec.
+Decisions closed as ADRs in `decisions/`:
 
-- **Q1 Authoring view format** — the single most consequential decision. Candidates: S-exprs over integer IDs, single-glyph prefix operators, BPE-optimized encoding. Prototype 2–3 candidates on a 20-node reference AST and measure tokens under the target tokenizer.
-- **Q7 Target tokenizer** — must precede Q1's measurement. Recommend Claude's tokenizer as primary, tiktoken as secondary sanity check.
-- **Q6 License** — MIT/Apache-2.0 dual-license is conventional; decide early so the repo is clean.
-- Q2 (effect polymorphism surface syntax), Q4 (testing conventions), Q5 (metadata sidecar format) can slip to Stage 2.
-- Q3 (scope of libc wrappers) is a Phase 1 concern.
+- **Q7 Target tokenizer** — [ADR 0001](../decisions/0001-target-tokenizer.md): tiktoken primary, Claude as validation. Inverts the plan's original framing (pragmatic, given API access at the time).
+- **Q6 License** — [ADR 0002](../decisions/0002-license.md): MIT OR Apache-2.0 dual-license.
+- **Q1 Authoring view format** — [ADR 0003](../decisions/0003-authoring-view-bpe-compact.md): bpe-compact. Five candidates scored on two reference ASTs (21 and 100 nodes) under two tokenizers. BPE-family beat non-BPE by 40%+ at 100 nodes; within BPE, bpe-compact won 2–7% (noise-band per ADR 0001's ≥10% rule, picked on design grounds: no DeBruijn in the authoring view, no pattern-var-name stripping). Grammar doc: [authoring-bpe-compact.md](candidates/authoring-bpe-compact.md).
+- **`rec` arity** (new Stage 1 question surfaced during scoring) — [ADR 0004](../decisions/0004-rec-arity.md): inner `rec` is 1+N; separate `module` kind at arity N for top-level.
+- Q2 (effect polymorphism surface syntax), Q4 (testing conventions), Q5 (metadata sidecar format) remain deferred to Stage 2.
+- Q3 (scope of libc wrappers) remains a Phase 1 concern.
+
+One open item carried into Stage 4: whether the bpe-compact lead holds on non-lambda-calc-shaped programs (corpus-shaped). If the lead reverses at corpus freeze, ADR 0003 is superseded.
 
 ### Stage 2: Canonical format spec (2–3 weeks)
 

@@ -18,3 +18,5 @@ Keep ADRs short. They record the decision, not the full analysis that led to it.
 
 - [0001 — Target tokenizer](0001-target-tokenizer.md)
 - [0002 — License](0002-license.md)
+- [0003 — Authoring view format: BPE-compact](0003-authoring-view-bpe-compact.md)
+- [0004 — `rec` arity: 1+N with a separate `module` kind](0004-rec-arity.md)

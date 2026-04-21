@@ -27,12 +27,13 @@ Each kind glyph has a fixed arity, so parens are only required for variadic cons
 | `?`   | if     | 3     | conditional |
 | `:`   | ann    | 2     | type ascription |
 | `/`   | proj   | 2     | record/field separator |
-| `*`   | rec    | N     | mutual cluster ("star" = group) |
+| `*`   | rec    | 1+N   | mutual cluster + body ("star" = group); [ADR 0004](../../decisions/0004-rec-arity.md) |
 | `|`   | match  | 1+N   | arms separated by alternation |
 | `>`   | arm    | 2     | pattern → body |
 | `{`…`}` | record | 2N | brace pair, sym/val interior |
 | `!`   | ctor   | 1+N   | constructor application |
 | `_`   | hole   | 1     | placeholder for typed `Hole` |
+| `%`   | module | N     | top-level recursive bindings, no body; [ADR 0004](../../decisions/0004-rec-arity.md) |
 
 `{` and `}` are the only paired delimiters with semantic meaning beyond grouping; everything else is prefix.
 
