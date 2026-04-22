@@ -31,13 +31,23 @@ Decisions closed as ADRs in `decisions/`:
 
 One open item carried into Stage 4: whether the bpe-compact lead holds on non-lambda-calc-shaped programs (corpus-shaped). If the lead reverses at corpus freeze, ADR 0003 is superseded.
 
-### Stage 2: Canonical format spec (2–3 weeks)
+### Stage 2: Canonical format spec (2–3 weeks) — **In progress (started 2026-04-21)**
 
 Must be frozen before any other Phase 0 deliverable. Two independent implementations must produce identical bytes for the same AST.
 
-- Grammar down to exact bytes: node kinds, integer encoding (LEB128 vs decimal), field ordering in records, DeBruijn index encoding, `rec { }` grouping rule, `Hole` node structure
-- BLAKE3 hashing rule over canonical text of each subtree, including the mutual-recursion grouping rule
-- Round-trip test vectors: ~30 ASTs with expected canonical bytes, for cross-impl verification
+Draft spec: [canonical-text-format.md](canonical-text-format.md). Backing ADRs:
+
+- **[ADR 0005](../decisions/0005-canonical-surface-form.md)** — surface form is s-expressions with short ASCII keyword tags (`(lam (var 0))`), tag set frozen at Stage 2 exit, additive evolution only.
+- **[ADR 0006](../decisions/0006-canonical-lexical-rules.md)** — integers in decimal ASCII, single-space token separation, no whitespace inside parens, no comments, JSON-style string escapes, no Unicode normalization.
+- **[ADR 0007](../decisions/0007-debruijn-rec-indexing.md)** — for `rec` and `module`, position K in the binding list = DeBruijn index K (first binding is `(var 0)`); does not match the let-cascade analogy, chosen for simplicity.
+- **[ADR 0008](../decisions/0008-record-field-ordering.md)** — record fields sorted ascending by field-symbol bytes; the only canonical-form override of user-supplied order, required for hash-equality of semantic-equality.
+- **[ADR 0009](../decisions/0009-hashing-rule.md)** — `hash(node) = BLAKE3(canonical_text(node))` with children fully inlined; no hash-reference syntax inside canonical text. `rec`/`module` "hash as single atom" commitment satisfied trivially.
+
+Remaining Stage 2 work:
+
+- ~30 round-trip test vectors with expected canonical bytes (location TBD, probably `plans/test-vectors/`).
+- Verification that two independent canonicalizer implementations produce byte-identical output on those vectors. Implementations themselves can land post-Phase-0; Stage 2 exits when the spec is precise enough to support that property.
+- Resolve the small open items in [canonical-text-format.md § 11](canonical-text-format.md#11-open-items): exact set of hole diag-ids, type-syntax subset inside `ann`, test-vector format/location.
 
 ### Stage 3: View grammars + AST enum (1–2 weeks, parallelizable with Stage 4)
 

@@ -20,3 +20,8 @@ Keep ADRs short. They record the decision, not the full analysis that led to it.
 - [0002 — License](0002-license.md)
 - [0003 — Authoring view format: BPE-compact](0003-authoring-view-bpe-compact.md)
 - [0004 — `rec` arity: 1+N with a separate `module` kind](0004-rec-arity.md)
+- [0005 — Canonical surface form: s-expressions with keyword tags](0005-canonical-surface-form.md)
+- [0006 — Canonical lexical rules: integers, whitespace, strings](0006-canonical-lexical-rules.md)
+- [0007 — DeBruijn indexing convention for `rec` and `module`](0007-debruijn-rec-indexing.md)
+- [0008 — Record field ordering: sorted by field-symbol bytes](0008-record-field-ordering.md)
+- [0009 — Hashing rule: BLAKE3 over inlined canonical text](0009-hashing-rule.md)
