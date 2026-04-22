@@ -1,0 +1,10 @@
+[package]
+name = "tacit-canon"
+version = "0.1.0"
+edition = "2021"
+description = "Second canonicalizer for Tacit-Lite canonical text format (Rust reference)"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]
+blake3 = "1"
