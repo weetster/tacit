@@ -1,0 +1,1 @@
+(match (var 0) (arm pat-wild (int 1)) (arm (pat-ctor Zero) (int 0)))

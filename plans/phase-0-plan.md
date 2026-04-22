@@ -46,9 +46,9 @@ Draft spec: [canonical-text-format.md](canonical-text-format.md). Backing ADRs:
 
 Remaining Stage 2 work:
 
-- ~30 round-trip test vectors with expected canonical bytes (location TBD, probably `plans/test-vectors/`).
-- Verification that two independent canonicalizer implementations produce byte-identical output on those vectors. Implementations themselves can land post-Phase-0; Stage 2 exits when the spec is precise enough to support that property.
-- Resolve the small open items in [canonical-text-format.md § 11](canonical-text-format.md#11-open-items): exact set of hole diag-ids, type-syntax subset inside `ann`, test-vector format/location.
+- ~~~30 round-trip test vectors with expected canonical bytes.~~ Drafted in [test-vectors.md](test-vectors.md); split into per-file fixtures under [test-vectors/](test-vectors/) on 2026-04-22 (45 files across 28 vectors; V29 blocked on type-subset ADR).
+- Verification that two independent canonicalizer implementations produce byte-identical output on those vectors. Implementations themselves can land post-Phase-0; Stage 2 exits when the spec is precise enough to support that property. **This is the only remaining substantive Stage 2 exit work.**
+- Resolve the small open items in [canonical-text-format.md § 11](canonical-text-format.md#11-open-items): exact set of hole diag-ids (additive; not blocking), type-syntax subset inside `ann` (deferred to Stage 4 corpus-driven decision; blocks V29 only).
 
 ### Stage 3: View grammars + AST enum (1–2 weeks, parallelizable with Stage 4)
 

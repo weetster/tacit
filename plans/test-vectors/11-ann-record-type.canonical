@@ -1,0 +1,1 @@
+(ann (int 5) (record x (sym Int) y (sym Int)))

@@ -1,10 +1,10 @@
-# Canonical Format — Stage 2 Pressure-Test Vectors (Draft)
+# Canonical Format — Stage 2 Pressure-Test Vectors
 
-**Status:** Draft, pre-freeze review
+**Status:** Narrative authoritative; bytes split into [test-vectors/](test-vectors/) (2026-04-22)
 **Parent:** [canonical-text-format.md](canonical-text-format.md)
-**Purpose:** 29 vectors chosen to pressure-test the spec before Stage 2 exit. Each targets a specific rule, an anti-intuitive convention, or a suspected ambiguity. Several vectors surfaced spec gaps; those are flagged in their Notes and summarized in § 30. Remaining open items — including the one spec gap still outstanding and the sole ADR-blocked vector — are listed in § 31.
+**Purpose:** 29 vectors chosen to pressure-test the spec before Stage 2 exit. Each targets a specific rule, an anti-intuitive convention, or a suspected ambiguity. Several vectors surfaced spec gaps; those are flagged in their Notes and summarized in § 30. Remaining open items are listed in § 31.
 
-The file-per-vector format (§ 11 of the spec, open item 3) is deferred; this is one doc so the set can be reviewed as a whole. When the set converges, split into one AST per file (§ 31 item 3).
+The machine-consumable bytes live in [test-vectors/](test-vectors/), one file per vector (or sub-vector), keyed by `NN-slug.{canonical,forbidden,reject}`. That directory's [README](test-vectors/README.md) documents the file-naming convention and the minimum tests an implementation must run. This doc remains the narrative reference for pressure-test descriptions, DeBruijn traces, and ADR cross-references.
 
 ---
 
@@ -568,9 +568,6 @@ Stage 2 exit criterion 2 asks for ~30 vectors. Vectors 1–29 are drafted above.
 | `module` with real bindings | Drafted | V28 |
 | Type-expression subset | **Blocked on ADR** | V29 placeholder |
 
-Stage 2 exit remains blocked on:
+Stage 2 exit remains blocked on **two independent implementations producing byte-identical canonical text across V1–V28** (V29 excluded until the type-subset ADR lands). This is the substantive exit work.
 
-1. Two independent implementations producing byte-identical canonical text across V1–V28 (V29 excluded until the type-subset ADR lands). This is the substantive exit work.
-2. Deciding the test-vector file-per-vector format (§ 11 of the spec, open item 3). With 29 vectors drafted, the shape of the split is now concrete — each vector above maps 1:1 to a `plans/test-vectors/NN-name.txt` file plus an adjacent `.expected` file (V24's six sub-vectors split into six files; V10's five sub-vectors likewise).
-
-Item (2) is ~an hour of mechanical splitting. Item (1) is the substantive Stage 2 exit work.
+The file-per-vector split landed 2026-04-22 as [`test-vectors/`](test-vectors/) alongside this doc — 45 files (28 primary vectors, with V8/V10/V17/V19/V20/V24 expanding into sub-vector files; V29 omitted). Extensions are `.canonical` (must emit), `.forbidden` (must not emit), `.reject` (parser hard error). The directory README enumerates the minimum test set implementations run to demonstrate byte-equivalence.

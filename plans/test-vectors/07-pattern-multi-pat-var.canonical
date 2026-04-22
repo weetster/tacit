@@ -1,0 +1,1 @@
+(lam (match (var 0) (arm (pat-ctor Pair pat-var pat-var) (app (var 2) (var 1)))))
