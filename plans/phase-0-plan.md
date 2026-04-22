@@ -50,12 +50,16 @@ Stage 2 exit criteria (all met):
 - ~~Verification that two independent canonicalizer implementations produce byte-identical output on those vectors.~~ Python ([`impls/py-canonicalizer/`](../impls/py-canonicalizer/)) and Rust ([`impls/rs-canonicalizer/`](../impls/rs-canonicalizer/)) canonicalizers agreed on all 38 `*.canonical` fixture hashes on 2026-04-22. Both also agree on every `*.forbidden` and `*.reject` rejection.
 - Open items in [canonical-text-format.md § 11](canonical-text-format.md#11-open-items) (hole diag-id set, `ann` type subset, bpe-compact corpus-shape recheck) are non-blocking and carried forward to later stages per ADR 0013.
 
-### Stage 3: View grammars + AST enum (1–2 weeks, parallelizable with Stage 4)
+### Stage 3: View grammars + AST enum (1–2 weeks, parallelizable with Stage 4) — **Drafted 2026-04-22; pending freeze**
 
-- Rust AST enum hierarchy deriving from the canonical spec
-- Authoring view grammar + bidirectional projection rules
-- Inspection view grammar + projection rules (indented, type-annotated, effect-annotated)
-- Display metadata (`.tacd`) sidecar format — JSON is the cheap default (resolves Q5)
+Started 2026-04-22 directly after Stage 2 freeze. All four deliverables have landed as spec artifacts; the stage is ready for an exit ADR once reviewed.
+
+- **Sidecar format (`.tacd`)** — resolves Q5. Decided in [ADR 0014](../decisions/0014-sidecar-format.md): JSON parallel tree, `.tacd` extension, stale-tolerant via `targets_hash_blake3`, synthetic-name fallback when missing. Full schema + worked examples: [sidecar-format.md](sidecar-format.md).
+- **Inspection view scope** — decided in [ADR 0015](../decisions/0015-inspection-view-scope.md): display-only pseudo-code (explicitly *not* round-trippable to canonical bytes), progressive annotation layers (L0 default, L1 `--debruijn`, L2 `--hashes`), Phase 1+ flags reserved for `--types` / `--effects` / `--tree` / `--table`. Full grammar with per-kind rules and L0/L1/L2 worked examples: [inspection-view.md](inspection-view.md).
+- **Authoring view projection rules** — appended to the existing grammar doc at [candidates/authoring-bpe-compact.md § Projection rules](candidates/authoring-bpe-compact.md), now grounded in ADR 0014's sidecar. Specifies both directions (authoring → canonical + sidecar; canonical + sidecar → authoring), round-trip guarantees, and missing/stale-sidecar behavior.
+- **Rust AST enum** — decided in [ADR 0016](../decisions/0016-rust-ast-enum-location.md): the existing enum at [impls/rs-canonicalizer/src/ast.rs](../impls/rs-canonicalizer/src/ast.rs) is the Stage 3 conforming transcription. No Cargo workspace or shared crate in Phase 0; promotion deferred to Phase 1 with the rest of the compiler scaffolding.
+
+Stage 3 exit criterion (per [ADR 0015](../decisions/0015-inspection-view-scope.md)): spec docs are internally consistent and an independent implementer could reproduce the worked examples byte-for-byte. Unlike Stage 2, Stage 3 has no byte-equivalence gate against a built artifact — the inspection-view renderer is Phase 1+ work.
 
 ### Stage 4: Evaluation corpus (2–3 weeks, parallelizable with Stage 3)
 

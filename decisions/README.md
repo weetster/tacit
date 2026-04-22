@@ -29,3 +29,6 @@ Keep ADRs short. They record the decision, not the full analysis that led to it.
 - [0011 — Minimum arity for variable-arity kinds](0011-variable-arity-minimums.md)
 - [0012 — String code-point restriction: Unicode scalar values only](0012-unicode-scalar-value-restriction.md)
 - [0013 — Canonical text format frozen](0013-canonical-text-format-frozen.md)
+- [0014 — Display metadata sidecar: JSON parallel tree](0014-sidecar-format.md)
+- [0015 — Inspection view scope: display-only pseudo-code with progressive annotations](0015-inspection-view-scope.md)
+- [0016 — Rust AST enum: spec-conformant, in-place in the canonicalizer](0016-rust-ast-enum-location.md)
