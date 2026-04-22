@@ -42,6 +42,7 @@ Draft spec: [canonical-text-format.md](canonical-text-format.md). Backing ADRs:
 - **[ADR 0007](../decisions/0007-debruijn-rec-indexing.md)** — for `rec` and `module`, position K in the binding list = DeBruijn index K (first binding is `(var 0)`); does not match the let-cascade analogy, chosen for simplicity.
 - **[ADR 0008](../decisions/0008-record-field-ordering.md)** — record fields sorted ascending by field-symbol bytes; the only canonical-form override of user-supplied order, required for hash-equality of semantic-equality.
 - **[ADR 0009](../decisions/0009-hashing-rule.md)** — `hash(node) = BLAKE3(canonical_text(node))` with children fully inlined; no hash-reference syntax inside canonical text. `rec`/`module` "hash as single atom" commitment satisfied trivially.
+- **[ADR 0012](../decisions/0012-unicode-scalar-value-restriction.md)** — `\u{HEX}` escapes must denote Unicode scalar values (U+0000–U+D7FF or U+E000–U+10FFFF); surrogates and out-of-range values are hard parse errors. Tightens ADR 0006's string-escape clause; surfaced by Vector 24 during second-round drafting.
 
 Remaining Stage 2 work:
 

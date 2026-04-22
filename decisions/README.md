@@ -27,3 +27,4 @@ Keep ADRs short. They record the decision, not the full analysis that led to it.
 - [0009 — Hashing rule: BLAKE3 over inlined canonical text](0009-hashing-rule.md)
 - [0010 — Canonical emission rules for atoms (strings and integers)](0010-canonical-emission-rules.md)
 - [0011 — Minimum arity for variable-arity kinds](0011-variable-arity-minimums.md)
+- [0012 — String code-point restriction: Unicode scalar values only](0012-unicode-scalar-value-restriction.md)

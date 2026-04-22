@@ -2,9 +2,9 @@
 
 **Status:** Draft, pre-freeze review
 **Parent:** [canonical-text-format.md](canonical-text-format.md)
-**Purpose:** Ten vectors chosen to pressure-test the spec before Stage 2 exit. Each targets a specific rule, an anti-intuitive convention, or a suspected ambiguity. Several vectors are expected to **surface spec gaps** — those are flagged explicitly in the Notes and summarized in § 11.
+**Purpose:** 29 vectors chosen to pressure-test the spec before Stage 2 exit. Each targets a specific rule, an anti-intuitive convention, or a suspected ambiguity. Several vectors surfaced spec gaps; those are flagged in their Notes and summarized in § 30. Remaining open items — including the one spec gap still outstanding and the sole ADR-blocked vector — are listed in § 31.
 
-The file-per-vector format (§ 11 of the spec, open item 3) is deferred; this is one doc so the set can be reviewed as a whole. When the set converges, split into one AST per file.
+The file-per-vector format (§ 11 of the spec, open item 3) is deferred; this is one doc so the set can be reviewed as a whole. When the set converges, split into one AST per file (§ 31 item 3).
 
 ---
 
@@ -362,9 +362,180 @@ Sort resolves by standard prefix-then-length rules: `_` < `_foo` (prefix match, 
 
 ---
 
-## 21. Spec gaps surfaced and resolved
+## Vector 21 — 50-digit positive integer (bignum stress)
 
-All six spec gaps surfaced by this draft closed via [ADR 0010](../decisions/0010-canonical-emission-rules.md) and [ADR 0011](../decisions/0011-variable-arity-minimums.md), landing 2026-04-21.
+**Pressure-tests:** § 3 Integers / [ADR 0010](../decisions/0010-canonical-emission-rules.md) I2. Raises the bar on "use bignum internally" beyond Vector 14.
+
+**Canonical:**
+```
+(int 12345678901234567890123456789012345678901234567890)
+```
+
+**Notes:** 50 decimal digits (~2¹⁶⁶). Well beyond i128 (max ≈ 1.7 × 10³⁸). A canonicalizer that parses into i128 truncates, wraps, or panics; one using `num-bigint` (Rust) or Python's native `int` round-trips. Pairs with V14 — same decision (ADR 0010 I2), stronger stress. V14 could arguably be retired in favor of this, but keeping both cheaply documents the graduated threshold.
+
+---
+
+## Vector 22 — Embedded NUL in string (`\u{0}` exception)
+
+**Pressure-tests:** § 3 Strings / [ADR 0010](../decisions/0010-canonical-emission-rules.md) S3. The one documented exception to "shortest-hex, no leading zeros" is `\u{0}` for U+0000.
+
+**Authoring intent:** Decoded content `a<NUL>b`.
+
+**Canonical:**
+```
+(str "a\u{0}b")
+```
+
+**Notes:** NUL (0x00) is a control byte, not ASCII-printable, so S2 forces escape. Under S3, minimum-digit form is `\u{0}` — one hex digit even though the "no leading zeros" rule would otherwise forbid a bare zero. A canonicalizer that pads to two hex digits (`\u{00}`), pads to byte-width (`\u{00000000}`), or rejects embedded NUL outright fails. Pairs with V9 (shortest-hex for non-ASCII) and V15 (named escapes).
+
+---
+
+## Vector 23 — Maximum code point `\u{10ffff}`
+
+**Pressure-tests:** § 3 Strings / [ADR 0010](../decisions/0010-canonical-emission-rules.md) S3. Max valid Unicode code point, 6 hex digits, no leading zero padding.
+
+**Authoring intent:** A string consisting of the single character U+10FFFF.
+
+**Canonical:**
+```
+(str "\u{10ffff}")
+```
+
+**Notes:** Exercises the upper bound of the spec's 1–6 hex-digit `\u{HEX}` range. Confirms lowercase and no padding. A canonicalizer using a fixed-width hex formatter (`\u{0010ffff}`) fails; one using `format!("{:x}", cp)` (Rust) or `f"{cp:x}"` (Python) passes. Triangulates with V9 (5 digits) and V22 (1 digit) to cover the full width range.
+
+---
+
+## Vector 24 — Non-scalar code points (anti-tests per ADR 0012)
+
+**Pressure-tests:** § 3 Strings / [ADR 0012](../decisions/0012-unicode-scalar-value-restriction.md). `\u{HEX}` escapes must denote Unicode scalar values (U+0000–U+D7FF or U+E000–U+10FFFF). Surrogates and out-of-range values are hard parse errors.
+
+**Anti-tests** — the parser must reject each of these inputs; a compliant canonicalizer must not emit them:
+
+24a. Surrogate range (low):
+```
+(str "\u{d800}")
+```
+
+24b. Surrogate range (high):
+```
+(str "\u{dfff}")
+```
+
+24c. Out-of-range (just past the Unicode maximum):
+```
+(str "\u{110000}")
+```
+
+24d. Out-of-range (maximum 6-digit value):
+```
+(str "\u{ffffff}")
+```
+
+**Valid boundary cases** (must be accepted, to pin the boundary from both sides):
+
+24e. Just below the low surrogate:
+```
+(str "\u{d7ff}")
+```
+
+24f. Just above the high surrogate:
+```
+(str "\u{e000}")
+```
+
+**Notes:** Pairs with Vector 23 (max valid `\u{10ffff}`). Together V23 and V24c pin the upper edge; V24e/V24a and V24b/V24f pin the surrogate gap from both sides. A canonicalizer that uses Rust `String::from_utf8` or `char::from_u32` gets the surrogate and out-of-range rejections for free; one using `u32`-indexed byte arrays must add the explicit range check described in ADR 0012. Failure mode is a lexer-level hard error inside the string literal, not a `(hole invalid-escape ...)` node — § 7 diag-ids are not expanded by this vector.
+
+---
+
+## Vector 25 — `pat-var` under inner `lam` (stacked DeBruijn shifts)
+
+**Pressure-tests:** § 4 pattern binding + `lam` binder, combined. A canonicalizer that handles each shift in isolation but drops a count across the boundary fails.
+
+**Authoring intent:** `lambda f. match f with Just x -> lambda y. x y` — a pattern-bound `x` crosses into an inner lambda's body.
+
+**Canonical:**
+```
+(lam (match (var 0) (arm (pat-ctor Just pat-var) (lam (app (var 1) (var 0))))))
+```
+
+**Notes:** DeBruijn trace inside the innermost `app`:
+- Innermost `lam` introduces `y` = `(var 0)`.
+- `pat-var` in the arm bound `x`, which under the inner `lam` shifts by 1: `x` = `(var 1)`.
+- Outer `lam`'s `f` shifts by 2 (one pat-var + one inner lam): `f` = `(var 2)`, unreferenced here.
+- `x y` = `(app (var 1) (var 0))`.
+
+Scrutinee `(var 0)` sits outside the arm, so no pat-var shift applies — it references the outer `lam`'s `f` directly. Sibling of V7, but stacks an extra `lam` past the `pat-var` instead of referencing it directly — catches a canonicalizer that tracks pattern-shift and binder-shift in separate counters without composing them.
+
+---
+
+## Vector 26 — `ctor` with mixed-type arguments
+
+**Pressure-tests:** § 2 `ctor` arity surface with heterogeneous child kinds (`var`, `int`, nested `ctor`). Closes out ctor coverage.
+
+**Authoring intent (context):** `Triple x 42 Nil` with `x` = `(var 0)` in scope.
+
+**Canonical:**
+```
+(ctor Triple (var 0) (int 42) (ctor Nil))
+```
+
+**Notes:** Confirms `ctor`'s name-sym is a bare symbol (matching `record` keys and `proj` fields, unlike `sym` atoms which wrap) and that arg₀…arg_{N-1} accept any expression kind in any combination. Nested `(ctor Nil)` reuses V10b's permitted-N=0 form. Adds no new spec rules — pure surface coverage.
+
+---
+
+## Vector 27 — `rec` with single binding (N=1 edge)
+
+**Pressure-tests:** [ADR 0011](../decisions/0011-variable-arity-minimums.md) — `rec` requires N≥1. The N=1 form is the minimum legal shape and distinguishes "no rec at all" (which would just be `let` or bare expression) from "rec with exactly one binding."
+
+**Authoring intent:** `rec { x = x } in x` — degenerate self-referential binding.
+
+**Canonical:**
+```
+(rec (var 0) (var 0))
+```
+
+**Notes:** Binding 0's RHS refers to itself as `(var 0)` per ADR 0007; body also references binding 0 as `(var 0)`. Two `(var 0)` tokens that denote the same name at the AST level (the single binding introduced by the `rec`) and must not be collapsed by any peephole optimization at the canonical layer. A canonicalizer that special-cases N=1 (rewriting to `let` or to the bare body) changes the hash — forbidden. Pairs with V17 (N=2 order preservation) and V10d (N=0 forbidden).
+
+---
+
+## Vector 28 — `module` with N=1 real binding
+
+**Pressure-tests:** § 5 `module` with N≥1, otherwise uncovered (V10c's `(module)` is only the forbidden-form anti-test).
+
+**Authoring intent:** A module exporting a single identity function.
+
+**Canonical:**
+```
+(module (lam (var 0)))
+```
+
+**Notes:** Binding 0 is `(lam (var 0))` — an identity function. Inside that `lam`'s body the parameter is `(var 0)`; the module-level self-reference (if it were used) would be `(var 1)` shifted by the lam, but is unreferenced here. Confirms `module` has no body slot, contra `rec`. A canonicalizer that emits `(module (lam (var 0)) )` with trailing whitespace, or that treats `module` as `rec` with body = last binding, diverges on this vector.
+
+---
+
+## Vector 29 — Type-expression in `ann` (blocked on subset ADR)
+
+**Pressure-tests:** § 11 open item — exact expression kinds permitted inside `ann`'s type position.
+
+**Authoring intent (provisional):** `id :: A -> B` — a value annotated with a function type.
+
+**Candidate canonical (not final; depends on ADR):**
+```
+(ann (var 0) (... function-type encoding ...))
+```
+
+**Notes — spec-blocked.** The encoding of function types is undecided. Candidates in play:
+- `(ctor Arrow (sym A) (sym B))` — reuse `ctor` with a dedicated constructor name.
+- `(ctor -> (sym A) (sym B))` — arrow as name symbol (requires widening the § 3 symbol regex, currently `[A-Za-z_][A-Za-z0-9_-]*`).
+- A new `fn-type` node kind — extends § 2, requires a tag-table addition.
+
+Picking between these is the type-expression subset ADR. It lands once Stage 4's corpus surfaces enough typed programs to anchor the choice; not required for Stage 2 canonical-format freeze if `ann`'s type position is left *structurally* open (any expression kind permitted, subset decision deferred). This vector is a placeholder reserving the slot; canonical bytes finalize after the ADR. V11 already covers record-type-in-`ann` under the structural-openness stance.
+
+---
+
+## 30. Spec gaps surfaced and resolved
+
+Seven spec gaps surfaced across the two vector-drafting rounds. Six closed via ADRs 0010 and 0011 on 2026-04-21; one closed via ADR 0012 on 2026-04-22. One remains deferred as low-urgency.
 
 | Gap | Source | Resolution |
 |-----|--------|------------|
@@ -374,22 +545,32 @@ All six spec gaps surfaced by this draft closed via [ADR 0010](../decisions/0010
 | Minimum `N` for variable-arity kinds not stated | Vector 10 | **ADR 0011** — `record`/`ctor`/`pat-ctor` permit N≥0; `rec`/`match`/`module` require N≥1. § 2 kind table updated inline. |
 | Signed zero `-0` syntactically valid but semantically redundant | Vector 13 | **ADR 0010 I1** — `-0` normalized to `0` at canonicalizer input; canonical text never contains `-0`. |
 | Integer range unbounded — two-impl divergence risk | Vector 14 | **ADR 0010 I2** — canonical accepts arbitrary-precision decimal; implementations must use bignum. Runtime size is Phase 1+. |
+| `\u{HEX}` permits surrogates (U+D800–U+DFFF) and out-of-range (> U+10FFFF) values | Vector 24 | **ADR 0012** — hex value must be a Unicode scalar value; non-scalar values are hard parse errors. § 3 Strings updated inline. |
 | Symbol regex permits trailing `-` (probable oversight) | Vector 16 | **Deferred** — low urgency; regex is ASCII-only in Phase 0 and no corpus programs hinge on it. Revisit if Phase 1 parser hits an issue. |
 
-With the first six closed, vectors 9, 10, 13, 14, 15 are pinned above — the "candidate canonicalization" framing is gone, and the listed canonical bytes are final for Stage 2.
+With those seven closed, vectors 9, 10, 13, 14, 15, 24 are all pinned — the "candidate canonicalization" framing is gone from each, and the listed bytes are final for Stage 2.
 
-Vectors 1–8, 11, 12, 16, 17, 18, 19, 20 continue to pressure-test existing spec rules (ADR 0005–0009) and should pass under any spec-conformant canonicalizer. They did not require new decisions.
+Vectors 1–8, 11, 12, 16, 17, 18, 19, 20, 21, 22, 23, 25, 26, 27, 28 pressure-test existing spec rules (ADRs 0005–0012) and should pass under any spec-conformant canonicalizer. They did not require new decisions.
 
-## 22. Remaining coverage for the ~30-vector set
+## 31. Remaining coverage for the ~30-vector set
 
-Stage 2 exit criterion 2 asks for ~30 vectors. With 20 drafted here, ~10 remain to cover:
+Stage 2 exit criterion 2 asks for ~30 vectors. Vectors 1–29 are drafted above. Status of the § 22 (previously-planned) coverage list:
 
-- **Int boundaries, positive side:** a single very-large positive (covered by Vector 14 once range pins), `i64::MAX` boundary if the spec adopts a range.
-- **String Unicode edge cases:** `\u{0}` (embedded null — permitted by spec, worth an explicit vector), surrogate-range code points (U+D800–U+DFFF — spec should reject these but doesn't say so), max 6-hex-digit `\u{10ffff}`.
-- **Nested binders crossing pattern and lambda:** a `pat-var` inside an `arm` body that itself contains a `lam` — catches a canonicalizer that fails to combine the shifts correctly.
-- **`ctor` with mixed-type arguments:** e.g. a constructor taking a `var`, an `int`, and a nested `ctor`. Low risk but closes out the `ctor` arity surface.
-- **`rec` with a single binding:** degenerate but legal N=1 case; distinguishes "no intervening binder" from "one binder".
-- **`module` with real bindings (N>0):** currently uncovered except by the 10c gap. A `(module (lam (var 0)))` vector fixes that.
-- **Type-expression subset exploration:** as § 11 of the spec notes, the subset of expressions valid inside `ann` is an open item. A vector with function-type annotation (`A -> B` form, whatever it ends up as) pressure-tests the subset decision when it lands.
+| Coverage item | Status | Vector(s) |
+|---------------|--------|-----------|
+| Int boundaries, positive side | Drafted | V21 (50-digit) strengthens V14 |
+| String Unicode: embedded NUL | Drafted | V22 |
+| String Unicode: max `\u{10ffff}` | Drafted | V23 |
+| String Unicode: surrogate range / out-of-range | Drafted, pinned by [ADR 0012](../decisions/0012-unicode-scalar-value-restriction.md) | V24 (six sub-vectors) |
+| Nested binders crossing pat + lam | Drafted | V25 |
+| `ctor` with mixed-type arguments | Drafted | V26 |
+| `rec` with single binding | Drafted | V27 |
+| `module` with real bindings | Drafted | V28 |
+| Type-expression subset | **Blocked on ADR** | V29 placeholder |
 
-These are mechanical to write once Stage 2's three open ADRs (string emission, arity minimum, `-0` normalization) land.
+Stage 2 exit remains blocked on:
+
+1. Two independent implementations producing byte-identical canonical text across V1–V28 (V29 excluded until the type-subset ADR lands). This is the substantive exit work.
+2. Deciding the test-vector file-per-vector format (§ 11 of the spec, open item 3). With 29 vectors drafted, the shape of the split is now concrete — each vector above maps 1:1 to a `plans/test-vectors/NN-name.txt` file plus an adjacent `.expected` file (V24's six sub-vectors split into six files; V10's five sub-vectors likewise).
+
+Item (2) is ~an hour of mechanical splitting. Item (1) is the substantive Stage 2 exit work.

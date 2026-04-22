@@ -80,7 +80,7 @@ Invalid: `01`, `+5`, `1_000`, `0x10`.
 
 Double-quoted. UTF-8 source bytes accepted; the canonicalizer emits a normalized byte sequence per the rules below.
 
-**Parser accepts** (per [ADR 0006](../decisions/0006-canonical-lexical-rules.md)): `\"`, `\\`, `\n`, `\t`, `\r`, and `\u{HEX}` for any Unicode code point with 1–6 lowercase hex digits. Raw newlines, raw tabs, and raw control characters are forbidden inside string literals; raw non-ASCII UTF-8 is accepted by the parser but re-emitted canonically per S2 below.
+**Parser accepts** (per [ADR 0006](../decisions/0006-canonical-lexical-rules.md), tightened by [ADR 0012](../decisions/0012-unicode-scalar-value-restriction.md)): `\"`, `\\`, `\n`, `\t`, `\r`, and `\u{HEX}` for 1–6 lowercase hex digits. The hex value must be a **Unicode scalar value**: in U+0000–U+D7FF or U+E000–U+10FFFF. Surrogate code points (U+D800–U+DFFF) and out-of-range values (> U+10FFFF) are hard parse errors, not `(hole ...)` nodes. Raw newlines, raw tabs, and raw control characters are forbidden inside string literals; raw non-ASCII UTF-8 is accepted by the parser but re-emitted canonically per S2 below.
 
 **Canonicalizer emission** (per [ADR 0010](../decisions/0010-canonical-emission-rules.md)):
 
