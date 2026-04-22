@@ -31,11 +31,11 @@ Decisions closed as ADRs in `decisions/`:
 
 One open item carried into Stage 4: whether the bpe-compact lead holds on non-lambda-calc-shaped programs (corpus-shaped). If the lead reverses at corpus freeze, ADR 0003 is superseded.
 
-### Stage 2: Canonical format spec (2–3 weeks) — **In progress (started 2026-04-21)**
+### Stage 2: Canonical format spec (2–3 weeks) — **Frozen 2026-04-22** ([ADR 0013](../decisions/0013-canonical-text-format-frozen.md))
 
-Must be frozen before any other Phase 0 deliverable. Two independent implementations must produce identical bytes for the same AST.
+Started 2026-04-21; frozen 2026-04-22 after two independent canonicalizers (`impls/py-canonicalizer/`, `impls/rs-canonicalizer/`) produced byte-identical BLAKE3 hashes on all 38 `*.canonical` fixtures and agreed on every `*.forbidden` / `*.reject` rejection. Further changes to the canonical text format now require a new ADR and are treated as spec bugs per [CLAUDE.md](../CLAUDE.md) ground rules.
 
-Draft spec: [canonical-text-format.md](canonical-text-format.md). Backing ADRs:
+Spec: [canonical-text-format.md](canonical-text-format.md). Backing ADRs:
 
 - **[ADR 0005](../decisions/0005-canonical-surface-form.md)** — surface form is s-expressions with short ASCII keyword tags (`(lam (var 0))`), tag set frozen at Stage 2 exit, additive evolution only.
 - **[ADR 0006](../decisions/0006-canonical-lexical-rules.md)** — integers in decimal ASCII, single-space token separation, no whitespace inside parens, no comments, JSON-style string escapes, no Unicode normalization.
@@ -44,11 +44,11 @@ Draft spec: [canonical-text-format.md](canonical-text-format.md). Backing ADRs:
 - **[ADR 0009](../decisions/0009-hashing-rule.md)** — `hash(node) = BLAKE3(canonical_text(node))` with children fully inlined; no hash-reference syntax inside canonical text. `rec`/`module` "hash as single atom" commitment satisfied trivially.
 - **[ADR 0012](../decisions/0012-unicode-scalar-value-restriction.md)** — `\u{HEX}` escapes must denote Unicode scalar values (U+0000–U+D7FF or U+E000–U+10FFFF); surrogates and out-of-range values are hard parse errors. Tightens ADR 0006's string-escape clause; surfaced by Vector 24 during second-round drafting.
 
-Remaining Stage 2 work:
+Stage 2 exit criteria (all met):
 
-- ~~~30 round-trip test vectors with expected canonical bytes.~~ Drafted in [test-vectors.md](test-vectors.md); split into per-file fixtures under [test-vectors/](test-vectors/) on 2026-04-22 (45 files across 28 vectors; V29 blocked on type-subset ADR).
-- Verification that two independent canonicalizer implementations produce byte-identical output on those vectors. Implementations themselves can land post-Phase-0; Stage 2 exits when the spec is precise enough to support that property. **This is the only remaining substantive Stage 2 exit work.**
-- Resolve the small open items in [canonical-text-format.md § 11](canonical-text-format.md#11-open-items): exact set of hole diag-ids (additive; not blocking), type-syntax subset inside `ann` (deferred to Stage 4 corpus-driven decision; blocks V29 only).
+- ~~~30 round-trip test vectors with expected canonical bytes.~~ 45 files across 28 vectors under [test-vectors/](test-vectors/); narrative in [test-vectors.md](test-vectors.md). V29 remains blocked on type-subset ADR — out of scope for Stage 2 freeze.
+- ~~Verification that two independent canonicalizer implementations produce byte-identical output on those vectors.~~ Python ([`impls/py-canonicalizer/`](../impls/py-canonicalizer/)) and Rust ([`impls/rs-canonicalizer/`](../impls/rs-canonicalizer/)) canonicalizers agreed on all 38 `*.canonical` fixture hashes on 2026-04-22. Both also agree on every `*.forbidden` and `*.reject` rejection.
+- Open items in [canonical-text-format.md § 11](canonical-text-format.md#11-open-items) (hole diag-id set, `ann` type subset, bpe-compact corpus-shape recheck) are non-blocking and carried forward to later stages per ADR 0013.
 
 ### Stage 3: View grammars + AST enum (1–2 weeks, parallelizable with Stage 4)
 

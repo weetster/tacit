@@ -1,6 +1,6 @@
 # Canonical Text Format
 
-**Status:** Draft (Stage 2 in progress; freezes at Stage 2 exit)
+**Status:** Frozen 2026-04-22 ([ADR 0013](../decisions/0013-canonical-text-format-frozen.md))
 **Parent:** [phase-0-plan.md](phase-0-plan.md)
 **Authoring view source:** [candidates/authoring-bpe-compact.md](candidates/authoring-bpe-compact.md)
 
