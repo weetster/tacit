@@ -138,77 +138,55 @@ The scrutinee `(var 0)` sits outside the arm, so it references the `lam`'s `x` d
 
 ---
 
-## Vector 9 — String canonicalization edges **(spec gap)**
+## Vector 9 — String canonicalization: non-ASCII
 
-**Pressure-tests:** § 5 Strings / [ADR 0006](../decisions/0006-canonical-lexical-rules.md). Drafting this vector surfaced two spec ambiguities that must be resolved before freeze.
+**Pressure-tests:** § 3 Strings / [ADR 0010](../decisions/0010-canonical-emission-rules.md) S2 + S3. Non-ASCII code points always emit as `\u{HEX}` in shortest lowercase form.
 
-**Authoring intent:** Three strings all denoting the same Unicode text, with different source encodings.
+**Authoring intent:** `"A😀"` (mixed ASCII + astral-plane emoji).
 
-**Candidate canonicalizations** (all three are claims the spec does *not* currently disambiguate between):
-
-9a. `\u{...}` escape, shortest hex form:
+**Canonical:**
 ```
 (str "A\u{1f600}")
 ```
 
-9b. `\u{...}` escape, padded hex form:
-```
-(str "A\u{0001f600}")
-```
-
-9c. Raw UTF-8 non-ASCII (since § 5 only forbids raw newlines, tabs, and control bytes — not raw non-ASCII):
-```
-(str "A😀")
-```
-
-**Spec gaps:**
-
-1. **`\u{HEX}` emission form.** ADR 0006 says "1–6 lower-case hex digits, no leading-zero requirement." "No leading-zero requirement" reads as parser permissiveness ("leading zeros are not required"). The canonicalizer's *emission* form is not pinned. 9a and 9b differ in bytes, match in decoded semantics. **Must pin to one form** (recommend: shortest, minimum digits, lowercase).
-2. **Raw vs escaped non-ASCII.** § 5 forbids only raw newlines/tabs/controls in string literals, which implicitly permits raw non-ASCII. The canonicalizer must decide whether to emit 9a or 9c. **Must pin to one form** (recommend: all non-ASCII emitted as `\u{...}` with the shortest-hex rule from (1), so canonical text is always ASCII-printable, matching the "simplifies transport" consequence already claimed in ADR 0006).
-
-Recommend an additional ADR 0010 to close both — they are entangled and one ADR covers both neatly.
+**Notes:** Raw UTF-8 input `"A😀"` and escaped input `"A\u{0001f600}"` both canonicalize to the form above — ADR 0010 S2 forces escape, S3 forces shortest hex. Padded-hex (`\u{0001f600}`) and raw-UTF-8 forms are **not** valid canonical text for this content.
 
 ---
 
-## Vector 10 — Arity edges: zero-children constructs **(spec gap)**
+## Vector 10 — Arity edges: zero-children constructs
 
-**Pressure-tests:** § 2 node-kinds table, specifically the arity expressions `2N`, `1+N`, and `N`. None of them explicitly state the minimum N.
+**Pressure-tests:** § 2 node-kinds table and [ADR 0011](../decisions/0011-variable-arity-minimums.md). Splits into valid canonical forms (permitted N = 0) and anti-tests (forbidden N = 0).
 
-**Candidate canonicalizations:**
+**Valid canonical forms:**
 
-10a. Empty record (2N where N=0):
+10a. Empty record (unit value, permitted per ADR 0011):
 ```
 (record)
 ```
 
-10b. Nullary constructor (1+N where N=0):
+10b. Nullary constructor (permitted per ADR 0011):
 ```
 (ctor Nil)
 ```
 
-10c. Empty module (N where N=0):
+**Anti-tests** — the canonicalizer must *not* emit these; a compliant parser must not produce the ASTs that would serialize to them:
+
+10c. Empty module — forbidden per ADR 0011:
 ```
 (module)
 ```
 
-10d. `rec` with body only, no bindings (1+N where N=0):
+10d. Body-only `rec` — forbidden per ADR 0011 (would hash-collide with the body alone):
 ```
 (rec (int 1))
 ```
 
-10e. `match` with no arms (1+N where N=0):
+10e. Zero-arm `match` — forbidden per ADR 0011 (non-exhaustive by construction):
 ```
 (match (var 0))
 ```
 
-**Spec gaps:**
-
-1. **Empty `record`.** Semantically unambiguous (the unit record). The spec should either explicitly permit `(record)` or forbid it. Currently silent.
-2. **Nullary `ctor`.** Required for constructors like `Nil`, `None`, `Unit`. § 2 says `1+N` — if N=0 is permitted, `(ctor Nil)` is canonical. Almost certainly intended but not explicitly stated.
-3. **Zero-binding `rec` and empty `module`.** Likely should be rejected at the parser layer (nothing useful to express), but the canonical form's job is to render any well-formed AST. Need a rule: "the parser produces `Hole` rather than empty `rec`/`module`," or "empty forms are permitted and canonical." Either is fine; silence is not.
-4. **Zero-arm `match`.** Semantically ill-formed (non-exhaustive, never matches). Same question as (3).
-
-Recommend a one-line addition to § 2 per-row specifying the minimum for each `N`, or a § 2 footer stating the general rule. Lowest-friction: add a "Min N" column next to "Arity" for every row where N appears.
+**Notes:** The rule is "permit N = 0 where the construct has a meaningful empty form." `record` and `ctor` (plus `pat-ctor`) qualify; `rec`, `module`, and `match` do not. A conformance test suite should include the anti-test cases with the expected behavior being canonicalizer refusal or parser-level rejection, not silent emission.
 
 ---
 
@@ -242,64 +220,51 @@ Recommend a one-line addition to § 2 per-row specifying the minimum for each `N
 
 ---
 
-## Vector 13 — Signed zero **(spec gap)**
+## Vector 13 — Signed zero normalized
 
-**Pressure-tests:** § 3 Integers. Drafting this vector surfaced a third spec ambiguity.
+**Pressure-tests:** § 3 Integers / [ADR 0010](../decisions/0010-canonical-emission-rules.md) I1. The canonicalizer normalizes `-0` to `0`.
 
-**Candidate canonicalizations:**
+**Authoring intent:** Any source construct that produces an integer AST node with value zero (signed or unsigned).
 
-13a. Signed zero preserved:
-```
-(int -0)
-```
-
-13b. Signed zero normalized to unsigned:
+**Canonical:**
 ```
 (int 0)
 ```
 
-**Spec gap:** § 3's integer grammar reads "No leading zeros except the single digit `0`. Negative integers have a leading `-`." Strictly parsed, the rule applies to the digit sequence after the sign — `-0` has a digit sequence of `0`, which is allowed. So `-0` is syntactically valid. But it denotes the same value as `0`, which means two canonical forms for one semantic integer — a direct byte-equivalence violation.
+**Anti-test:** The following must *not* appear in canonical text:
+```
+(int -0)
+```
 
-**Must pin** one of:
-- Reject `-0` at the canonical layer (emit `(hole arity-mismatch …)` or similar — but arity-mismatch is wrong fit; may want a new diag-id).
-- Normalize `-0` to `0` at the canonicalizer input, so canonical text never contains `-0`.
-- Document `-0` as distinct from `0` (only defensible if Tacit-Lite has IEEE-754-style signed zero semantics, which it does not for integers).
-
-Recommend normalization to `0`, documented as a one-line canonicalizer rule in ADR 0006.
+**Notes:** ADR 0010 I1 treats any AST-level "negative zero" as identical to `0`. Two canonicalizers fed an AST `(int -0)` must both emit `(int 0)`. Standalone `0` and `-N` for N ≥ 1 are unaffected.
 
 ---
 
-## Vector 14 — Unbounded integer **(spec gap)**
+## Vector 14 — Arbitrary-precision integer
 
-**Pressure-tests:** § 3 Integers. Spec places no upper or lower bound on integer literals.
+**Pressure-tests:** § 3 Integers / [ADR 0010](../decisions/0010-canonical-emission-rules.md) I2. Canonical accepts any magnitude; canonicalizers must use bignum internally.
 
-**Candidate canonicalization:**
+**Canonical:**
 ```
 (int 99999999999999999999999999999)
 ```
 
-**Spec gap:** Canonical text happily carries arbitrary decimal. But two canonicalizers written against the spec may internally use different int types (one u64, one i128, one bignum) and diverge: one succeeds, one truncates, one panics. The canonical text layer is not where this must be resolved — the hash domain doesn't care — but Stage 2's exit criterion ("two independent implementations produce byte-identical canonical text on the same AST") *does* care if "the same AST" is interpretable differently.
-
-**Must pin** one of:
-- Declare canonical text accepts arbitrarily-large decimal integers; implementations must use arbitrary-precision internally.
-- Pin a range (e.g. i64 / two's-complement 64-bit) and forbid out-of-range integer literals at the canonical layer.
-
-Recommend the first, with a note that runtime integer size is a Phase 1+ concern (separate from canonical representation).
+**Notes:** Well beyond u64 (≈ 1.8 × 10¹⁹) and beyond i128 (≈ 1.7 × 10³⁸ for positive range, but 29 nines = 10²⁹ − 1 fits i128). For a stronger test, use a ~50-digit value. A canonicalizer that internally parses into u64, i64, or i128 will fail here; one using `num-bigint` (Rust) or `int` (Python) passes. Runtime integer size (what the Phase 1+ evaluator uses) is a separate concern — canonical carries arbitrary precision regardless.
 
 ---
 
-## Vector 15 — Escape-sequence coverage in `str` **(spec gap, minor)**
+## Vector 15 — Named-escape coverage in `str`
 
-**Pressure-tests:** § 5 / ADR 0006 string escape table, for the non-`\u{...}` escapes.
+**Pressure-tests:** § 3 Strings / [ADR 0010](../decisions/0010-canonical-emission-rules.md) S1. All five named escapes emit in their short form, not as `\u{HEX}`.
 
-**Candidate canonicalization** (decoded content: `hello "world"<LF><TAB>back\slash<CR>`):
+**Authoring intent:** Decoded content `hello "world"<LF><TAB>back\slash<CR>`.
+
+**Canonical:**
 ```
 (str "hello \"world\"\n\tback\\slash\r")
 ```
 
-**Notes & spec gap:** ADR 0006's table lists `\"`, `\\`, `\n`, `\t`, `\r` as "allowed escape sequences" — naturally read as *parser* permissiveness. The canonicalizer's *emission* rule for a byte like `"` (0x22) is unspecified — it could emit `\"` or `\u{22}`, both legal per the parser's rules. Same for the other four. Closely related to Vector 9's spec gap (1); the fix likely covers both.
-
-**Must pin**: canonicalizer emits the named escape (`\"`, `\\`, `\n`, `\t`, `\r`) wherever it applies; `\u{...}` only for code points without a named escape. Combined with Vector 9's recommendation, this fully pins string canonicalization.
+**Notes:** ADR 0010 S1 forces named-escape preference: byte 0x22 emits as `\"` (not `\u{22}`), byte 0x5c as `\\` (not `\u{5c}`), TAB as `\t`, LF as `\n`, CR as `\r`. S4 emits the remaining printable ASCII bytes directly. A canonicalizer that emits any named-escape byte as `\u{...}` produces non-canonical output even though it would parse to the same string.
 
 ---
 
@@ -397,21 +362,23 @@ Sort resolves by standard prefix-then-length rules: `_` < `_foo` (prefix match, 
 
 ---
 
-## 21. Spec gaps surfaced by this draft
+## 21. Spec gaps surfaced and resolved
 
-Consolidated for the Stage 2 freeze checklist:
+All six spec gaps surfaced by this draft closed via [ADR 0010](../decisions/0010-canonical-emission-rules.md) and [ADR 0011](../decisions/0011-variable-arity-minimums.md), landing 2026-04-21.
 
-| Gap | Source | Action |
-|-----|--------|--------|
-| `\u{HEX}` emission form not pinned (shortest vs padded) | Vector 9 (1) | New ADR or amendment to ADR 0006: "canonicalizer emits shortest-hex lowercase form." |
-| Raw vs escaped non-ASCII in `str` not pinned | Vector 9 (2) | Same ADR: "canonicalizer escapes all non-ASCII code points as `\u{...}`." |
-| Named-escape vs `\u{...}` emission for ASCII specials not pinned | Vector 15 | Same ADR: "canonicalizer emits named escape when one exists, `\u{...}` only otherwise." |
-| Minimum `N` for variable-arity kinds not stated | Vector 10 | Add Min-N column to § 2 node-kinds table, or equivalent prose. |
-| Signed zero `-0` syntactically valid but semantically redundant | Vector 13 | Canonicalizer rule in ADR 0006: "normalize `-0` to `0`; canonical text never contains `-0`." |
-| Integer range unbounded — two-impl divergence risk | Vector 14 | Canonical-level note: "canonical accepts arbitrary-precision decimal integers; implementations must use bignum. Runtime size is Phase 1+." |
-| Symbol regex permits trailing `-` (probable oversight) | Vector 16 | Either tighten the regex in § 5 or add a one-line intent statement. Low urgency. |
+| Gap | Source | Resolution |
+|-----|--------|------------|
+| `\u{HEX}` emission form not pinned (shortest vs padded) | Vector 9 | **ADR 0010 S3** — shortest lowercase hex, no leading zeros (except `\u{0}` for NUL). |
+| Raw vs escaped non-ASCII in `str` not pinned | Vector 9 | **ADR 0010 S2** — all non-ASCII emitted as `\u{HEX}`; canonical text is strictly 7-bit ASCII. |
+| Named-escape vs `\u{...}` emission for ASCII specials not pinned | Vector 15 | **ADR 0010 S1** — named escape wherever one exists; `\u{HEX}` only for code points without one. |
+| Minimum `N` for variable-arity kinds not stated | Vector 10 | **ADR 0011** — `record`/`ctor`/`pat-ctor` permit N≥0; `rec`/`match`/`module` require N≥1. § 2 kind table updated inline. |
+| Signed zero `-0` syntactically valid but semantically redundant | Vector 13 | **ADR 0010 I1** — `-0` normalized to `0` at canonicalizer input; canonical text never contains `-0`. |
+| Integer range unbounded — two-impl divergence risk | Vector 14 | **ADR 0010 I2** — canonical accepts arbitrary-precision decimal; implementations must use bignum. Runtime size is Phase 1+. |
+| Symbol regex permits trailing `-` (probable oversight) | Vector 16 | **Deferred** — low urgency; regex is ASCII-only in Phase 0 and no corpus programs hinge on it. Revisit if Phase 1 parser hits an issue. |
 
-Vectors 1–8, 11, 12, 16, 17, 18, 19, 20 confirm existing spec rules and should pass under any spec-conformant canonicalizer. Vectors 9, 10, 13, 14, 15 will *change shape* once the gaps close; their exact canonical bytes above are illustrative of the ambiguity, not final. The three string-related gaps (9, 15) are entangled and should be closed together in one ADR.
+With the first six closed, vectors 9, 10, 13, 14, 15 are pinned above — the "candidate canonicalization" framing is gone, and the listed canonical bytes are final for Stage 2.
+
+Vectors 1–8, 11, 12, 16, 17, 18, 19, 20 continue to pressure-test existing spec rules (ADR 0005–0009) and should pass under any spec-conformant canonicalizer. They did not require new decisions.
 
 ## 22. Remaining coverage for the ~30-vector set
 

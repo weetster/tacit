@@ -25,3 +25,5 @@ Keep ADRs short. They record the decision, not the full analysis that led to it.
 - [0007 — DeBruijn indexing convention for `rec` and `module`](0007-debruijn-rec-indexing.md)
 - [0008 — Record field ordering: sorted by field-symbol bytes](0008-record-field-ordering.md)
 - [0009 — Hashing rule: BLAKE3 over inlined canonical text](0009-hashing-rule.md)
+- [0010 — Canonical emission rules for atoms (strings and integers)](0010-canonical-emission-rules.md)
+- [0011 — Minimum arity for variable-arity kinds](0011-variable-arity-minimums.md)

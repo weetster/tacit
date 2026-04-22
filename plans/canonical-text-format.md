@@ -29,28 +29,28 @@ S-expressions with short ASCII keyword tags ([ADR 0005](../decisions/0005-canoni
 
 Frozen at Stage 2 exit. Additive evolution only — never re-purpose a tag.
 
-| Tag        | Arity | Children                                      | Notes                                              |
-|------------|------:|-----------------------------------------------|----------------------------------------------------|
-| `lam`      |     1 | body                                          | Parameter is implicit; body sees `(var 0)`.        |
-| `app`      |     2 | function, argument                            | Left-associative in authoring view; explicit here. |
-| `let`      |     2 | rhs, body                                     | Binder implicit; body sees `(var 0)`.              |
-| `rec`      |   1+N | binding₀, binding₁, …, body                   | Per [ADR 0004](../decisions/0004-rec-arity.md). DeBruijn convention in § 5. |
-| `module`   |     N | binding₀, binding₁, …                         | Per ADR 0004. No body. Same DeBruijn rule.         |
-| `if`       |     3 | cond, then, else                              |                                                    |
-| `match`    |   1+N | scrutinee, arm₀, …, armₙ                      | Arm order preserved (§ 7).                         |
-| `arm`      |     2 | pattern, body                                 |                                                    |
-| `record`   |    2N | sym₀, val₀, sym₁, val₁, …                     | Field-sym/value pairs sorted by sym (§ 6, [ADR 0008](../decisions/0008-record-field-ordering.md)). |
-| `proj`     |     2 | record-expr, field-sym                        |                                                    |
-| `ctor`     |   1+N | name-sym, arg₀, …                             | Constructor application.                           |
-| `ann`      |     2 | expression, type-as-expression                | Type syntax reuses expression kinds.               |
-| `var`      |     1 | decimal int                                   | DeBruijn index, ≥ 0.                               |
-| `int`      |     1 | decimal int                                   | Integer literal; may be negative.                  |
-| `str`      |     1 | double-quoted string                          | Escape rules in § 5.                               |
-| `sym`      |     1 | bare symbol                                   | Used for `@foo`-style symbols.                     |
-| `hole`     |     2 | diag-id-sym, payload-str                      | Parser-error placeholder (§ 8).                    |
-| `pat-wild` |     0 | —                                             | `_` pattern.                                       |
-| `pat-var`  |     0 | —                                             | Variable-binding pattern; binder implicit.         |
-| `pat-ctor` |   1+N | name-sym, sub-pattern₀, …                     | Constructor pattern.                               |
+| Tag        | Arity       | Children                                      | Notes                                              |
+|------------|-------------|-----------------------------------------------|----------------------------------------------------|
+| `lam`      | 1           | body                                          | Parameter is implicit; body sees `(var 0)`.        |
+| `app`      | 2           | function, argument                            | Left-associative in authoring view; explicit here. |
+| `let`      | 2           | rhs, body                                     | Binder implicit; body sees `(var 0)`.              |
+| `rec`      | 1+N, N≥1    | binding₀, binding₁, …, body                   | Per [ADR 0004](../decisions/0004-rec-arity.md). DeBruijn convention in § 5. N=0 forbidden per [ADR 0011](../decisions/0011-variable-arity-minimums.md). |
+| `module`   | N, N≥1      | binding₀, binding₁, …                         | Per ADR 0004. No body. Same DeBruijn rule. N=0 forbidden per ADR 0011. |
+| `if`       | 3           | cond, then, else                              |                                                    |
+| `match`    | 1+N, N≥1    | scrutinee, arm₀, …, armₙ                      | Arm order preserved (§ 7). N=0 forbidden per ADR 0011. |
+| `arm`      | 2           | pattern, body                                 |                                                    |
+| `record`   | 2N, N≥0     | sym₀, val₀, sym₁, val₁, …                     | Field-sym/value pairs sorted by sym (§ 6, [ADR 0008](../decisions/0008-record-field-ordering.md)). Empty record `(record)` permitted per ADR 0011. |
+| `proj`     | 2           | record-expr, field-sym                        |                                                    |
+| `ctor`     | 1+N, N≥0    | name-sym, arg₀, …                             | Constructor application. Nullary `(ctor Nil)` permitted per ADR 0011. |
+| `ann`      | 2           | expression, type-as-expression                | Type syntax reuses expression kinds.               |
+| `var`      | 1           | decimal int                                   | DeBruijn index, ≥ 0.                               |
+| `int`      | 1           | decimal int                                   | Integer literal; may be negative. Emission rules in § 3 / [ADR 0010](../decisions/0010-canonical-emission-rules.md). |
+| `str`      | 1           | double-quoted string                          | Emission rules in § 3 / ADR 0010.                  |
+| `sym`      | 1           | bare symbol                                   | Used for `@foo`-style symbols.                     |
+| `hole`     | 2           | diag-id-sym, payload-str                      | Parser-error placeholder (§ 8).                    |
+| `pat-wild` | 0           | —                                             | `_` pattern.                                       |
+| `pat-var`  | 0           | —                                             | Variable-binding pattern; binder implicit.         |
+| `pat-ctor` | 1+N, N≥0    | name-sym, sub-pattern₀, …                     | Constructor pattern. Nullary `(pat-ctor Zero)` permitted per ADR 0011. |
 
 Tags are 3–8 ASCII bytes; size is dominated by structure, not tag length.
 
@@ -71,11 +71,25 @@ Decimal ASCII. No leading zeros except the single digit `0`. Negative integers h
 Valid: `0`, `1`, `42`, `-7`.
 Invalid: `01`, `+5`, `1_000`, `0x10`.
 
+**Emission rules** (per [ADR 0010](../decisions/0010-canonical-emission-rules.md)):
+
+- **`-0` normalizes to `0`.** The canonicalizer never emits the two-byte sequence `-0` as a complete integer token. Any AST-level "negative zero" is treated as identical to `0`.
+- **Arbitrary precision.** Canonical text accepts integer literals of any magnitude. Canonicalizer implementations must use arbitrary-precision integers at the canonical layer — no bounded integer type may truncate, wrap, or panic. Runtime integer representation is a Phase 1+ concern, separate from canonical emission.
+
 ### Strings
 
-Double-quoted. Allowed escapes: `\"`, `\\`, `\n`, `\t`, `\r`, `\u{HEX}` for arbitrary Unicode code points (1–6 hex digits, no leading zeros required, lowercase `\u`). No raw newlines, raw tabs, or raw control characters inside string literals.
+Double-quoted. UTF-8 source bytes accepted; the canonicalizer emits a normalized byte sequence per the rules below.
 
-UTF-8 source bytes. No Unicode normalization is performed; the canonicalizer treats strings as opaque byte sequences after escape decoding for hashing purposes.
+**Parser accepts** (per [ADR 0006](../decisions/0006-canonical-lexical-rules.md)): `\"`, `\\`, `\n`, `\t`, `\r`, and `\u{HEX}` for any Unicode code point with 1–6 lowercase hex digits. Raw newlines, raw tabs, and raw control characters are forbidden inside string literals; raw non-ASCII UTF-8 is accepted by the parser but re-emitted canonically per S2 below.
+
+**Canonicalizer emission** (per [ADR 0010](../decisions/0010-canonical-emission-rules.md)):
+
+- **S1. Named-escape preference.** Bytes with a named escape emit as: `"` → `\"`, `\` → `\\`, TAB (0x09) → `\t`, LF (0x0a) → `\n`, CR (0x0d) → `\r`.
+- **S2. Escape all non-ASCII and unnamed controls.** Any byte outside 0x20–0x7e that does not match S1 emits as `\u{HEX}`. Covers 0x00–0x08, 0x0b, 0x0c, 0x0e–0x1f, 0x7f, and all code points ≥ 0x80 (including raw-UTF-8-accepted non-ASCII).
+- **S3. `\u{HEX}` form.** Lowercase hex, minimum digits, no leading zeros (the single literal `0` for U+0000 is the one exception — `\u{0}` is canonical for NUL). Examples: `\u{a0}`, `\u{1f600}`, `\u{10ffff}`.
+- **S4. Direct emission otherwise.** Bytes in 0x20–0x7e that are not `"` or `\` emit as themselves.
+
+**Consequence:** Canonical string bytes between the surrounding `"…"` are always 7-bit ASCII-printable. No Unicode normalization is performed; decoded byte sequences remain opaque for hashing.
 
 ### Symbols
 
