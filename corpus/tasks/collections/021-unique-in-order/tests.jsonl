@@ -1,0 +1,6 @@
+{"name": "basic", "stdin": "1 1 2 3 3 3 2 2 1\n", "stdout": "1 2 3 2 1\n"}
+{"name": "empty", "stdin": "\n", "stdout": "\n"}
+{"name": "single", "stdin": "7\n", "stdout": "7\n"}
+{"name": "all-same", "stdin": "4 4 4 4 4\n", "stdout": "4\n"}
+{"name": "none-duplicated", "stdin": "1 2 3 4 5\n", "stdout": "1 2 3 4 5\n"}
+{"name": "negatives", "stdin": "-1 -1 0 0 -1\n", "stdout": "-1 0 -1\n"}

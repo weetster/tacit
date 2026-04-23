@@ -1,0 +1,6 @@
+{"name": "basic", "stdin": "1\n2\n3\n4\n", "stdout": "10\n"}
+{"name": "empty", "stdin": "", "stdout": "0\n"}
+{"name": "single", "stdin": "42\n", "stdout": "42\n"}
+{"name": "cancelling", "stdin": "-5\n5\n", "stdout": "0\n"}
+{"name": "blanks-skipped", "stdin": "1\n\n2\n\n3\n", "stdout": "6\n"}
+{"name": "no-trailing-newline", "stdin": "1\n2\n3", "stdout": "6\n"}

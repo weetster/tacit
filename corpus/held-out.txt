@@ -1,0 +1,25 @@
+# Held-out task IDs (advisory index).
+#
+# These tasks live under corpus/sealed/ and must not appear in primer
+# examples, training material, or any Phase 3 context visible to the model
+# under evaluation.
+#
+# The load-bearing tamper-detection mechanism is corpus/sealed-hashes.txt,
+# verified in CI per decisions/0020-sealing-held-out-in-repo.md. This file
+# is an advisory index of IDs only; the filesystem is the source of truth.
+#
+# Format: one ID per line, three-digit zero-padded. Comments start with '#'.
+
+002
+008
+014
+019
+022
+024
+029
+034
+039
+043
+048
+053
+058

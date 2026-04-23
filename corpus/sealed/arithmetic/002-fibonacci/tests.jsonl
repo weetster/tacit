@@ -1,0 +1,6 @@
+{"name": "f0", "stdin": "0\n", "stdout": "0\n"}
+{"name": "f1", "stdin": "1\n", "stdout": "1\n"}
+{"name": "f2", "stdin": "2\n", "stdout": "1\n"}
+{"name": "f10", "stdin": "10\n", "stdout": "55\n"}
+{"name": "f50", "stdin": "50\n", "stdout": "12586269025\n"}
+{"name": "f90", "stdin": "90\n", "stdout": "2880067194370816120\n"}

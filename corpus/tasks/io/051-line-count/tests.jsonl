@@ -1,0 +1,5 @@
+{"name": "three", "stdin": "foo\nbar\nbaz\n", "stdout": "3\n"}
+{"name": "empty", "stdin": "", "stdout": "0\n"}
+{"name": "one", "stdin": "only\n", "stdout": "1\n"}
+{"name": "no-trailing-newline", "stdin": "a\nb\nc", "stdout": "3\n"}
+{"name": "blank-lines-count", "stdin": "\n\n\n", "stdout": "3\n"}

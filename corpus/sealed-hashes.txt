@@ -1,0 +1,14 @@
+# Hashes of every file under corpus/sealed/, one line per file.
+# Format: <relative-path-from-corpus-root> <blake3-hex>
+# Sorted by path. Regenerate via: `uv run corpus-verify-sealed --write`.
+# Any edit to a sealed file must be accompanied by a regen and an ADR.
+
+sealed/README.md 4e371734d4d02e941eefafc104e4593e9e453f2a5f72708f745351ec072ec96a
+sealed/arithmetic/002-fibonacci/reference.py 4992a4e6694ab7cadb0928dcd380a51ebd947cc2eef63506961fe2b5a105f880
+sealed/arithmetic/002-fibonacci/reference.rs c6a12ae3550a14fea3a1266cd27a785380fd682fdc03f1d0fa537e2deab94664
+sealed/arithmetic/002-fibonacci/task.md 117c8e15b00e55225517a829257d4d055ed160bee08ef8f5bf1fae987d17f4b8
+sealed/arithmetic/002-fibonacci/tests.jsonl 24b73b18d57fb140ef74d34b4a9815a28e5c0eb0776baac51b7c40801e28679c
+sealed/collections/022-running-sum/reference.py a819c0c46a060052cba4ea5e059fd036a09ed5c41b5e214a1f29a8a922fc1b91
+sealed/collections/022-running-sum/reference.rs 7b7807995939de8bbeda35718253f6f6992925832fa3f00639e185027876dfb0
+sealed/collections/022-running-sum/task.md ba323a57619a7c6f85b580d826dda144b2f6549842b7aa3cc2860fa843e27e9f
+sealed/collections/022-running-sum/tests.jsonl a7382eb1d1241860c33d82fe2ada84c94bdae405d459d6ea3870a06c156976ab

@@ -1,0 +1,4 @@
+{"name": "five", "stdin": "5\n", "stdout": "1\n2\nFizz\n4\nBuzz\n"}
+{"name": "zero", "stdin": "0\n", "stdout": ""}
+{"name": "one", "stdin": "1\n", "stdout": "1\n"}
+{"name": "fifteen", "stdin": "15\n", "stdout": "1\n2\nFizz\n4\nBuzz\nFizz\n7\n8\nFizz\nBuzz\n11\nFizz\n13\n14\nFizzBuzz\n"}

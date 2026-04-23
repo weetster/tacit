@@ -1,0 +1,6 @@
+{"name": "basic", "stdin": "hello\n", "stdout": "olleh\n"}
+{"name": "empty", "stdin": "\n", "stdout": "\n"}
+{"name": "single", "stdin": "a\n", "stdout": "a\n"}
+{"name": "palindrome", "stdin": "racecar\n", "stdout": "racecar\n"}
+{"name": "unicode", "stdin": "café\n", "stdout": "éfac\n"}
+{"name": "spaces", "stdin": "ab cd\n", "stdout": "dc ba\n"}

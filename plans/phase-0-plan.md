@@ -66,9 +66,13 @@ Stage 3 exit criterion (per [ADR 0015](../decisions/0015-inspection-view-scope.m
 Frozen upfront so Phase 3 does not grade its own homework.
 
 - 50–100 tasks spanning arithmetic, strings, collections, I/O, small algorithms
-- Reference solutions in Python + Rust
+- Reference solutions in Python + Rust, idiom rules per [ADR 0019](../decisions/0019-corpus-idiom-rules.md)
 - Executable test cases (stdin/stdout contracts)
-- Seal ~20% as held-out; store hashes of held-out set in a separate repo to enforce
+- Seal ~20% as held-out; sealing is **in-repo via multi-layer guardrails** per
+  [ADR 0020](../decisions/0020-sealing-held-out-in-repo.md) (supersedes the
+  original "separate repo" clause). Load-bearing check is
+  `corpus/sealed-hashes.txt` verified in CI; Claude permission denies and a
+  default-exclude harness flag are additional layers.
 
 ### Stage 5: Repo scaffolding (parallel, low-effort) — **Frozen 2026-04-23** ([ADR 0018](../decisions/0018-stage-5-frozen.md))
 

@@ -34,3 +34,5 @@ Keep ADRs short. They record the decision, not the full analysis that led to it.
 - [0016 — Rust AST enum: spec-conformant, in-place in the canonicalizer](0016-rust-ast-enum-location.md)
 - [0017 — Stage 3 view-system spec frozen](0017-stage-3-frozen.md)
 - [0018 — Stage 5 repository scaffolding frozen](0018-stage-5-frozen.md)
+- [0019 — Corpus reference-solution idiom rules for Python and Rust](0019-corpus-idiom-rules.md)
+- [0020 — Seal held-out corpus tasks in-repo via multi-layer guardrails](0020-sealing-held-out-in-repo.md)
