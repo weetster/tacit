@@ -1,6 +1,6 @@
 # Inspection View
 
-**Status:** Draft (Stage 3 in progress; freezes at Stage 3 exit)
+**Status:** Frozen 2026-04-22 ([ADR 0017](../decisions/0017-stage-3-frozen.md))
 **Parent:** [phase-0-plan.md](phase-0-plan.md)
 **Decision:** [ADR 0015](../decisions/0015-inspection-view-scope.md)
 
@@ -11,16 +11,24 @@ This document specifies the projection rules: line-break policy, per-kind render
 ## Glossary
 
 - **L0 / L1 / L2** — the three annotation layers defined in [ADR 0015](../decisions/0015-inspection-view-scope.md). L0 is the default rendering; L1 and L2 are additive flag-gated overlays. Phase 1+ may introduce additional layers (e.g., `--types`, `--effects`) but Phase 0 ships L0–L2.
-- **Trivial node** — a leaf node (`var`, `int`, `str`, `sym`, `pat-wild`, `pat-var`), a nullary `ctor`/`pat-ctor`, or a short expression that fits on the current line without breaking indentation. The precise test: a subtree is trivial iff its full L0 rendering is ≤ 40 display columns and contains no line breaks. Used to decide inline vs. multi-line forms.
+- **Inline subtree** — a subtree whose L0 rendering contains no line breaks. This is determined recursively by the per-kind rules in § 3; it is the *single* line-break criterion used throughout this document. "Inline" replaces the looser "trivial" term used in earlier drafts.
+- **Always-break kind** — a compound kind (`let`, `rec`, `module`, `if`, `match`) whose L0 rendering always spans multiple lines, regardless of child inlineability. Reason: these forms are the readability anchors for an inspection-view reader; forcing them multi-line means structure never collapses into a single hard-to-scan line.
 - **Binding stack** — the view layer's walk-state: a stack of names introduced by enclosing `lam`/`let`/`rec`/`module`/`pat-var`, used to resolve `var N` references to names.
 
 ## 1. Surface form
 
-Pseudo-code: indented, keyword-led, one expression per visual line by default, with trivial subtrees rendered inline. UTF-8 output; ASCII for identifiers and keywords, Unicode permitted for annotation glyphs.
+Pseudo-code: indented, keyword-led. UTF-8 output; ASCII for identifiers and keywords, Unicode permitted for annotation glyphs.
 
 **Indentation:** 2 spaces per nesting level. No tabs.
 
-**Line-break policy:** a node breaks to multiple lines if any of its children are non-trivial. Trivial subtrees render inline.
+**Line-break policy:** deterministic, per-kind, specified in § 3. Summarized:
+
+- Leaves (`var`, `int`, `str`, `sym`, `pat-wild`, `pat-var`) and `hole` are always inline.
+- `ctor`/`pat-ctor`, `proj`, `ann`, `app`, `record`: inline iff all their children are inline (§ 3.2, § 3.7–§ 3.9).
+- `lam` and `arm`: inline iff the body is inline.
+- `let`, `rec`, `module`, `if`, `match`: always-break kinds; never inline at L0.
+
+The renderer makes these decisions bottom-up: each node decides based on its already-rendered children. There is no column-width budget at L0 — break-or-inline is a structural function of the subtree, not of its printed width. (Phase 1+ renderers may add a width-aware soft-wrap layer; Phase 0's spec deliberately does not.)
 
 **Comment glyph:** `#` introduces a line-trailing or line-leading comment (both for sidecar `comment` metadata and for L1/L2 annotations that the spec renders as comments).
 
@@ -40,29 +48,29 @@ Every kind in [canonical-text-format.md § 2](canonical-text-format.md) has a ru
 ### 3.1 `lam`
 
 ```
-lambda X. BODY                   # if BODY is trivial
+lambda X. BODY                   # if BODY is inline
 
 lambda X.                        # otherwise
   BODY
 ```
 
-`X` is the sidecar-supplied binder name (or synthetic). If a `lam` has an immediately-nested `lam` and both binders have sidecar names, the chain collapses:
+`X` is the sidecar-supplied binder name (or synthetic). If a `lam` has an immediately-nested `lam`, both binders have sidecar names, **and** the innermost body is inline, the chain collapses:
 
 ```
 lambda X Y Z. BODY               # collapsed; equivalent to nested lambdas
 ```
 
-The collapse is a rendering choice, not a grammar change — canonical form still has nested `lam` nodes.
+The collapse is a rendering choice, not a grammar change — canonical form still has nested `lam` nodes. If any inner body is not inline, the chain does not collapse.
 
 ### 3.2 `app`
 
 Left-associative curried call chains flatten:
 
 ```
-F X Y Z                          # for (app (app (app F X) Y) Z)
+F X Y Z                          # inline iff F and every argument are inline
 ```
 
-If any argument is non-trivial, render the head inline and break arguments onto their own lines:
+If any argument is not inline, render the head inline and break arguments onto their own lines at one deeper indent:
 
 ```
 F
@@ -71,30 +79,32 @@ F
   Z
 ```
 
-Arguments that are themselves applications get parenthesized only when disambiguation is needed — the reader relies on left-associativity as the default.
+Arguments that are themselves applications get parenthesized only when disambiguation is needed — the reader relies on left-associativity as the default. A parenthesized argument is inline iff its contents are inline.
 
 ### 3.3 `let`
 
-```
-let X = V in B                   # if V and B are both trivial
+`let` is an **always-break kind**. `B` always appears on a new line below `in` at one deeper indent. `V` inlines if V is inline; otherwise `V` breaks onto its own indented line and `in` takes its own line:
 
-let X = V in                     # V trivial, B non-trivial
+```
+let X = V in                     # V is inline
   B
 
-let X =                          # V non-trivial
+let X =                          # V is not inline
   V
 in
   B
 ```
 
-Chained `let`s (`let a = … in let b = … in …`) render without nested indentation growth — each `in` resets the indent:
+Chained `let`s (`let a = … in let b = … in …`) render without nested indentation growth — each `in` resets the indent. Only the final `B` receives the deeper indent:
 
 ```
-let a = ... in
-let b = ... in
-let c = ... in
+let a = v0 in
+let b = v1 in
+let c = v2 in
   BODY
 ```
+
+(If any intermediate `V` on the chain is itself not inline, that `let` uses the three-line form and the chain-without-nesting property applies to the `let`s that follow.)
 
 If any `let` on the chain has a type annotation (via an `ann` child at the rhs), the annotation renders inline on the binder:
 
@@ -105,11 +115,14 @@ let X: T = V in
 
 ### 3.4 `rec` and `module`
 
+`rec` and `module` are **always-break kinds**. Each binding occupies its own line, led by `|` (visual separator, not canonical syntax) at one indent level deeper than the `rec`/`module` keyword. Inline RHS stays on the `|` line; a non-inline RHS breaks below with the continuation indented two levels deeper than the `|` marker (so a `|` at column 2 places the broken RHS at column 6). The extra indent gives the continuation visual clearance from the `|`:
+
 ```
 rec
-  | X0 = E0
-  | X1 = E1
-  | X2 = E2
+  | X0 = E0                      # E0 inline
+  | X1 =                         # E1 not inline
+      E1
+  | X2 = E2                      # E2 inline
 in
   BODY
 
@@ -118,7 +131,7 @@ module
   | X1 = E1
 ```
 
-Each binding occupies its own line, led by `|` (visual separator, not canonical syntax). Non-trivial RHS expressions break below:
+Worked example with nested always-break kinds (`match` inside `lambda` inside the binding RHS):
 
 ```
 rec
@@ -126,10 +139,13 @@ rec
       lambda xs.
         match xs
         | Nil => Zero
-        | Cons h t => Succ (length t)
+        | Cons h t =>
+            Succ (length t)
   | isEmpty =
       lambda xs.
-        ...
+        match xs
+        | Nil => True
+        | Cons _ _ => False
 in
   length myList
 ```
@@ -138,15 +154,15 @@ Per [ADR 0007](../decisions/0007-debruijn-rec-indexing.md), binding position K m
 
 ### 3.5 `if`
 
-```
-if C then T else E               # all three trivial
+`if` is an **always-break kind**. Always renders three-line:
 
-if C                             # any non-trivial
+```
+if C
 then T
 else E
 ```
 
-Chained `else if` reflows so the second `if` starts at the same indent level as the first:
+Each of `C`, `T`, `E` may itself expand further if not inline. Chained `else if` reflows so the second `if` starts at the same indent level as the first:
 
 ```
 if C1
@@ -158,33 +174,25 @@ else E3
 
 ### 3.6 `match` and `arm`
 
+`match` is an **always-break kind**. Each arm renders on its own `|`-led line. An `arm` is inline iff its body is inline:
+
 ```
 match S
-| P0 => E0
-| P1 => E1
+| P0 => E0                       # body E0 is inline
+| P1 =>                          # body E1 is not inline
+    E1
 | P2 => E2
 ```
 
-Non-trivial arm bodies break below the arrow:
-
-```
-match xs
-| Nil => Zero
-| Cons h t =>
-    Succ (length t)
-```
-
-Arm order preserved from canonical (first-match-wins; [canonical-text-format.md § 6](canonical-text-format.md)).
+Arm order is preserved from canonical (first-match-wins; [canonical-text-format.md § 6](canonical-text-format.md)).
 
 ### 3.7 `record` and `proj`
 
-Fields render in authoring order if the sidecar's `field_order` is present, otherwise in canonical (alphabetical) order. Inline if all values are trivial and the total line width is tolerable:
+`record` fields render in authoring order if the sidecar's `field_order` is present, otherwise in canonical (alphabetical) order.
 
-```
-{ fst: 1, snd: 2 }
-```
-
-Multi-line otherwise, one field per line, trailing comma:
+- An empty `record` renders `{}`.
+- A single-field record whose value is inline renders inline: `{ fst: 1 }`.
+- Otherwise (≥ 2 fields, or any field value not inline) the record breaks one-field-per-line with a trailing comma:
 
 ```
 {
@@ -194,16 +202,18 @@ Multi-line otherwise, one field per line, trailing comma:
 }
 ```
 
-Projection chains flatten: `r.a.b.c` for `(proj (proj (proj r a) b) c)`.
+(Under this rule a `record` is inline only in the empty or single-inline-field case; multi-field records always break. This simplifies the spec — a Phase 1+ renderer may introduce a width-aware inline form for small all-inline records, but Phase 0 does not.)
+
+Projection chains flatten: `r.a.b.c` for `(proj (proj (proj r a) b) c)`. A `proj` is inline iff its record sub-expression is inline.
 
 ### 3.8 `ctor` and `pat-ctor`
 
 ```
-Nil                              # nullary
-Cons 1 2                         # applied; same shape as app
+Nil                              # nullary (zero args)
+Cons 1 2                         # applied; inline iff every arg is inline
 ```
 
-If any argument is non-trivial, break:
+A `ctor` (or `pat-ctor`) is inline iff every one of its arguments is inline. If any argument is not inline, break with args indented one level:
 
 ```
 Cons
@@ -219,7 +229,7 @@ Cons
 (E : T)
 ```
 
-Parentheses only if the surrounding context needs them for disambiguation. For typed let bindings, the colon migrates up onto the binder (§ 3.3 above) rather than wrapping the whole rhs. For standalone `ann` expressions (which are uncommon), the parenthesized form is used.
+A standalone `ann` is inline iff `E` and `T` are both inline; if so it renders as `(E : T)` on one line, parenthesized. Otherwise it renders with `E` and `T` on their own lines. For typed let bindings, the colon migrates up onto the binder (§ 3.3 above) rather than wrapping the whole rhs. For standalone `ann` expressions (uncommon), the parenthesized form is used.
 
 ### 3.10 `hole`
 
@@ -227,7 +237,7 @@ Parentheses only if the surrounding context needs them for disambiguation. For t
 ⟨hole:DIAG-ID "payload"⟩
 ```
 
-Rendered with Unicode bracket glyphs (`⟨ ⟩`, U+27E8 / U+27E9) so the reader can visually spot holes at a glance. The diag-id and payload string come directly from canonical ([canonical-text-format.md § 7](canonical-text-format.md)).
+**Always inline.** Rendered with Unicode bracket glyphs (`⟨ ⟩`, U+27E8 / U+27E9) on a single visual line so the reader can spot holes at a glance. The diag-id and payload string come directly from canonical ([canonical-text-format.md § 7](canonical-text-format.md)). A `hole` never introduces a line break regardless of payload length — a very long payload produces a long single line, not a multi-line expansion. This simplifies break-propagation and is acceptable because holes are rare.
 
 ### 3.11 Leaves
 
@@ -284,10 +294,7 @@ L2 is intended for debugging content-addressing: it's visually heavy by design.
 ### 4.3 L1 + L2 combined
 
 ```
-[abc12345] let id =
-  [def67890] lambda x.
-    x  # ≡ var 0
-in
+[abc12345] let id = [def67890] lambda x. x in  # inner x ≡ var 0
   [89abcdef] id 5  # id ≡ var 0
 ```
 
@@ -347,11 +354,9 @@ let id = lambda x. x in  # inner x ≡ var 0
   id 5                   # id ≡ var 0
 ```
 
-**L0 + L2** (hashes illustrative):
+**L0 + L2** (hashes illustrative). Badges are prefixed at the start of each non-leaf node's rendering — inline on the same line when the node is inline, or at the start of the first line when the node breaks:
 ```
-[aaaaaaaa] let id =
-  [bbbbbbbb] lambda x. x
-in
+[aaaaaaaa] let id = [bbbbbbbb] lambda x. x in
   [cccccccc] id 5
 ```
 
@@ -421,17 +426,17 @@ Per [ADR 0015](../decisions/0015-inspection-view-scope.md) Consequences:
 
 ## 8. Open items
 
-- **Line-width budget.** § 3 uses "trivial ≤ 40 columns" and § 5 uses "≤ 80 chars" as break-points. These are initial values; Phase 1's renderer may prefer a configurable column budget. Not blocking for Phase 0's spec-only deliverable.
-- **Inline vs. parenthesized `ann`.** § 3.9's rule ("colon migrates up for typed lets, parenthesized otherwise") covers the common case but has edge cases for e.g. `(ann (match ...) T)` where the match is non-trivial. Resolvable in Phase 1 when a real renderer exists and hits these.
+- **Width-aware soft-wrap.** Phase 0's L0 rules are purely structural (per-kind break decisions, no column budget). A Phase 1+ renderer may add an optional width-aware layer that selectively breaks long inline lines onto continuation lines without changing the structural break decisions documented here. The 80-char threshold in § 5 applies only to sidecar-authored comments, not to any structural rendering decision.
+- **Inline vs. parenthesized `ann`.** § 3.9's rule ("colon migrates up for typed lets, parenthesized otherwise") covers the common case but has edge cases for e.g. `(ann (match ...) T)` where the match is an always-break kind. Resolvable in Phase 1 when a real renderer exists and hits these.
 - **Comment-syntax ambiguity with `#` in string literals.** The renderer emits comments verbatim from sidecar values. A comment containing a `\n` must break into multiple `# `-prefixed lines. Corner case: a comment literal itself containing `# ` renders as-is; ambiguity is resolved because comments are advisory and not re-parsed.
 - **L1 annotation placement inside very deep rendering.** When many `var` references appear on one line, the trailing comment can grow long. § 4.1 says "joined by commas"; an open item is whether to allow the comment to wrap onto a second `# …`-prefixed line. Deferred to Phase 1 renderer.
 
 ## 9. Exit criteria
 
-This document moves to Frozen alongside [sidecar-format.md](sidecar-format.md) and [canonical-text-format.md](canonical-text-format.md) at Stage 3 exit. At that point:
+Frozen 2026-04-22 alongside [sidecar-format.md](sidecar-format.md) (canonical-text-format.md was frozen earlier by [ADR 0013](../decisions/0013-canonical-text-format-frozen.md)). Per [ADR 0017](../decisions/0017-stage-3-frozen.md):
 
-- The per-kind L0 rendering rules in § 3 are locked.
+- The per-kind L0 rendering rules in § 3 are locked — in particular, the always-break kinds and the "inline iff children inline" decision procedure.
 - The L1 and L2 overlay rules in § 4 are locked.
-- The § 6 worked examples at L0 are regression fixtures. Future changes altering their output require an ADR.
+- The § 6 worked examples at L0 are regression fixtures. Future changes altering their output require a new ADR.
 
 Changes to the view scope (e.g., making the view round-trippable, swapping the surface form) require an ADR revising [ADR 0015](../decisions/0015-inspection-view-scope.md).

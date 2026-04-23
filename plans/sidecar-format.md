@@ -1,6 +1,6 @@
 # Display Metadata Sidecar Format (`.tacd`)
 
-**Status:** Draft (Stage 3 in progress; freezes at Stage 3 exit)
+**Status:** Frozen 2026-04-22 ([ADR 0017](../decisions/0017-stage-3-frozen.md))
 **Parent:** [phase-0-plan.md](phase-0-plan.md)
 **Decision:** [ADR 0014](../decisions/0014-sidecar-format.md)
 
@@ -91,15 +91,16 @@ If `field_order` is absent, authoring view renders in canonical order. Length mi
 
 ### 3.4 Children: `children`
 
-Array of child entries in canonical child order. A node with zero canonical children omits the key (or uses `[]`; readers treat both equivalently).
+Array of child entries in canonical child order.
 
 Child entries may be:
 
 - A full JSON object (metadata + optional `children`).
 - `null` — means "no metadata anywhere in this subtree." Equivalent to `{}`.
-- Omitted from the end of the array — trailing absent entries are treated as `null`. (Internal absent entries are forbidden; arrays must be dense up to their declared length.)
 
-The array's length, if present, must equal the AST node's canonical child count. Otherwise the sidecar is stale and the view layer degrades to synthetic names from that point down (§ 4).
+**Truncation rule.** Let *N* be the AST node's canonical child count. `children` may have length *K* with `0 ≤ K ≤ N`; entries at positions `K`, `K+1`, …, `N-1` are implicitly `null`. Absent `children` (the key is not present) is equivalent to `K = 0`, i.e., every canonical child entry defaults to `null`. A node with zero canonical children (`N = 0`) therefore always omits the key; a node whose subtree carries no metadata anywhere can also omit it. Internal absent entries inside an explicit array are forbidden — arrays must be dense up to their literal length.
+
+A `children` array with **more** entries than the AST has canonical children (`K > N`) is a structural mismatch and triggers the stale-sidecar path (§ 4).
 
 ### 3.5 Reserved keys
 
@@ -120,10 +121,10 @@ A sidecar is **stale** otherwise. View layers handle stale sidecars by:
 
 1. Emitting a diagnostic (file-level warning) naming the expected vs. actual hash.
 2. Walking the AST and sidecar trees in parallel. At every node:
-   - If the sidecar entry's shape matches (children count, etc.), use its metadata.
-   - If it doesn't match, use synthetic names (§ 5) for this node and all descendants.
+   - If the sidecar entry's shape is **compatible** with the AST node, use its metadata. Compatible means `children` length *K* satisfies `K ≤ N` (where *N* is the AST's canonical child count); shorter arrays extend with implicit `null` per § 3.4.
+   - If the sidecar entry has `K > N` (more children than the AST), or any metadata key that structurally contradicts the AST node (e.g., `binders` on a `lam`, or `binder` on a `rec`), use synthetic names (§ 5) for this node and all descendants.
 
-This means a one-character edit to a distant subtree doesn't wipe out the entire sidecar — the unaffected parts still render with their names.
+This means a one-character edit to a distant subtree doesn't wipe out the entire sidecar — the unaffected parts still render with their names. The `K ≤ N` direction is treated as compatible (not stale) because it's the shape the § 3.4 truncation rule emits in the fresh case; only over-count or key/kind mismatches signal that the sidecar was written against a different tree shape.
 
 ### Hash mismatch should be rare in practice
 
@@ -137,7 +138,7 @@ When a view layer cannot find a name in the sidecar, it generates one. The schem
 - **`let` binders** — same `v0`, `v1`, … sequence; `let` and `lam` share the binder numbering.
 - **`rec` bindings** — `B0`, `B1`, …, `B{N-1}` matching the canonical position (and therefore matching the DeBruijn index per [ADR 0007](../decisions/0007-debruijn-rec-indexing.md)).
 - **`module` bindings** — same `B0`…`B{N-1}` sequence.
-- **`pat-var` inside an arm** — `p0`, `p1`, … numbered in the textual order of `pat-var` appearances in the pattern (same order canonical-text-format.md § 4 uses to assign DeBruijn indices within the arm body).
+- **`pat-var` inside an arm** — `p0`, `p1`, … numbered in the textual order of `pat-var` appearances in the pattern. Note that [canonical-text-format.md § 4](canonical-text-format.md) assigns the *highest* DeBruijn index to the first-encountered `pat-var` and index 0 to the last; so synthetic `p0` corresponds to the highest DeBruijn index, `p_{K-1}` to index 0. The synthetic-name numbering tracks textual order (readable left-to-right in the pattern), not DeBruijn order.
 
 Synthetic names are advisory and for legibility only; they never flow into the canonical form.
 
@@ -228,10 +229,10 @@ Per [ADR 0007](../decisions/0007-debruijn-rec-indexing.md), `binders[0]` = `even
 Canonical:
 
 ```
-(record @fst (int 1) @mid (int 3) @snd (int 2))
+(record fst (int 1) mid (int 3) snd (int 2))
 ```
 
-(alphabetical: `fst, mid, snd`)
+(alphabetical: `fst, mid, snd`; record field-syms are bare in canonical form — the `@` prefix is authoring/inspection-view decoration only, per [canonical-text-format.md § 3](canonical-text-format.md) and [inspection-view.md § 3.11](inspection-view.md).)
 
 Authoring view that the user wrote: `{snd: 2, fst: 1, mid: 3}` (`snd, fst, mid`).
 
@@ -264,10 +265,10 @@ The `children` array has 2N = 6 entries, one per canonical (sym, val) child. The
 
 ## 11. Exit criteria for this doc
 
-This document moves to Frozen alongside `plans/inspection-view.md` at Stage 3 exit. At that point:
+Frozen 2026-04-22 alongside [inspection-view.md](inspection-view.md) per [ADR 0017](../decisions/0017-stage-3-frozen.md). At this freeze:
 
-- The schema in § 2–3 is locked.
+- The schema in § 2–3 is locked, including the § 3.4 `children` truncation rule and § 4 staleness rule.
 - The synthetic-name scheme in § 5 is locked.
-- At least one worked round-trip (canonical + sidecar → authoring view → canonical) is tested end-to-end by Stage 3 implementation work, if any.
+- The worked examples in § 6–8 are regression fixtures. No end-to-end round-trip test was executed at freeze time; Phase 1's first renderer will close that loop, and any divergence it surfaces is a Phase 0 spec bug per [CLAUDE.md](../CLAUDE.md) rather than new design work.
 
-Changes after Stage 3 freeze require an ADR per [CLAUDE.md](../CLAUDE.md) ground rules.
+Changes after this freeze require a new ADR per [CLAUDE.md](../CLAUDE.md) ground rules.

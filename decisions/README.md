@@ -32,3 +32,4 @@ Keep ADRs short. They record the decision, not the full analysis that led to it.
 - [0014 — Display metadata sidecar: JSON parallel tree](0014-sidecar-format.md)
 - [0015 — Inspection view scope: display-only pseudo-code with progressive annotations](0015-inspection-view-scope.md)
 - [0016 — Rust AST enum: spec-conformant, in-place in the canonicalizer](0016-rust-ast-enum-location.md)
+- [0017 — Stage 3 view-system spec frozen](0017-stage-3-frozen.md)
