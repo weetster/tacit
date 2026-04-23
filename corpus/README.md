@@ -8,7 +8,12 @@ executable test cases, against which Tacit-Lite is graded in Phase 3.
 The idiom rules for reference solutions are pinned in
 [ADR 0019](../decisions/0019-corpus-idiom-rules.md). The Python reference is
 the sole token-count baseline for Phase 3's "at least 30% fewer tokens than
-equivalent Python" exit criterion.
+equivalent Python" exit criterion. [ADR 0021](../decisions/0021-corpus-stdlib-dominance-reporting.md)
+adds a per-task `stdlib_dominated` tag (stored in
+[stdlib-dominance.toml](stdlib-dominance.toml)) so `corpus-tokens` can
+report the full, stdlib-dominated, and non-stdlib-dominated aggregates
+separately — the 30% target is evaluated against the full *and*
+non-stdlib-dominated aggregates.
 
 ## Status
 
@@ -135,7 +140,12 @@ Stage 4 freeze.
 
 `corpus-tokens` measures `reference.py` and `reference.rs` with tiktoken's
 `o200k_base` encoding per [ADR 0001](../decisions/0001-target-tokenizer.md).
-Aggregates are what the Phase 3 exit criterion compares against.
+Three aggregates are reported per [ADR 0021](../decisions/0021-corpus-stdlib-dominance-reporting.md):
+full, stdlib-dominated, and non-stdlib-dominated. The full and
+non-stdlib-dominated aggregates gate Phase 3; the stdlib-dominated
+aggregate is reported but not gated. Every task in scope must have an
+entry in [stdlib-dominance.toml](stdlib-dominance.toml) or the command
+errors.
 
 `corpus-verify-sealed` is the load-bearing integrity check per
 [ADR 0020](../decisions/0020-sealing-held-out-in-repo.md). It walks

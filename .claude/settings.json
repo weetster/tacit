@@ -1,0 +1,23 @@
+{
+  "$comment": "Project-level Claude Code settings for the Tacit repo. Denies around corpus/sealed/ are one layer of the held-out-task sealing guardrails specified in decisions/0020-sealing-held-out-in-repo.md; the load-bearing mechanism is the CI check against corpus/sealed-hashes.txt. Do not relax these denies without following the ADR's amendment process.",
+  "permissions": {
+    "deny": [
+      "Read(./corpus/sealed/**)",
+      "Edit(./corpus/sealed/**)",
+      "Write(./corpus/sealed/**)",
+      "Bash(cat corpus/sealed/**)",
+      "Bash(cat ./corpus/sealed/**)",
+      "Bash(less corpus/sealed/**)",
+      "Bash(less ./corpus/sealed/**)",
+      "Bash(head corpus/sealed/**)",
+      "Bash(head ./corpus/sealed/**)",
+      "Bash(tail corpus/sealed/**)",
+      "Bash(tail ./corpus/sealed/**)",
+      "Bash(bat corpus/sealed/**)",
+      "Bash(bat ./corpus/sealed/**)",
+      "Bash(grep * corpus/sealed/**)",
+      "Bash(rg * corpus/sealed/**)",
+      "Bash(find corpus/sealed*)"
+    ]
+  }
+}

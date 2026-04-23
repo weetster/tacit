@@ -1,0 +1,26 @@
+# Stdlib-dominance tags per ADR 0021.
+#
+# A task is `stdlib_dominated = true` iff rewriting the Python reference
+# without any non-I/O stdlib import would add >= 5 non-blank, non-import
+# lines to the solution body. See
+# decisions/0021-corpus-stdlib-dominance-reporting.md for the full rule.
+#
+# Keys are task paths relative to the category root, formatted as
+# "<category>/<NNN-slug>". Every implemented task in `tasks/` and
+# `sealed/` must have an entry here; `corpus-tokens` errors otherwise.
+#
+# Sealed entries are written by the sealed-task author at seal time; the
+# two already-sealed tasks (002, 022) are tagged from their MANIFEST.md
+# descriptions pending verification by a reviewer with sealed access.
+
+[stdlib_dominated]
+"arithmetic/001-sum-to-n" = false
+"arithmetic/002-fibonacci" = false
+"strings/011-reverse-string" = false
+"strings/012-count-vowels" = false
+"collections/021-unique-in-order" = false
+"collections/022-running-sum" = false
+"algorithms/031-binary-search" = true
+"algorithms/032-fizzbuzz" = false
+"io/051-line-count" = false
+"io/052-sum-numbers" = false
