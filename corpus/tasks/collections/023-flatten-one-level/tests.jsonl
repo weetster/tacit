@@ -1,0 +1,7 @@
+{"name": "three-lines", "stdin": "1 2 3\n4 5\n6\n", "stdout": "1 2 3 4 5 6\n"}
+{"name": "empty-inner", "stdin": "1 2\n\n3\n", "stdout": "1 2 3\n"}
+{"name": "single-line", "stdin": "7 8 9\n", "stdout": "7 8 9\n"}
+{"name": "all-empty", "stdin": "\n\n\n", "stdout": "\n"}
+{"name": "empty-input", "stdin": "", "stdout": "\n"}
+{"name": "negatives", "stdin": "-1 -2\n3 -4 5\n", "stdout": "-1 -2 3 -4 5\n"}
+{"name": "single-per-line", "stdin": "1\n2\n3\n4\n5\n", "stdout": "1 2 3 4 5\n"}

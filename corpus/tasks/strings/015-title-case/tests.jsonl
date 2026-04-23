@@ -1,0 +1,8 @@
+{"name": "basic", "stdin": "hello world\n", "stdout": "Hello World\n"}
+{"name": "mixed-case", "stdin": "THE QUICK brown fox\n", "stdout": "The Quick Brown Fox\n"}
+{"name": "with-digits", "stdin": "a1b2 c3d4\n", "stdout": "A1b2 C3d4\n"}
+{"name": "single-word", "stdin": "programming\n", "stdout": "Programming\n"}
+{"name": "all-upper", "stdin": "HELLO\n", "stdout": "Hello\n"}
+{"name": "empty", "stdin": "\n", "stdout": "\n"}
+{"name": "leading-spaces", "stdin": "  hi\n", "stdout": "  Hi\n"}
+{"name": "punctuation", "stdin": "!hello -world\n", "stdout": "!hello -world\n"}

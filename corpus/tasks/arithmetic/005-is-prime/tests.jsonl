@@ -1,0 +1,10 @@
+{"name": "zero", "stdin": "0\n", "stdout": "no\n"}
+{"name": "one", "stdin": "1\n", "stdout": "no\n"}
+{"name": "two", "stdin": "2\n", "stdout": "yes\n"}
+{"name": "three", "stdin": "3\n", "stdout": "yes\n"}
+{"name": "four", "stdin": "4\n", "stdout": "no\n"}
+{"name": "seven", "stdin": "7\n", "stdout": "yes\n"}
+{"name": "nine", "stdin": "9\n", "stdout": "no\n"}
+{"name": "twenty-five", "stdin": "25\n", "stdout": "no\n"}
+{"name": "large-prime", "stdin": "999999937\n", "stdout": "yes\n"}
+{"name": "large-composite", "stdin": "999999999\n", "stdout": "no\n"}
