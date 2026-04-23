@@ -1,7 +1,7 @@
 # Corpus Task Manifest
 
 Task index for the Phase 3 evaluation corpus. Target: ~60 tasks at Stage 4
-freeze. Current count (implemented): **10**.
+freeze. Current count (implemented): **15**.
 
 - `status: done`     — task.md, tests.jsonl, reference.py, reference.rs all
   present and passing the harness.
@@ -20,7 +20,7 @@ freeze. Current count (implemented): **10**.
 |-----|--------------|---------|-----|------------------------------------|
 | 001 | sum-to-n     | done    | O   | Closed-form or loop both idiomatic |
 | 002 | fibonacci    | done    | **H** | Iterative pair-update              |
-| 003 | factorial    | planned | O   |                                    |
+| 003 | factorial    | done    | O   | Loop product; N ≤ 20 (i64 range)   |
 | 004 | gcd          | planned | O   | Euclidean                          |
 | 005 | is-prime     | planned | O   | Trial division up to sqrt(n)       |
 | 006 | digit-sum    | planned | O   |                                    |
@@ -35,7 +35,7 @@ freeze. Current count (implemented): **10**.
 |-----|-------------------|---------|-----|--------------------------------------|
 | 011 | reverse-string    | done    | O   | Reverse by Unicode code point        |
 | 012 | count-vowels      | done    | O   | ASCII aeiou/AEIOU                    |
-| 013 | is-palindrome     | planned | O   | Case-sensitive, whitespace-sensitive |
+| 013 | is-palindrome     | done    | O   | Case-sensitive, whitespace-sensitive |
 | 014 | caesar-cipher     | planned | **H** | Shift ASCII letters by K             |
 | 015 | title-case        | planned | O   | Capitalize each word                 |
 | 016 | longest-word      | planned | O   | Ties: first occurrence               |
@@ -52,7 +52,7 @@ freeze. Current count (implemented): **10**.
 | 022 | running-sum       | done    | **H** | Prefix sums                             |
 | 023 | flatten-one-level | planned | O   | Input: lines; each line = inner list    |
 | 024 | zip-lists         | planned | **H** | Two lines; truncate to shorter          |
-| 025 | partition-eo      | planned | O   | Even first line, odd second line        |
+| 025 | partition-eo      | done    | O   | Even first line, odd second line (by value) |
 | 026 | group-counts      | planned | O   | `word:count` output, sorted by word     |
 | 027 | rotate-left       | planned | O   | Rotate K positions                      |
 | 028 | chunks            | planned | O   | Fixed-size chunks, last may be shorter  |
@@ -65,7 +65,7 @@ freeze. Current count (implemented): **10**.
 |-----|-------------------|---------|-----|--------------------------------------|
 | 031 | binary-search     | done    | O   | Distinct sorted input; -1 if absent  |
 | 032 | fizzbuzz          | done    | O   | 1..N                                 |
-| 033 | two-sum           | planned | O   | Return sorted indices or -1          |
+| 033 | two-sum           | done    | O   | Hashmap pass; unique-solution inputs |
 | 034 | balanced-parens   | planned | **H** | `()[]{}`                             |
 | 035 | bubble-sort       | planned | O   | Ascending                            |
 | 036 | quicksort         | planned | O   | Deterministic pivot (middle)         |
@@ -92,7 +92,7 @@ freeze. Current count (implemented): **10**.
 | 052 | sum-numbers       | done    | O   | One integer per line                   |
 | 053 | tail-n-lines      | planned | **H** | First line = N; then lines             |
 | 054 | grep-substring    | planned | O   | First line = pattern                   |
-| 055 | sort-lines        | planned | O   | Byte-lexicographic                     |
+| 055 | sort-lines        | done    | O   | Byte-lexicographic                     |
 | 056 | unique-lines      | planned | O   | Preserve first-seen order              |
 | 057 | word-count        | planned | O   | Whitespace-delimited tokens            |
 | 058 | csv-sum-column    | planned | **H** | First line = column idx; comma-sep     |
@@ -101,9 +101,12 @@ freeze. Current count (implemented): **10**.
 
 ## Summary
 
-- **Implemented**: 10 of ~60 (17%)
+- **Implemented**: 15 of ~60 (25%) — each category now has 3 done
+  (arithmetic 001/002/003, strings 011/012/013, collections 021/022/025,
+  algorithms 031/032/033, I/O 051/052/055).
 - **Held-out marked**: 12 of 60 (20%) — 2 currently implemented (002, 022)
 
-Next implementation batch (suggested): fill out each category to 4 done
-tasks so every reviewer sees representative coverage per category before
-committing to idiom decisions for the remainder.
+Next implementation batch (suggested): one more open task per category
+to reach 4 done each (e.g., 005 is-prime, 015 title-case, 023 flatten-one-level,
+035 bubble-sort, 057 word-count) — that is the coverage point at which
+idiom decisions for the remainder become well-informed.

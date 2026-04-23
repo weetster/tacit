@@ -1,0 +1,7 @@
+{"name": "basic", "stdin": "c\nb\na\n", "stdout": "a\nb\nc\n"}
+{"name": "empty", "stdin": "", "stdout": ""}
+{"name": "single", "stdin": "x\n", "stdout": "x\n"}
+{"name": "words", "stdin": "banana\napple\ncherry\n", "stdout": "apple\nbanana\ncherry\n"}
+{"name": "case-sensitive", "stdin": "a\nB\nb\nA\n", "stdout": "A\nB\na\nb\n"}
+{"name": "already-sorted", "stdin": "1\n2\n3\n", "stdout": "1\n2\n3\n"}
+{"name": "duplicates", "stdin": "b\na\nb\na\n", "stdout": "a\na\nb\nb\n"}

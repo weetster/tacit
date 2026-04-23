@@ -1,0 +1,8 @@
+{"name": "racecar", "stdin": "racecar\n", "stdout": "yes\n"}
+{"name": "hello", "stdin": "hello\n", "stdout": "no\n"}
+{"name": "single", "stdin": "a\n", "stdout": "yes\n"}
+{"name": "empty", "stdin": "\n", "stdout": "yes\n"}
+{"name": "abba", "stdin": "abba\n", "stdout": "yes\n"}
+{"name": "case-sensitive", "stdin": "Aa\n", "stdout": "no\n"}
+{"name": "whitespace-sensitive", "stdin": "a b\n", "stdout": "no\n"}
+{"name": "unicode", "stdin": "éé\n", "stdout": "yes\n"}

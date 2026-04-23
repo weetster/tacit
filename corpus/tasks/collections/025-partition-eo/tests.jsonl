@@ -1,0 +1,6 @@
+{"name": "mixed", "stdin": "1 2 3 4 5\n", "stdout": "2 4\n1 3 5\n"}
+{"name": "all-evens", "stdin": "2 4 6\n", "stdout": "2 4 6\n\n"}
+{"name": "all-odds", "stdin": "1 3 5\n", "stdout": "\n1 3 5\n"}
+{"name": "empty", "stdin": "\n", "stdout": "\n\n"}
+{"name": "negatives", "stdin": "-1 -2 -3 -4\n", "stdout": "-2 -4\n-1 -3\n"}
+{"name": "with-zero", "stdin": "0 1 2\n", "stdout": "0 2\n1\n"}

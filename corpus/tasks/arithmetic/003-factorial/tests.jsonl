@@ -1,0 +1,5 @@
+{"name": "zero", "stdin": "0\n", "stdout": "1\n"}
+{"name": "one", "stdin": "1\n", "stdout": "1\n"}
+{"name": "five", "stdin": "5\n", "stdout": "120\n"}
+{"name": "ten", "stdin": "10\n", "stdout": "3628800\n"}
+{"name": "twenty", "stdin": "20\n", "stdout": "2432902008176640000\n"}

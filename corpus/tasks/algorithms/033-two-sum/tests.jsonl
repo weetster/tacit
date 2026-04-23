@@ -1,0 +1,7 @@
+{"name": "basic", "stdin": "9\n2 7 11 15\n", "stdout": "0 1\n"}
+{"name": "middle-pair", "stdin": "6\n3 2 4\n", "stdout": "1 2\n"}
+{"name": "no-solution", "stdin": "100\n1 2 3\n", "stdout": "-1\n"}
+{"name": "negatives", "stdin": "0\n-1 1\n", "stdout": "0 1\n"}
+{"name": "empty", "stdin": "5\n\n", "stdout": "-1\n"}
+{"name": "single", "stdin": "5\n5\n", "stdout": "-1\n"}
+{"name": "last-pair", "stdin": "7\n1 2 3 4\n", "stdout": "2 3\n"}
