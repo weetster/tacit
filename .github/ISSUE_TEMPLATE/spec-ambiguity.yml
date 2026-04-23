@@ -1,0 +1,35 @@
+name: Spec ambiguity
+description: The spec or ADR is underspecified, self-contradictory, or leads two readers to different conclusions.
+title: "[spec] "
+labels: ["spec-bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Per [CLAUDE.md](../../CLAUDE.md) ground rules, spec ambiguity discovered after a stage freeze is treated as a Phase 0 bug, not scope creep. File this when the spec told you to do something but you cannot tell what, or when two plausible readings conflict.
+  - type: input
+    id: doc
+    attributes:
+      label: Document and section
+      description: e.g. `plans/sidecar-format.md § 3.4`, `decisions/0007-debruijn-rec-indexing.md § Decision`.
+    validations:
+      required: true
+  - type: textarea
+    id: ambiguity
+    attributes:
+      label: What's ambiguous
+      description: Quote the problematic passage and describe the conflicting readings.
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact
+      description: What behavior or test fixture is affected? Is this blocking work?
+    validations:
+      required: true
+  - type: textarea
+    id: suggested
+    attributes:
+      label: Suggested resolution
+      description: Optional. What the spec should say, or which ADR would own the clarification.

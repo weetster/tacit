@@ -1,0 +1,45 @@
+name: ADR proposal
+description: Propose a new decision for the decision log.
+title: "[adr] "
+labels: ["adr-proposal"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this to surface a design choice that needs a decision recorded before code or spec text lands. The issue captures the debate; once resolved, the decision becomes a new ADR in `decisions/`. See existing ADRs for the format.
+  - type: textarea
+    id: question
+    attributes:
+      label: The question
+      description: One sentence. What decision needs to be made?
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Why this is coming up now. Link related ADRs, spec sections, or open items.
+    validations:
+      required: true
+  - type: textarea
+    id: options
+    attributes:
+      label: Options considered
+      description: List candidates. For each, note the upside, downside, and what it foreclosures.
+    validations:
+      required: true
+  - type: textarea
+    id: recommendation
+    attributes:
+      label: Recommendation
+      description: Optional. Which option you lean toward, and why.
+  - type: dropdown
+    id: phase
+    attributes:
+      label: Target phase
+      options:
+        - Phase 0 (Stage 4/5)
+        - Phase 1+
+        - Unclear
+    validations:
+      required: true

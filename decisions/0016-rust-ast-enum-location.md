@@ -7,32 +7,7 @@
 
 ## Context
 
-[phase-0-plan.md § Stage 3](../plans/phase-0-plan.md) lists "formal grammar for Tacit-Lite AST as a Rust enum hierarchy" as a deliverable. A Rust enum matching [canonical-text-format.md § 2](../plans/canonical-text-format.md) already exists inside the Rust canonicalizer ([impls/rs-canonicalizer/src/ast.rs](../impls/rs-canonicalizer/src/ast.rs)). It is ~40 lines, one variant per canonical tag:
-
-```rust
-pub enum Node {
-    Lam { body: Box<Node> },
-    App { fn_: Box<Node>, arg: Box<Node> },
-    Let { rhs: Box<Node>, body: Box<Node> },
-    Rec { bindings: Vec<Node>, body: Box<Node> },
-    Module { bindings: Vec<Node> },
-    If { cond: Box<Node>, then: Box<Node>, else_: Box<Node> },
-    Match { scrutinee: Box<Node>, arms: Vec<Node> },
-    Arm { pattern: Box<Node>, body: Box<Node> },
-    Record { fields: Vec<(String, Node)> },
-    Proj { record: Box<Node>, field: String },
-    Ctor { name: String, args: Vec<Node> },
-    Ann { expr: Box<Node>, type_: Box<Node> },
-    Var { index: u64 },
-    Int { value: String },
-    Str { value: String },
-    Sym { name: String },
-    Hole { diag_id: String, payload: Box<Node> },
-    PatWild,
-    PatVar,
-    PatCtor { name: String, sub_patterns: Vec<Node> },
-}
-```
+[phase-0-plan.md § Stage 3](../plans/phase-0-plan.md) lists "formal grammar for Tacit-Lite AST as a Rust enum hierarchy" as a deliverable. A Rust enum matching [canonical-text-format.md § 2](../plans/canonical-text-format.md) already exists inside the Rust canonicalizer at [impls/rs-canonicalizer/src/ast.rs](../impls/rs-canonicalizer/src/ast.rs). It has one variant per canonical tag — `Lam`, `App`, `Let`, `Rec`, `Module`, `If`, `Match`, `Arm`, `Record`, `Proj`, `Ctor`, `Ann`, `Var`, `Int`, `Str`, `Sym`, `Hole`, `PatWild`, `PatVar`, `PatCtor` — and the variant fields carry the child types from the spec's § 2 arity table (e.g. `Lam { body: Box<Node> }`, `App { fn_: Box<Node>, arg: Box<Node> }`, and so on). The source file is ~90 lines after `cargo fmt` expansion; readers wanting the exact variant shapes should click through to the file rather than rely on a snippet embedded here.
 
 The enum was written against [canonical-text-format.md § 2](../plans/canonical-text-format.md), not the other way around, so it is a *conforming transcription* of the frozen spec — not a parallel authority. [ADR 0013](0013-canonical-text-format-frozen.md)'s freeze covers the underlying grammar; this ADR concerns only the *packaging* of the enum that encodes it.
 

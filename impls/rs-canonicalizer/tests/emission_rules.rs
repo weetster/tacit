@@ -39,10 +39,30 @@ fn s3_nul_uses_single_zero() {
 
 #[test]
 fn s3_shortest_lowercase_hex() {
-    assert_eq!(emit(&Node::Str { value: "\u{7f}".into() }), b"(str \"\\u{7f}\")");
-    assert_eq!(emit(&Node::Str { value: "\u{ffff}".into() }), b"(str \"\\u{ffff}\")");
-    assert_eq!(emit(&Node::Str { value: "\u{1f600}".into() }), b"(str \"\\u{1f600}\")");
-    assert_eq!(emit(&Node::Str { value: "\u{10ffff}".into() }), b"(str \"\\u{10ffff}\")");
+    assert_eq!(
+        emit(&Node::Str {
+            value: "\u{7f}".into()
+        }),
+        b"(str \"\\u{7f}\")"
+    );
+    assert_eq!(
+        emit(&Node::Str {
+            value: "\u{ffff}".into()
+        }),
+        b"(str \"\\u{ffff}\")"
+    );
+    assert_eq!(
+        emit(&Node::Str {
+            value: "\u{1f600}".into()
+        }),
+        b"(str \"\\u{1f600}\")"
+    );
+    assert_eq!(
+        emit(&Node::Str {
+            value: "\u{10ffff}".into()
+        }),
+        b"(str \"\\u{10ffff}\")"
+    );
 }
 
 #[test]

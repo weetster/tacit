@@ -1,0 +1,51 @@
+name: Bug report
+description: A canonicalizer, tool, or build process is behaving incorrectly.
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for concrete misbehavior: a canonicalizer emits wrong bytes, the two impls disagree, tests fail unexpectedly, a lexer rejects valid input, etc. For spec ambiguity (the spec didn't tell you what to do), use the spec-ambiguity template instead.
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - impls/py-canonicalizer
+        - impls/rs-canonicalizer
+        - tools/q1-scoring
+        - CI
+        - Other (describe below)
+    validations:
+      required: true
+  - type: textarea
+    id: input
+    attributes:
+      label: Minimal input
+      description: The exact canonical or authoring-view bytes that trigger the bug. Quote with triple backticks.
+      placeholder: |
+        ```
+        (lam (var 0))
+        ```
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What the spec or ADR says should happen, with a reference.
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What the tool did instead. Include error messages verbatim.
+    validations:
+      required: true
+  - type: input
+    id: commit
+    attributes:
+      label: Commit SHA
+      description: The commit you reproduced against.

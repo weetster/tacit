@@ -17,7 +17,13 @@ use tacit_canon::{emit, hash_bytes, hash_node, parse};
 fn vectors_dir() -> PathBuf {
     // CARGO_MANIFEST_DIR = impls/rs-canonicalizer
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    manifest.parent().unwrap().parent().unwrap().join("plans").join("test-vectors")
+    manifest
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("plans")
+        .join("test-vectors")
 }
 
 fn collect(ext: &str) -> Vec<PathBuf> {
@@ -39,7 +45,11 @@ fn read(name: &str) -> Vec<u8> {
 #[test]
 fn canonical_roundtrip_all() {
     let files = collect("canonical");
-    assert!(!files.is_empty(), "no *.canonical fixtures under {:?}", vectors_dir());
+    assert!(
+        !files.is_empty(),
+        "no *.canonical fixtures under {:?}",
+        vectors_dir()
+    );
     let mut failed = Vec::new();
     for path in &files {
         let data = fs::read(path).unwrap();
@@ -75,7 +85,11 @@ fn canonical_roundtrip_all() {
 #[test]
 fn forbidden_rejected_all() {
     let files = collect("forbidden");
-    assert!(!files.is_empty(), "no *.forbidden fixtures under {:?}", vectors_dir());
+    assert!(
+        !files.is_empty(),
+        "no *.forbidden fixtures under {:?}",
+        vectors_dir()
+    );
     for path in files {
         let data = fs::read(&path).unwrap();
         assert!(
@@ -89,7 +103,11 @@ fn forbidden_rejected_all() {
 #[test]
 fn reject_bytes_all() {
     let files = collect("reject");
-    assert!(!files.is_empty(), "no *.reject fixtures under {:?}", vectors_dir());
+    assert!(
+        !files.is_empty(),
+        "no *.reject fixtures under {:?}",
+        vectors_dir()
+    );
     for path in files {
         let data = fs::read(&path).unwrap();
         assert!(
@@ -129,7 +147,10 @@ fn v8_hole_hash_stable_across_positions() {
     // V8's claim: the standalone hole renders identically wherever it appears.
     let needle = &standalone[..];
     let found = embedded.windows(needle.len()).any(|w| w == needle);
-    assert!(found, "standalone hole bytes not contained in embedded form");
+    assert!(
+        found,
+        "standalone hole bytes not contained in embedded form"
+    );
     // The hole's hash is stable regardless of enclosing context.
     let node = parse(&standalone).unwrap();
     assert_eq!(hash_node(&node), hash_bytes(&standalone));

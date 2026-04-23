@@ -70,10 +70,16 @@ Frozen upfront so Phase 3 does not grade its own homework.
 - Executable test cases (stdin/stdout contracts)
 - Seal ~20% as held-out; store hashes of held-out set in a separate repo to enforce
 
-### Stage 5: Repo scaffolding (parallel, low-effort)
+### Stage 5: Repo scaffolding (parallel, low-effort) — **Frozen 2026-04-23** ([ADR 0018](../decisions/0018-stage-5-frozen.md))
 
-- Cargo workspace layout, CI (fmt / clippy / test), issue templates
-- Decision log (`decisions/NNNN-title.md` ADR format)
+Closed 2026-04-23 after Stage 3's freeze and ahead of the longer Stage 4 corpus work. Deliverables as closed:
+
+- **CI** at [`.github/workflows/ci.yml`](../.github/workflows/ci.yml): two jobs on `ubuntu-latest`, Python (`uv run pytest`) and Rust (`cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`). Cross-impl byte-equivalence is enforced transitively via the shared fixture directory [`plans/test-vectors/`](test-vectors/).
+- **Issue templates** at [`.github/ISSUE_TEMPLATE/`](../.github/ISSUE_TEMPLATE/): bug, spec-ambiguity, and ADR-proposal forms plus a `config.yml` linking the decision log.
+- **Decision log** at [`decisions/`](../decisions/) with README-documented ADR format; established in Stage 1 and continuously grown, indexing 18 ADRs at freeze.
+- **Cargo workspace layout** — explicitly deferred to Phase 1 per [ADR 0016](../decisions/0016-rust-ast-enum-location.md). The Stage 5 plan language naming it is superseded; see ADR 0018 for the reasoning.
+
+Minor supporting changes recorded in ADR 0018: one `cargo fmt` pass across the Rust canonicalizer's source + tests, one clippy fix (`args.len() % 2 != 0` → `!args.len().is_multiple_of(2)`, pinning MSRV at Rust 1.93+), and a rewrite of [ADR 0016](../decisions/0016-rust-ast-enum-location.md)'s inlined enum snippet as a textual description so rustfmt drift can no longer stale it.
 
 ## Exit criteria
 

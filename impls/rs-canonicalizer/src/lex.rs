@@ -80,7 +80,10 @@ pub fn lex(data: &[u8]) -> Result<Vec<Token>, LexError> {
                 i = ni;
             }
             _ => {
-                return Err(LexError(format!("unexpected byte 0x{:02x} at offset {}", b, i)));
+                return Err(LexError(format!(
+                    "unexpected byte 0x{:02x} at offset {}",
+                    b, i
+                )));
             }
         }
     }
@@ -98,7 +101,10 @@ fn lex_int(data: &[u8], start: usize) -> Result<(String, usize), LexError> {
     if data[i] == 0x30 {
         i += 1;
         if i < data.len() && (0x30..=0x39).contains(&data[i]) {
-            return Err(LexError(format!("leading zeros in integer at offset {}", start)));
+            return Err(LexError(format!(
+                "leading zeros in integer at offset {}",
+                start
+            )));
         }
     } else {
         while i < data.len() && (0x30..=0x39).contains(&data[i]) {
@@ -183,27 +189,41 @@ fn lex_escape(data: &[u8], i: usize) -> Result<(char, usize), LexError> {
             }
             let digits = &data[hex_start..j];
             if digits.is_empty() || digits.len() > 6 {
-                return Err(LexError(format!("\\u{{HEX}} must be 1-6 hex digits at offset {}", i)));
+                return Err(LexError(format!(
+                    "\\u{{HEX}} must be 1-6 hex digits at offset {}",
+                    i
+                )));
             }
             for &d in digits {
                 if !is_hex_lower(d) {
-                    return Err(LexError(format!("\\u{{HEX}} requires lowercase hex at offset {}", i)));
+                    return Err(LexError(format!(
+                        "\\u{{HEX}} requires lowercase hex at offset {}",
+                        i
+                    )));
                 }
             }
             let text = std::str::from_utf8(digits).unwrap();
             let cp = u32::from_str_radix(text, 16).unwrap();
             if (0xD800..=0xDFFF).contains(&cp) {
-                return Err(LexError(format!("surrogate code point U+{:04X} (ADR 0012)", cp)));
+                return Err(LexError(format!(
+                    "surrogate code point U+{:04X} (ADR 0012)",
+                    cp
+                )));
             }
             if cp > 0x10FFFF {
-                return Err(LexError(format!("code point out of range U+{:X} (ADR 0012)", cp)));
+                return Err(LexError(format!(
+                    "code point out of range U+{:X} (ADR 0012)",
+                    cp
+                )));
             }
-            let ch = char::from_u32(cp).ok_or_else(|| {
-                LexError(format!("invalid code point U+{:X}", cp))
-            })?;
+            let ch = char::from_u32(cp)
+                .ok_or_else(|| LexError(format!("invalid code point U+{:X}", cp)))?;
             Ok((ch, j + 1))
         }
-        _ => Err(LexError(format!("unknown escape \\{} at offset {}", kind as char, i))),
+        _ => Err(LexError(format!(
+            "unknown escape \\{} at offset {}",
+            kind as char, i
+        ))),
     }
 }
 
@@ -216,17 +236,28 @@ fn lex_utf8(data: &[u8], i: usize) -> Result<(char, usize), LexError> {
     } else if b >> 3 == 0b11110 {
         4
     } else {
-        return Err(LexError(format!("invalid UTF-8 lead byte 0x{:02x} at offset {}", b, i)));
+        return Err(LexError(format!(
+            "invalid UTF-8 lead byte 0x{:02x} at offset {}",
+            b, i
+        )));
     };
     if i + width > data.len() {
-        return Err(LexError(format!("truncated UTF-8 sequence at offset {}", i)));
+        return Err(LexError(format!(
+            "truncated UTF-8 sequence at offset {}",
+            i
+        )));
     }
     let s = std::str::from_utf8(&data[i..i + width])
         .map_err(|e| LexError(format!("invalid UTF-8 at offset {}: {}", i, e)))?;
     let mut chars = s.chars();
-    let ch = chars.next().ok_or_else(|| LexError(format!("empty UTF-8 at offset {}", i)))?;
+    let ch = chars
+        .next()
+        .ok_or_else(|| LexError(format!("empty UTF-8 at offset {}", i)))?;
     if chars.next().is_some() {
-        return Err(LexError(format!("unexpected multi-scalar UTF-8 at offset {}", i)));
+        return Err(LexError(format!(
+            "unexpected multi-scalar UTF-8 at offset {}",
+            i
+        )));
     }
     let cp = ch as u32;
     if (0xD800..=0xDFFF).contains(&cp) {

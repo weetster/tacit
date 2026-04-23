@@ -102,7 +102,12 @@ fn build(item: &SItem) -> Result<Node, ParseError> {
 
 fn check_arity(tag: &str, args: &[SItem], expected: usize) -> Result<(), ParseError> {
     if args.len() != expected {
-        err(format!("{} expects arity {}, got {}", tag, expected, args.len()))
+        err(format!(
+            "{} expects arity {}, got {}",
+            tag,
+            expected,
+            args.len()
+        ))
     } else {
         Ok(())
     }
@@ -136,7 +141,9 @@ fn build_form(tag: &str, args: &[SItem]) -> Result<Node, ParseError> {
     match tag {
         "lam" => {
             check_arity(tag, args, 1)?;
-            Ok(Node::Lam { body: Box::new(build(&args[0])?) })
+            Ok(Node::Lam {
+                body: Box::new(build(&args[0])?),
+            })
         }
         "app" => {
             check_arity(tag, args, 2)?;
@@ -161,7 +168,10 @@ fn build_form(tag: &str, args: &[SItem]) -> Result<Node, ParseError> {
                 bindings.push(build(a)?);
             }
             let body = build(&args[args.len() - 1])?;
-            Ok(Node::Rec { bindings, body: Box::new(body) })
+            Ok(Node::Rec {
+                bindings,
+                body: Box::new(body),
+            })
         }
         "module" => {
             if args.is_empty() {
@@ -194,7 +204,10 @@ fn build_form(tag: &str, args: &[SItem]) -> Result<Node, ParseError> {
                 }
                 arms.push(arm);
             }
-            Ok(Node::Match { scrutinee: Box::new(scrutinee), arms })
+            Ok(Node::Match {
+                scrutinee: Box::new(scrutinee),
+                arms,
+            })
         }
         "arm" => {
             check_arity(tag, args, 2)?;
@@ -204,7 +217,7 @@ fn build_form(tag: &str, args: &[SItem]) -> Result<Node, ParseError> {
             })
         }
         "record" => {
-            if args.len() % 2 != 0 {
+            if !args.len().is_multiple_of(2) {
                 return err("record requires an even number of children (sym/val pairs)");
             }
             let mut fields = Vec::with_capacity(args.len() / 2);
@@ -248,9 +261,9 @@ fn build_form(tag: &str, args: &[SItem]) -> Result<Node, ParseError> {
             if text.starts_with('-') {
                 return err("var index must be >= 0");
             }
-            let idx: u64 = text
-                .parse()
-                .map_err(|e: std::num::ParseIntError| ParseError::Structural(format!("invalid var index: {}", e)))?;
+            let idx: u64 = text.parse().map_err(|e: std::num::ParseIntError| {
+                ParseError::Structural(format!("invalid var index: {}", e))
+            })?;
             Ok(Node::Var { index: idx })
         }
         "int" => {
@@ -260,11 +273,15 @@ fn build_form(tag: &str, args: &[SItem]) -> Result<Node, ParseError> {
         }
         "str" => {
             check_arity(tag, args, 1)?;
-            Ok(Node::Str { value: bare_str(&args[0], "str literal")? })
+            Ok(Node::Str {
+                value: bare_str(&args[0], "str literal")?,
+            })
         }
         "sym" => {
             check_arity(tag, args, 1)?;
-            Ok(Node::Sym { name: bare_sym(&args[0], "sym atom")? })
+            Ok(Node::Sym {
+                name: bare_sym(&args[0], "sym atom")?,
+            })
         }
         "hole" => {
             check_arity(tag, args, 2)?;
@@ -273,7 +290,10 @@ fn build_form(tag: &str, args: &[SItem]) -> Result<Node, ParseError> {
             if !matches!(payload, Node::Str { .. }) {
                 return err("hole payload must be a (str ...) node");
             }
-            Ok(Node::Hole { diag_id: diag, payload: Box::new(payload) })
+            Ok(Node::Hole {
+                diag_id: diag,
+                payload: Box::new(payload),
+            })
         }
         "pat-ctor" => {
             if args.is_empty() {
@@ -284,7 +304,10 @@ fn build_form(tag: &str, args: &[SItem]) -> Result<Node, ParseError> {
             for a in &args[1..] {
                 sub.push(build(a)?);
             }
-            Ok(Node::PatCtor { name, sub_patterns: sub })
+            Ok(Node::PatCtor {
+                name,
+                sub_patterns: sub,
+            })
         }
         _ => err(format!("unknown tag {:?}", tag)),
     }
