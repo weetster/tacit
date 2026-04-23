@@ -1,0 +1,8 @@
+{"name": "basic", "stdin": "apple\nbanana\napple\ncherry\nbanana\n", "stdout": "apple\nbanana\ncherry\n"}
+{"name": "empty", "stdin": "", "stdout": ""}
+{"name": "no-duplicates", "stdin": "a\nb\nc\n", "stdout": "a\nb\nc\n"}
+{"name": "all-same", "stdin": "x\nx\nx\n", "stdout": "x\n"}
+{"name": "blank-lines", "stdin": "a\n\nb\n\nc\n", "stdout": "a\n\nb\nc\n"}
+{"name": "single", "stdin": "hello\n", "stdout": "hello\n"}
+{"name": "whitespace-significant", "stdin": "hi\n hi\nhi\n", "stdout": "hi\n hi\n"}
+{"name": "case-sensitive", "stdin": "Foo\nfoo\nFoo\n", "stdout": "Foo\nfoo\n"}

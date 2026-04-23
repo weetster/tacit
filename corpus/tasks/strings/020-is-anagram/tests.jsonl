@@ -1,0 +1,10 @@
+{"name": "basic", "stdin": "listen\nsilent\n", "stdout": "true\n"}
+{"name": "not-anagram", "stdin": "hello\nworld\n", "stdout": "false\n"}
+{"name": "case-sensitive", "stdin": "Listen\nsilent\n", "stdout": "false\n"}
+{"name": "identical", "stdin": "abc\nabc\n", "stdout": "true\n"}
+{"name": "different-length", "stdin": "abc\nabcd\n", "stdout": "false\n"}
+{"name": "spaces-count", "stdin": "aa b\nb aa\n", "stdout": "true\n"}
+{"name": "both-empty", "stdin": "\n\n", "stdout": "true\n"}
+{"name": "one-empty", "stdin": "a\n\n", "stdout": "false\n"}
+{"name": "with-digits", "stdin": "a1b2\n2b1a\n", "stdout": "true\n"}
+{"name": "same-letters-different-counts", "stdin": "aab\nabb\n", "stdout": "false\n"}

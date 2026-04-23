@@ -1,7 +1,7 @@
 # Corpus Task Manifest
 
 Task index for the Phase 3 evaluation corpus. Target: ~60 tasks at Stage 4
-freeze. Current count (implemented): **20**.
+freeze. Current count (implemented): **25**.
 
 - `status: done`     — task.md, tests.jsonl, reference.py, reference.rs all
   present and passing the harness.
@@ -21,7 +21,7 @@ freeze. Current count (implemented): **20**.
 | 001 | sum-to-n     | done    | O   | Closed-form or loop both idiomatic |
 | 002 | fibonacci    | done    | **H** | Iterative pair-update              |
 | 003 | factorial    | done    | O   | Loop product; N ≤ 20 (i64 range)   |
-| 004 | gcd          | planned | O   | Euclidean                          |
+| 004 | gcd          | done    | O   | Euclidean; `math.gcd` on Python    |
 | 005 | is-prime     | done    | O   | Trial division up to sqrt(n)       |
 | 006 | digit-sum    | planned | O   |                                    |
 | 007 | to-binary    | planned | O   | Integer → binary string            |
@@ -42,7 +42,7 @@ freeze. Current count (implemented): **20**.
 | 017 | common-prefix     | planned | O   | Across N lines of input              |
 | 018 | run-length-encode | planned | O   |                                      |
 | 019 | char-frequency    | planned | **H** | Sorted by char                       |
-| 020 | is-anagram        | planned | O   | Two lines of input                   |
+| 020 | is-anagram        | done    | O   | Two lines; case/whitespace-sensitive |
 
 ## Collections (021–030)
 
@@ -54,7 +54,7 @@ freeze. Current count (implemented): **20**.
 | 024 | zip-lists         | planned | **H** | Two lines; truncate to shorter          |
 | 025 | partition-eo      | done    | O   | Even first line, odd second line (by value) |
 | 026 | group-counts      | planned | O   | `word:count` output, sorted by word     |
-| 027 | rotate-left       | planned | O   | Rotate K positions                      |
+| 027 | rotate-left       | done    | O   | Rotate K positions; negative K allowed  |
 | 028 | chunks            | planned | O   | Fixed-size chunks, last may be shorter  |
 | 029 | merge-sorted      | planned | **H** | Two sorted lines → one sorted line      |
 | 030 | transpose-matrix  | planned | O   | N×M grid                                |
@@ -78,7 +78,7 @@ freeze. Current count (implemented): **20**.
 | 043 | levenshtein       | planned | **H** | Edit distance                        |
 | 044 | count-islands     | planned | O   | 2D grid, 4-connected                 |
 | 045 | reverse-words     | planned | O   | Preserve single spaces               |
-| 046 | max-subarray      | planned | O   | Kadane's algorithm                   |
+| 046 | max-subarray      | done    | O   | Kadane's algorithm; non-empty result |
 | 047 | stable-sort-pairs | planned | O   | Sort by key, preserve order on ties  |
 | 048 | dedup-keep-last   | planned | **H** | Keep last occurrence                 |
 | 049 | matrix-multiply   | planned | O   | Integer matrices                     |
@@ -93,7 +93,7 @@ freeze. Current count (implemented): **20**.
 | 053 | tail-n-lines      | planned | **H** | First line = N; then lines             |
 | 054 | grep-substring    | planned | O   | First line = pattern                   |
 | 055 | sort-lines        | done    | O   | Byte-lexicographic                     |
-| 056 | unique-lines      | planned | O   | Preserve first-seen order              |
+| 056 | unique-lines      | done    | O   | Preserve first-seen order              |
 | 057 | word-count        | done    | O   | Whitespace-delimited tokens            |
 | 058 | csv-sum-column    | planned | **H** | First line = column idx; comma-sep     |
 | 059 | echo-reverse      | planned | O   | Reverse order of all lines             |
@@ -101,10 +101,10 @@ freeze. Current count (implemented): **20**.
 
 ## Summary
 
-- **Implemented**: 20 of ~60 (33%) — each category now has 4 done
-  (arithmetic 001/002/003/005, strings 011/012/013/015,
-  collections 021/022/023/025, algorithms 031/032/033/035,
-  I/O 051/052/055/057).
+- **Implemented**: 25 of ~60 (42%) — each category now has 5 done
+  (arithmetic 001/002/003/004/005, strings 011/012/013/015/020,
+  collections 021/022/023/025/027, algorithms 031/032/033/035/046,
+  I/O 051/052/055/056/057).
 - **Held-out marked**: 12 of 60 (20%) — 2 currently implemented (002, 022)
 
 Next implementation batch (suggested): a first pass at the remaining

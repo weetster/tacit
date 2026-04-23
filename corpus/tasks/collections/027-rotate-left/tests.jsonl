@@ -1,0 +1,10 @@
+{"name": "basic", "stdin": "1 2 3 4 5\n2\n", "stdout": "3 4 5 1 2\n"}
+{"name": "zero", "stdin": "1 2 3\n0\n", "stdout": "1 2 3\n"}
+{"name": "equal-to-len", "stdin": "1 2 3\n3\n", "stdout": "1 2 3\n"}
+{"name": "larger-than-len", "stdin": "1 2 3\n7\n", "stdout": "2 3 1\n"}
+{"name": "negative", "stdin": "1 2 3 4 5\n-1\n", "stdout": "5 1 2 3 4\n"}
+{"name": "negative-larger", "stdin": "1 2 3\n-4\n", "stdout": "3 1 2\n"}
+{"name": "single", "stdin": "7\n3\n", "stdout": "7\n"}
+{"name": "empty", "stdin": "\n5\n", "stdout": "\n"}
+{"name": "two", "stdin": "1 2\n1\n", "stdout": "2 1\n"}
+{"name": "negatives-in-list", "stdin": "-1 -2 -3 -4\n2\n", "stdout": "-3 -4 -1 -2\n"}

@@ -1,0 +1,10 @@
+{"name": "basic", "stdin": "12 18\n", "stdout": "6\n"}
+{"name": "coprime", "stdin": "17 13\n", "stdout": "1\n"}
+{"name": "divides", "stdin": "100 25\n", "stdout": "25\n"}
+{"name": "both-zero", "stdin": "0 0\n", "stdout": "0\n"}
+{"name": "zero-left", "stdin": "0 7\n", "stdout": "7\n"}
+{"name": "zero-right", "stdin": "7 0\n", "stdout": "7\n"}
+{"name": "equal", "stdin": "9 9\n", "stdout": "9\n"}
+{"name": "one", "stdin": "1 123456\n", "stdout": "1\n"}
+{"name": "large-coprime", "stdin": "1000000000 999999999\n", "stdout": "1\n"}
+{"name": "large-shared", "stdin": "1000000000000000000 500000000000000000\n", "stdout": "500000000000000000\n"}
