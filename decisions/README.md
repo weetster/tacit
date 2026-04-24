@@ -43,3 +43,4 @@ Keep ADRs short. They record the decision, not the full analysis that led to it.
 - [0025 — Phase 1 libc surface: OS-boundary symbols only](0025-phase-1-libc-surface.md)
 - [0026 — Phase 1 closure representation: closed lambdas, top-level monomorphic lowering](0026-phase-1-closed-lambdas.md)
 - [0027 — Phase 1 mutual recursion lowering: forward-declare under C calling convention](0027-phase-1-rec-lowering.md)
+- [0028 — Phase 1 libc call surface: `@name` sym heads at function position](0028-phase-1-libc-call-surface.md)

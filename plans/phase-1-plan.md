@@ -117,7 +117,10 @@ Stage 1.
   libc functions are not used (string-literal lengths are compile-time
   constants, block-memory operations emit as LLVM intrinsics). Effect
   signatures live in `stdlib/libc-effects.toml` as a dormant table for
-  Phase 2's effect checker; Phase 1 codegen does not consume it.
+  Phase 2's effect checker; Phase 1 codegen does not consume it. The
+  source-level call surface (`@write`, `@read`, `@exit` in authoring
+  view; `(sym write|read|exit)` at function position in canonical) is
+  fixed by [ADR 0028](../decisions/0028-phase-1-libc-call-surface.md).
 - Hand-crafted authoring-view programs covering each emitter feature.
   These become the Phase 1 smoke corpus; the Phase 3 evaluation corpus
   stays sealed/untouched per ADR 0020.
@@ -219,3 +222,170 @@ ADRs 0023–0027.
   [ADR 0020](../decisions/0020-sealing-held-out-in-repo.md) catches
   tampering with sealed tasks but not casual reuse of open ones; treat
   the corpus as read-only throughout Phase 1.
+
+## Appendix A — Stage 4 worked example (hello-world, end-to-end)
+
+Every box in Stage 4 (authoring text → canonical → AST → `inkwell`
+`Module` → object → executable) traced on a single minimal program.
+Intended as the reference an implementer can copy-mutate for the rest
+of the smoke corpus.
+
+### A.1 Source (authoring view)
+
+File `examples/hello.tac`:
+
+```
+@write 1 "hello, world\n" 13
+```
+
+Features exercised: integer literal, string literal, four-argument
+left-associative juxtaposition (`app`), `@name` primitive-call surface
+per [ADR 0028](../decisions/0028-phase-1-libc-call-surface.md). No
+binders, no recursion, no `match`. A deliberately small surface for
+the first end-to-end run.
+
+### A.2 Canonical text
+
+Left-associative `app` unfolds into three nested `app` nodes. The
+`@` is surface-only — it projects to a `sym` node whose canonical
+name is the bare identifier. Per canonical-text-format.md § 3, `\n`
+in the string literal round-trips as the named escape `\n` (S1), not
+the raw LF byte.
+
+```
+(app (app (app (sym write) (int 1)) (str "hello, world\n")) (int 13))
+```
+
+BLAKE3 of the UTF-8 bytes above is the program's content hash. The
+canonical text carries no trailing newline.
+
+### A.3 AST (Rust, `tacit-canonical::ast`)
+
+```rust
+Node::App {
+    f: Box::new(Node::App {
+        f: Box::new(Node::App {
+            f: Box::new(Node::Sym("write".into())),
+            a: Box::new(Node::Int("1".into())),
+        }),
+        a: Box::new(Node::Str("hello, world\n".into())),
+    }),
+    a: Box::new(Node::Int("13".into())),
+}
+```
+
+(Node-kind names are illustrative — match the actual enum in
+`impls/rs-canonicalizer/src/ast.rs`.)
+
+### A.4 Codegen pattern-match (the load-bearing step)
+
+Per [ADR 0028](../decisions/0028-phase-1-libc-call-surface.md),
+`tacit-codegen` walks the AST and recognises one Phase 1 shape as a
+direct libc call:
+
+> **Shape.** A left-spine of `App` nodes whose leftmost function is
+> `Sym(name)` with `name ∈ {"write", "read", "exit"}`. Collect the
+> right-spine arguments in source order. Emit a direct `call` to the
+> libc symbol of the same name with the collected arguments. A
+> `Sym(name)` in function position whose name is outside the
+> allowlist fails codegen with `CodegenError::UnknownPrimitive`. All
+> other `App` spines lower via the standard closed-lambda path
+> ([ADR 0026](../decisions/0026-phase-1-closed-lambdas.md)).
+
+For the hello-world AST, the spine yields symbol `write` and arguments
+`[Int 1, Str "hello, world\n", Int 13]`. The string literal lowers to
+a private global constant holding the 13 raw bytes
+(`h e l l o , SP w o r l d LF`); the integers lower to `i64`
+constants; the call target is the external declaration
+`declare i64 @write(i32, i8*, i64)`.
+
+### A.5 LLVM IR (what `--emit-llvm-ir` should dump)
+
+```llvm
+; ModuleID = 'hello'
+target triple = "x86_64-unknown-linux-gnu"  ; ubuntu-latest CI target
+
+@.str.0 = private unnamed_addr constant [13 x i8] c"hello, world\0A"
+
+declare i64 @write(i32, i8*, i64)
+
+define i32 @main() {
+entry:
+  %buf = getelementptr inbounds [13 x i8], [13 x i8]* @.str.0, i64 0, i64 0
+  %_wr = call i64 @write(i32 1, i8* %buf, i64 13)
+  ret i32 0
+}
+```
+
+Notes on this lowering:
+
+- `main` returns `i32 0` rather than calling `exit(0)`. ADR 0025
+  permits both; `return 0` is preferred because it keeps the libc
+  surface at two symbols (`write`, plus the implicit C runtime entry)
+  for hello-world, with `exit` reserved for non-`main` termination.
+- The string global uses `\0A` (LF) as raw bytes, not the `\n` named
+  escape — textual IR uses its own escape conventions, distinct from
+  canonical-text string escapes.
+- `call @write` uses LLVM's default C calling convention (`ccc`) per
+  [ADR 0027](../decisions/0027-phase-1-rec-lowering.md).
+- No optimisation passes; `-O0` default from `inkwell`.
+
+### A.6 Smoke-run (what Stage 4's exit-gate CI job does)
+
+```
+$ tacit compile examples/hello.tac -o hello
+$ ./hello
+hello, world
+$ echo $?
+0
+```
+
+The CI job on `ubuntu-latest` asserts stdout byte-equality (14 bytes
+including the trailing LF, since `echo` adds one) and exit code 0 for
+each smoke program.
+
+### A.7 Closed: primitive-call surface
+
+Drafting this appendix surfaced the gap that the three libc symbols
+had no source-level naming convention. Resolved 2026-04-24 by
+[ADR 0028](../decisions/0028-phase-1-libc-call-surface.md): `@name`
+in the authoring view, projecting to `(sym name)` in canonical form,
+recognised by codegen as a primitive call when the sym is at function
+position and the name is in the Phase 1 allowlist. The worked example
+above uses the accepted convention.
+
+## Appendix B — Phase 1 smoke corpus (enumerated)
+
+Each program is hand-authored in the authoring view, lives under
+`examples/smoke/`, and is wired into the Stage 4 exit-gate CI job.
+Programs are listed roughly in order of codegen feature introduction;
+implement and test in this order so earlier regressions surface before
+later dependencies mask them.
+
+| # | Name | Features exercised | Expected stdout / exit |
+|---|---|---|---|
+| 1 | `return-zero.tac` | Minimal `main`; no IO; constant return. | stdout empty; exit 0 |
+| 2 | `return-computed.tac` | Integer arithmetic (`+`, `-`, `*`) on `i64`; `let`. | stdout empty; exit = computed value (e.g., 42) |
+| 3 | `hello.tac` | `@write` primitive, string literal, integer literal, `app` spine. | stdout `hello, world\n`; exit 0 |
+| 4 | `if-branch.tac` | `if` / `let` / integer comparison; both arms reachable across two builds. | stdout varies by branch; exit 0 |
+| 5 | `factorial.tac` | Self-recursive `rec { fact = lambda n. if n then n * fact (n-1) else 1 }`; exercises forward-declare-then-define on N=1 under [ADR 0027](../decisions/0027-phase-1-rec-lowering.md). | exit = `fact(5) = 120` |
+| 6 | `even-odd.tac` | Mutually-recursive `rec { even = ...; odd = ... }`; exercises N=2 rec-group lowering. | exit = 0 or 1 depending on input literal |
+| 7 | `match-int.tac` | `match` on integer-literal arms (§ 2 of canonical-text-format.md), fallthrough wildcard. | stdout varies; exit 0 |
+| 8 | `echo.tac` | `@read` from fd 0 into a fixed-size buffer, `@write` the same bytes to fd 1. Exercises both IO primitives. | stdout echoes stdin |
+| 9 | `exit-nonzero.tac` | Explicit `@exit` with non-zero code from a non-`main` position. | exit 7 (or similar) |
+
+Rules of the smoke corpus:
+
+- **Hand-authored only.** Do not draw from `corpus/` — Phase 3's
+  evaluation set stays untouched per [ADR 0020](../decisions/0020-sealing-held-out-in-repo.md).
+- **One feature per program where possible.** Feature combinations
+  belong in later integration tests, not the smoke set. Isolation
+  makes regressions diagnosable.
+- **Deterministic output.** No time, no randomness, no environment
+  reads. Echo takes fixed stdin from a CI fixture file.
+- **No hidden dependencies on stdlib.** Phase 1 has no stdlib; every
+  symbol a smoke program references is either a Tacit-Lite AST node
+  or one of the three libc entries.
+- Primitive-call surface for programs 3, 8, 9 is fixed by
+  [ADR 0028](../decisions/0028-phase-1-libc-call-surface.md); no
+  sequencing constraint remains.
