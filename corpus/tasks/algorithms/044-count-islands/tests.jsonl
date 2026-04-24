@@ -1,0 +1,8 @@
+{"name": "two-islands", "stdin": "1 1 0\n0 1 0\n0 0 1\n", "stdout": "2\n"}
+{"name": "four-islands", "stdin": "1 0 1\n0 0 0\n1 0 1\n", "stdout": "4\n"}
+{"name": "all-water", "stdin": "0 0 0\n0 0 0\n", "stdout": "0\n"}
+{"name": "all-land", "stdin": "1 1 1\n1 1 1\n1 1 1\n", "stdout": "1\n"}
+{"name": "single-cell", "stdin": "1\n", "stdout": "1\n"}
+{"name": "single-row", "stdin": "1 0 1 0 1\n", "stdout": "3\n"}
+{"name": "single-col", "stdin": "1\n0\n1\n0\n1\n", "stdout": "3\n"}
+{"name": "l-shape", "stdin": "1 1 0\n0 1 0\n0 1 1\n", "stdout": "1\n"}

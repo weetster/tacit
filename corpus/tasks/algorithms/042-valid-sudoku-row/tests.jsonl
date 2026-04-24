@@ -1,0 +1,8 @@
+{"name": "full-valid", "stdin": "5 3 4 6 7 8 9 1 2\n", "stdout": "valid\n"}
+{"name": "full-invalid", "stdin": "8 2 2 3 3 4 5 6 7\n", "stdout": "invalid\n"}
+{"name": "all-empty", "stdin": "0 0 0 0 0 0 0 0 0\n", "stdout": "valid\n"}
+{"name": "one-missing", "stdin": "1 2 3 4 5 6 7 8 0\n", "stdout": "valid\n"}
+{"name": "duplicate-at-ends", "stdin": "1 2 3 4 5 6 7 8 1\n", "stdout": "invalid\n"}
+{"name": "sequential", "stdin": "1 2 3 4 5 6 7 8 9\n", "stdout": "valid\n"}
+{"name": "single-filled", "stdin": "0 0 0 0 5 0 0 0 0\n", "stdout": "valid\n"}
+{"name": "mostly-empty-duplicate", "stdin": "0 3 0 0 0 0 0 3 0\n", "stdout": "invalid\n"}

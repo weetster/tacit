@@ -1,0 +1,7 @@
+{"name": "basic", "stdin": "3 foo\n1 bar\n3 baz\n2 qux\n", "stdout": "1 bar\n2 qux\n3 foo\n3 baz\n"}
+{"name": "all-same-key", "stdin": "1 a\n1 b\n1 c\n", "stdout": "1 a\n1 b\n1 c\n"}
+{"name": "already-sorted", "stdin": "1 x\n2 y\n3 z\n", "stdout": "1 x\n2 y\n3 z\n"}
+{"name": "reverse-sorted", "stdin": "3 z\n2 y\n1 x\n", "stdout": "1 x\n2 y\n3 z\n"}
+{"name": "single", "stdin": "5 hello\n", "stdout": "5 hello\n"}
+{"name": "negatives", "stdin": "0 b\n-1 a\n1 c\n0 d\n", "stdout": "-1 a\n0 b\n0 d\n1 c\n"}
+{"name": "stability-check", "stdin": "2 second\n1 first\n2 fourth\n1 third\n", "stdout": "1 first\n1 third\n2 second\n2 fourth\n"}

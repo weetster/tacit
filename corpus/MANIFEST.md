@@ -1,7 +1,7 @@
 # Corpus Task Manifest
 
 Task index for the Phase 3 evaluation corpus. Target: ~60 tasks at Stage 4
-freeze. Current count (implemented): **25**.
+freeze. Current count (implemented): **49**.
 
 - `status: done`     — task.md, tests.jsonl, reference.py, reference.rs all
   present and passing the harness.
@@ -68,20 +68,20 @@ freeze. Current count (implemented): **25**.
 | 033 | two-sum           | done    | O   | Hashmap pass; unique-solution inputs |
 | 034 | balanced-parens   | planned | **H** | `()[]{}`                             |
 | 035 | bubble-sort       | done    | O   | Ascending                            |
-| 036 | quicksort         | planned | O   | Deterministic pivot (middle)         |
-| 037 | merge-sort        | planned | O   |                                      |
+| 036 | quicksort         | done    | O   | Deterministic pivot (middle)         |
+| 037 | merge-sort        | done    | O   |                                      |
 | 038 | linear-search     | done    | O   | -1 if absent                         |
 | 039 | lcm               | planned | **H** | Via GCD                              |
-| 040 | josephus          | planned | O   | n people, step k                     |
+| 040 | josephus          | done    | O   | n people, step k                     |
 | 041 | rle-decode        | done    | O   | Inverse of 018                       |
-| 042 | valid-sudoku-row  | planned | O   | 9 digits 1–9 or 0; check 1–9 unique  |
+| 042 | valid-sudoku-row  | done    | O   | 9 digits 1–9 or 0; check 1–9 unique  |
 | 043 | levenshtein       | planned | **H** | Edit distance                        |
-| 044 | count-islands     | planned | O   | 2D grid, 4-connected                 |
+| 044 | count-islands     | done    | O   | 2D grid, 4-connected                 |
 | 045 | reverse-words     | done    | O   | Preserve single spaces               |
 | 046 | max-subarray      | done    | O   | Kadane's algorithm; non-empty result |
-| 047 | stable-sort-pairs | planned | O   | Sort by key, preserve order on ties  |
+| 047 | stable-sort-pairs | done    | O   | Sort by key, preserve order on ties  |
 | 048 | dedup-keep-last   | planned | **H** | Keep last occurrence                 |
-| 049 | matrix-multiply   | planned | O   | Integer matrices                     |
+| 049 | matrix-multiply   | done    | O   | Integer matrices                     |
 | 050 | longest-run       | done    | O   | Longest consecutive-equal subseq len |
 
 ## I/O (051–060)
@@ -101,18 +101,17 @@ freeze. Current count (implemented): **25**.
 
 ## Summary
 
-- **Implemented**: 42 of ~60 (70%) — open tasks complete per category:
+- **Implemented**: 49 of ~60 (82%) — open tasks complete per category:
   arithmetic 001/003/004/005/006/007/009/010 (8),
   strings 011/012/013/015/016/017/018/020 (8),
   collections 021/023/025/026/027/028/030 (7, plus sealed 022),
-  algorithms 031/032/033/035/038/041/045/046/050 (9, plus sealed 002),
+  algorithms 031/032/033/035/036/037/038/040/041/042/044/045/046/047/049/050 (16, plus sealed 002),
   I/O 051/052/054/055/056/057/059/060 (8).
 - **Held-out marked**: 13 of 60 (22%) — 2 currently implemented (002, 022)
 
 Next implementation batch (suggested): implement remaining held-out tasks
-to grow the sealed set, or tackle the remaining open planned tasks.
-Held-out candidates: 008 integer-sqrt, 014 caesar-cipher, 019 char-frequency,
-024 zip-lists, 029 merge-sorted, 034 balanced-parens, 039 lcm, 043 levenshtein,
-048 dedup-keep-last, 053 tail-n-lines, 058 csv-sum-column.
-Open planned: 036 quicksort, 037 merge-sort, 040 josephus, 042 valid-sudoku-row,
-044 count-islands, 047 stable-sort-pairs, 049 matrix-multiply.
+to grow the sealed set.
+Held-out candidates (planned, not yet sealed): 008 integer-sqrt, 014 caesar-cipher,
+019 char-frequency, 024 zip-lists, 029 merge-sorted, 034 balanced-parens,
+039 lcm, 043 levenshtein, 048 dedup-keep-last, 053 tail-n-lines, 058 csv-sum-column.
+Open planned: none — all open tasks are now implemented.

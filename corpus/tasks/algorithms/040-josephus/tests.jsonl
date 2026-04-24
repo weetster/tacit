@@ -1,0 +1,7 @@
+{"name": "classic-5-2", "stdin": "5\n2\n", "stdout": "2\n"}
+{"name": "single", "stdin": "1\n1\n", "stdout": "0\n"}
+{"name": "step-1", "stdin": "6\n1\n", "stdout": "5\n"}
+{"name": "seven-three", "stdin": "7\n3\n", "stdout": "3\n"}
+{"name": "two-people", "stdin": "2\n2\n", "stdout": "0\n"}
+{"name": "large-step", "stdin": "5\n100\n", "stdout": "1\n"}
+{"name": "ten-two", "stdin": "10\n2\n", "stdout": "4\n"}

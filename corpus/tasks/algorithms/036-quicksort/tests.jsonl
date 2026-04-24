@@ -1,0 +1,8 @@
+{"name": "basic", "stdin": "5 3 8 1 9 2\n", "stdout": "1 2 3 5 8 9\n"}
+{"name": "duplicates", "stdin": "4 4 2 4 1\n", "stdout": "1 2 4 4 4\n"}
+{"name": "single", "stdin": "7\n", "stdout": "7\n"}
+{"name": "already-sorted", "stdin": "1 2 3 4 5\n", "stdout": "1 2 3 4 5\n"}
+{"name": "reverse-sorted", "stdin": "5 4 3 2 1\n", "stdout": "1 2 3 4 5\n"}
+{"name": "two-elements", "stdin": "9 1\n", "stdout": "1 9\n"}
+{"name": "negatives", "stdin": "-3 0 5 -1 2\n", "stdout": "-3 -1 0 2 5\n"}
+{"name": "all-same", "stdin": "3 3 3 3\n", "stdout": "3 3 3 3\n"}

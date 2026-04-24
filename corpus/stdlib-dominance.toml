@@ -56,3 +56,10 @@
 "io/054-grep-substring" = false
 "io/059-echo-reverse" = false
 "io/060-longest-line" = false
+"algorithms/036-quicksort" = false
+"algorithms/037-merge-sort" = false
+"algorithms/040-josephus" = false
+"algorithms/042-valid-sudoku-row" = false
+"algorithms/044-count-islands" = false
+"algorithms/047-stable-sort-pairs" = false
+"algorithms/049-matrix-multiply" = false
