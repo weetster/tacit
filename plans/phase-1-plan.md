@@ -101,22 +101,31 @@ Exit gate: every § 6 fixture renders byte-identically across L0/L1/L2.
 The critical-path technical risk for Phase 1. Greenfield, depends only on
 Stage 1.
 
-- New crate `tacit-codegen` using `inkwell` (per parent plan § Backend).
+- New crate `tacit-codegen` using `inkwell`
+  (per [ADR 0024](../decisions/0024-llvm-bindings-inkwell.md)). LLVM and
+  `inkwell` versions pinned in `Cargo.toml`; CI install step added during
+  Stage 4.
 - Subset coverage required by Phase 1 exit: integer arithmetic on `i64`,
-  `lam` / `app` (closure-free, monomorphic — see open question Q-P1-3),
-  `if`, `let`, `rec` (treated as a fixpoint group; see Q-P1-4), `match`
-  on integer literal arms, and direct calls into a small libc-wrapper set.
-- **libc-wrapper subset (Q3 from parent plan).** Closes Q3 with a Phase 1
-  ADR pinning the minimum set: `printf`-equivalent line output, `read`-
-  equivalent line input, exit code, byte-string length. Effect signatures
-  are written by hand and parked in a dormant table — Phase 2's effect
-  system reads them, Phase 1 does not enforce anything.
+  `lam` / `app` (closed lambdas only — no free variables, top-level
+  monomorphic lowering per [ADR 0026](../decisions/0026-phase-1-closed-lambdas.md)),
+  `if`, `let`, `rec` (forward-declare-then-define under C calling
+  convention per [ADR 0027](../decisions/0027-phase-1-rec-lowering.md)),
+  `match` on integer literal arms, and direct calls into the Phase 1
+  libc set.
+- **libc-wrapper subset** per [ADR 0025](../decisions/0025-phase-1-libc-surface.md):
+  `write`, `read`, `exit` — OS-boundary symbols only. Pure-compute
+  libc functions are not used (string-literal lengths are compile-time
+  constants, block-memory operations emit as LLVM intrinsics). Effect
+  signatures live in `stdlib/libc-effects.toml` as a dormant table for
+  Phase 2's effect checker; Phase 1 codegen does not consume it.
 - Hand-crafted authoring-view programs covering each emitter feature.
   These become the Phase 1 smoke corpus; the Phase 3 evaluation corpus
   stays sealed/untouched per ADR 0020.
-- Output path: AST → LLVM IR (textual `.ll` for inspectability) →
-  `llc` + system linker → executable. No optimization passes beyond the
-  LLVM defaults at `-O0`.
+- Output path: AST → `inkwell` `Module` (programmatic IR) → object file
+  (in-process emission) → system linker → executable. No optimization
+  passes beyond the LLVM defaults at `-O0`. `tacit compile
+  --emit-llvm-ir` dumps the constructed `Module` as textual `.ll` for
+  debugging, but textual IR is an output only — not a round-trip step.
 
 Exit gate: each smoke program canonicalizes, parses, lowers, links, and
 runs with the expected stdout. End-to-end test runs in CI on `ubuntu-latest`.
@@ -157,29 +166,36 @@ artifact, not relitigation in Phase 1.
 
 ## Open questions to resolve during Phase 1
 
-Numbered to extend the parent plan's `Q1`–`Q7` scheme.
+Numbered to extend the parent plan's `Q1`–`Q7` scheme. All five Phase 1
+open questions were resolved on 2026-04-24, before Stage 1 landed, via
+ADRs 0023–0027.
 
-- **Q-P1-1 — libc-wrapper minimum set (closes parent-plan Q3).** Which
-  symbols ship in the Phase 1 stdlib stub, and how are their hand-written
-  effect signatures stored so Phase 2's effect checker can pick them up
-  without rework? Resolve in Stage 4 ADR.
-- **Q-P1-2 — Hole-node parser recovery.** Spec commits to typed `Hole`
-  nodes for malformed subtrees ([CLAUDE.md § Key design commitments](../CLAUDE.md)),
-  but the existing `tacit-canonical` parser returns `ParseError`. Decide:
-  Phase 1 punts (status quo, deferred to Phase 2) vs. Phase 1 retrofits
-  (Stage 1 scope creep). Resolve before Stage 1 lands.
-- **Q-P1-3 — Closure representation.** Phase 1 emits `lam` / `app`. Decide:
-  ban free variables in lambdas (monomorphic top-level only) vs. emit a
-  closed-over environment struct now. The simpler choice ships sooner;
-  closure ABI changes have downstream cost. Resolve in Stage 4 ADR.
-- **Q-P1-4 — Mutual recursion lowering.** `rec` groups hash as a single
-  atom and bind N mutually recursive definitions. LLVM-side this is a
-  forward-declare + define pattern, but the calling convention and any
-  tail-call requirement need to be pinned. Resolve in Stage 4 ADR.
-- **Q-P1-5 — Inkwell vs. raw `llvm-sys` vs. textual IR + `llc`.** Parent
-  plan names `inkwell`; confirm or override during Stage 4 spike. Pick
-  whichever has the lowest ongoing maintenance cost given that Phase 2
-  needs richer type and effect metadata in IR.
+- **Q-P1-1 — libc-wrapper minimum set (closes parent-plan Q3).**
+  Resolved by [ADR 0025](../decisions/0025-phase-1-libc-surface.md):
+  Phase 1's libc surface is three OS-boundary symbols (`write`, `read`,
+  `exit`). Pure-compute libc functions are not used. Effect signatures
+  live in `stdlib/libc-effects.toml` for Phase 2's checker to consume.
+- **Q-P1-2 — Hole-node parser recovery.** Resolved by
+  [ADR 0023](../decisions/0023-hole-node-recovery-deferred.md):
+  Phase 1 keeps hard-failing `ParseError`; typed `Hole` recovery is
+  deferred to Phase 2 or a dedicated tooling phase when a concrete
+  consumer drives the design.
+- **Q-P1-3 — Closure representation.** Resolved by
+  [ADR 0026](../decisions/0026-phase-1-closed-lambdas.md): Phase 1
+  lambdas must be closed (no free variables). `Lam` lowers as a
+  top-level monomorphic LLVM function; `App` lowers as a direct call.
+  First-class function values are banned at codegen time. Phase 2+ owns
+  the closure ABI design.
+- **Q-P1-4 — Mutual recursion lowering.** Resolved by
+  [ADR 0027](../decisions/0027-phase-1-rec-lowering.md):
+  forward-declare-then-define for all N members of a `Rec` group, LLVM
+  default C calling convention (`ccc`) for every Phase 1 function, no
+  tail-call optimisation guarantee.
+- **Q-P1-5 — Inkwell vs. raw `llvm-sys` vs. textual IR + `llc`.**
+  Resolved by [ADR 0024](../decisions/0024-llvm-bindings-inkwell.md):
+  `tacit-codegen` uses `inkwell` from the start. Textual IR is available
+  as an opt-in `--emit-llvm-ir` CLI dump, not as the load-bearing
+  representation. `llvm-sys` reserved as an escape hatch gated by ADR.
 
 ## Risks
 

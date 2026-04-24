@@ -38,3 +38,8 @@ Keep ADRs short. They record the decision, not the full analysis that led to it.
 - [0020 — Seal held-out corpus tasks in-repo via multi-layer guardrails](0020-sealing-held-out-in-repo.md)
 - [0021 — Corpus stdlib-dominance reporting for Phase 3 token baseline](0021-corpus-stdlib-dominance-reporting.md)
 - [0022 — Tacit is a pure computational kernel; impurity lives in the host](0022-pure-kernel-host-model.md)
+- [0023 — Hole-node parser recovery deferred to Phase 2](0023-hole-node-recovery-deferred.md)
+- [0024 — Phase 1 LLVM bindings: `inkwell` from the start](0024-llvm-bindings-inkwell.md)
+- [0025 — Phase 1 libc surface: OS-boundary symbols only](0025-phase-1-libc-surface.md)
+- [0026 — Phase 1 closure representation: closed lambdas, top-level monomorphic lowering](0026-phase-1-closed-lambdas.md)
+- [0027 — Phase 1 mutual recursion lowering: forward-declare under C calling convention](0027-phase-1-rec-lowering.md)
