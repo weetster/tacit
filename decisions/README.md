@@ -36,3 +36,5 @@ Keep ADRs short. They record the decision, not the full analysis that led to it.
 - [0018 — Stage 5 repository scaffolding frozen](0018-stage-5-frozen.md)
 - [0019 — Corpus reference-solution idiom rules for Python and Rust](0019-corpus-idiom-rules.md)
 - [0020 — Seal held-out corpus tasks in-repo via multi-layer guardrails](0020-sealing-held-out-in-repo.md)
+- [0021 — Corpus stdlib-dominance reporting for Phase 3 token baseline](0021-corpus-stdlib-dominance-reporting.md)
+- [0022 — Tacit is a pure computational kernel; impurity lives in the host](0022-pure-kernel-host-model.md)

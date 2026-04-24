@@ -55,7 +55,7 @@ These decisions define the shape of Tacit-Lite. They are deliberately chosen to 
 - **Numeric types have explicit widths.** `i8`/`i16`/`i32`/`i64`/`u8`/... etc. No default integer type; declarations must specify a width. Overflow traps by default; wrapping and saturating are explicit operators. No implicit coercion between numeric types.
 - **Strings are UTF-8 byte sequences.** Indexing returns bytes. Grapheme, code-point, and locale-aware operations live in explicit stdlib modules, not on the base string type.
 - **Concurrency: none in Lite.** Single-threaded, deterministic execution. Structured concurrency via effect handlers is a Tacit-Full feature (Phase 7). Explicitly deferred, not undefined.
-- **No foreign function interface beyond libc.** Phase 1 links libc pragmatically; the long-term path is standard modules written in Tacit, culminating in the scratch stdlib (Phase 10) that replaces libc with direct syscalls. Arbitrary C interop is never supported. This is a permanent design constraint, not a phase-ordering decision.
+- **Pure computational kernel; ecosystem-library impurity lives in the host.** Tacit has in-language IO, filesystem, network, and (eventually) threading via a curated effect-annotated stdlib — Phase 1 backs the stdlib with libc, Phase 10 replaces libc with direct syscalls. libc is a lowering detail for the stdlib, not FFI and not a host. What Tacit does *not* have is a way to reach outside that curated stdlib: no user-visible FFI, no curated-FFI mechanism, no way to bind arbitrary ecosystem libraries (SDL, OpenGL, SQLite, etc.) from within Tacit code. Programs that need such libraries use the host model — the Tacit module declares imports and exports, a non-Tacit host satisfies imports and calls into the module, and ecosystem-library impurity is quarantined in the host. Structurally the same shape as WebAssembly or embedded scripting languages. The host-interface surface for non-degenerate embedders is deferred to a future ADR when module composition is concretized. See [ADR 0022](../decisions/0022-pure-kernel-host-model.md).
 
 ### Two variants
 
@@ -89,6 +89,7 @@ Rationale:
 - Inherits decades of optimization work
 - Cross-platform code generation for free
 - Skipping C as intermediate — LLVM IR gives low-level primitives with better semantics than C
+- **WASM is a candidate backend** alongside LLVM native, for programs that embed into non-Tacit hosts per [ADR 0022](../decisions/0022-pure-kernel-host-model.md). The pure-kernel-with-host shape maps directly onto WASM's import/export model. Deferred to the host-interface ADR; not committed for Phase 1.
 
 ### Storage format: **Canonical text AST**
 
@@ -335,7 +336,7 @@ These need answers before or during Phase 0:
 
 1. **Authoring view format.** S-expressions over integer IDs? Single-glyph operators? Tokenizer-specific encoding optimized for a target model's BPE? Must round-trip losslessly with the canonical storage view. This is the single most consequential Phase 0 decision — primer, eval harness, and model fluency all depend on it.
 2. **Effect polymorphism surface syntax.** How effect variables appear in signatures, especially in higher-order functions; how effect mismatches are rendered in the inspection view.
-3. **Scope of libc wrappers for v0.** Which libc operations get effect-annotated wrappers in Phase 1? The set grows over time, but the initial cut for the minimum viable compiler is still unspecified. (The broader question — "should the stdlib depend on libc at all" — is settled: yes, until Phase 10's scratch stdlib replaces it. Arbitrary C FFI beyond libc is never supported.)
+3. **Scope of libc wrappers for v0.** Which libc operations get effect-annotated wrappers in Phase 1? The set grows over time, but the initial cut for the minimum viable compiler is still unspecified. (The broader architectural framing — pure computational kernel with in-language stdlib, ecosystem-library impurity quarantined to the host — is settled by [ADR 0022](../decisions/0022-pure-kernel-host-model.md); libc remains the stdlib's backing implementation until Phase 10's scratch stdlib replaces it with direct syscalls.)
 4. **Testing conventions.** How are tests expressed in Tacit? As regular functions with a marker, or as a separate construct?
 5. **Metadata sidecar format.** JSON? A separate canonical-text format? How tightly coupled to the `.tac` file?
 6. **License.** Permissive (MIT/Apache-2.0) or copyleft? Affects corpus choices if Phase 5 is undertaken.
