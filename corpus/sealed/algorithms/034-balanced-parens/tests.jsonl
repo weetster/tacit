@@ -1,0 +1,10 @@
+{"name": "empty", "stdin": "\n", "stdout": "true\n"}
+{"name": "simple-parens", "stdin": "()\n", "stdout": "true\n"}
+{"name": "nested", "stdin": "{[]}\n", "stdout": "true\n"}
+{"name": "complex", "stdin": "{[()()]}\n", "stdout": "true\n"}
+{"name": "interleaved", "stdin": "([)]\n", "stdout": "false\n"}
+{"name": "wrong-close", "stdin": "[}\n", "stdout": "false\n"}
+{"name": "unmatched-open", "stdin": "(\n", "stdout": "false\n"}
+{"name": "unmatched-close", "stdin": ")\n", "stdout": "false\n"}
+{"name": "all-types", "stdin": "()[]{}\n", "stdout": "true\n"}
+{"name": "deeply-nested", "stdin": "((((((()))))))\n", "stdout": "true\n"}

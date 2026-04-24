@@ -1,7 +1,7 @@
 # Corpus Task Manifest
 
 Task index for the Phase 3 evaluation corpus. Target: ~60 tasks at Stage 4
-freeze. Current count (implemented): **55**.
+freeze. Current count (implemented): **60**.
 
 - `status: done`     — task.md, tests.jsonl, reference.py, reference.rs all
   present and passing the harness.
@@ -66,7 +66,7 @@ freeze. Current count (implemented): **55**.
 | 031 | binary-search     | done    | O   | Distinct sorted input; -1 if absent  |
 | 032 | fizzbuzz          | done    | O   | 1..N                                 |
 | 033 | two-sum           | done    | O   | Hashmap pass; unique-solution inputs |
-| 034 | balanced-parens   | planned | **H** | `()[]{}`                             |
+| 034 | balanced-parens   | done    | **H** | `()[]{}`; stack-based                |
 | 035 | bubble-sort       | done    | O   | Ascending                            |
 | 036 | quicksort         | done    | O   | Deterministic pivot (middle)         |
 | 037 | merge-sort        | done    | O   |                                      |
@@ -75,12 +75,12 @@ freeze. Current count (implemented): **55**.
 | 040 | josephus          | done    | O   | n people, step k                     |
 | 041 | rle-decode        | done    | O   | Inverse of 018                       |
 | 042 | valid-sudoku-row  | done    | O   | 9 digits 1–9 or 0; check 1–9 unique  |
-| 043 | levenshtein       | planned | **H** | Edit distance                        |
+| 043 | levenshtein       | done    | **H** | Edit distance; O(mn) DP              |
 | 044 | count-islands     | done    | O   | 2D grid, 4-connected                 |
 | 045 | reverse-words     | done    | O   | Preserve single spaces               |
 | 046 | max-subarray      | done    | O   | Kadane's algorithm; non-empty result |
 | 047 | stable-sort-pairs | done    | O   | Sort by key, preserve order on ties  |
-| 048 | dedup-keep-last   | planned | **H** | Keep last occurrence                 |
+| 048 | dedup-keep-last   | done    | **H** | Keep last occurrence; order by last pos |
 | 049 | matrix-multiply   | done    | O   | Integer matrices                     |
 | 050 | longest-run       | done    | O   | Longest consecutive-equal subseq len |
 
@@ -90,25 +90,20 @@ freeze. Current count (implemented): **55**.
 |-----|-------------------|---------|-----|----------------------------------------|
 | 051 | line-count        | done    | O   | Trailing newline optional              |
 | 052 | sum-numbers       | done    | O   | One integer per line                   |
-| 053 | tail-n-lines      | planned | **H** | First line = N; then lines             |
+| 053 | tail-n-lines      | done    | **H** | First line = N; then lines             |
 | 054 | grep-substring    | done    | O   | First line = pattern                   |
 | 055 | sort-lines        | done    | O   | Byte-lexicographic                     |
 | 056 | unique-lines      | done    | O   | Preserve first-seen order              |
 | 057 | word-count        | done    | O   | Whitespace-delimited tokens            |
-| 058 | csv-sum-column    | planned | **H** | First line = column idx; comma-sep     |
+| 058 | csv-sum-column    | done    | **H** | First line = column idx; comma-sep     |
 | 059 | echo-reverse      | done    | O   | Reverse order of all lines             |
 | 060 | longest-line      | done    | O   | By Unicode code-point count; tie=first |
 
 ## Summary
 
-- **Implemented**: 55 of ~60 (92%) — open tasks complete per category:
-  arithmetic 001/003/004/005/006/007/009/010 (8, plus sealed 008),
-  strings 011/012/013/015/016/017/018/020 (8, plus sealed 014/019),
-  collections 021/023/025/026/027/028/030 (7, plus sealed 022/024/029),
-  algorithms 031/032/033/035/036/037/038/040/041/042/044/045/046/047/049/050 (16, plus sealed 002/039),
-  I/O 051/052/054/055/056/057/059/060 (8).
-- **Held-out marked**: 13 of 60 (22%) — 8 currently implemented (002, 008, 014, 019, 022, 024, 029, 039)
-
-Held-out candidates (planned, not yet sealed): 034 balanced-parens,
-043 levenshtein, 048 dedup-keep-last, 053 tail-n-lines, 058 csv-sum-column.
-Open planned: none — all open tasks are now implemented.
+- **Implemented**: 60 of 60 (100%) — corpus complete.
+  - Open (47): arithmetic 001/003/004/005/006/007/009/010, strings 011/012/013/015/016/017/018/020,
+    collections 021/023/025/026/027/028/030, algorithms 031/032/033/035/036/037/038/040/041/042/044/045/046/047/049/050,
+    I/O 051/052/054/055/056/057/059/060.
+  - Sealed (13): 002 008 014 019 022 024 029 034 039 043 048 053 058.
+- **Held-out sealed**: 13 of 60 (22%) — all implemented and hashed in `sealed-hashes.txt`.

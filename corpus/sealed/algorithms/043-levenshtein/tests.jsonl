@@ -1,0 +1,8 @@
+{"name": "classic", "stdin": "kitten\nsitting\n", "stdout": "3\n"}
+{"name": "equal", "stdin": "hello\nhello\n", "stdout": "0\n"}
+{"name": "empty-a", "stdin": "\nhello\n", "stdout": "5\n"}
+{"name": "empty-b", "stdin": "hello\n\n", "stdout": "5\n"}
+{"name": "both-empty", "stdin": "\n\n", "stdout": "0\n"}
+{"name": "single-sub", "stdin": "a\nb\n", "stdout": "1\n"}
+{"name": "prefix", "stdin": "abc\nabcdef\n", "stdout": "3\n"}
+{"name": "reverse", "stdin": "abc\ncba\n", "stdout": "2\n"}

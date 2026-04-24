@@ -1,0 +1,6 @@
+{"name": "basic", "stdin": "2\nfoo\nbar\nbaz\n", "stdout": "bar\nbaz\n"}
+{"name": "more-than-available", "stdin": "5\nfoo\nbar\n", "stdout": "foo\nbar\n"}
+{"name": "zero", "stdin": "0\nfoo\nbar\n", "stdout": ""}
+{"name": "exact", "stdin": "3\na\nb\nc\n", "stdout": "a\nb\nc\n"}
+{"name": "one", "stdin": "1\nalpha\nbeta\ngamma\n", "stdout": "gamma\n"}
+{"name": "one-line-body", "stdin": "2\nonlyone\n", "stdout": "onlyone\n"}

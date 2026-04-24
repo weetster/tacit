@@ -63,3 +63,8 @@
 "algorithms/044-count-islands" = false
 "algorithms/047-stable-sort-pairs" = false
 "algorithms/049-matrix-multiply" = false
+"algorithms/034-balanced-parens" = false
+"algorithms/043-levenshtein" = false
+"algorithms/048-dedup-keep-last" = false
+"io/053-tail-n-lines" = false
+"io/058-csv-sum-column" = false

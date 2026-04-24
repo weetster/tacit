@@ -1,0 +1,7 @@
+{"name": "no-dups", "stdin": "1 2 3\n", "stdout": "1 2 3\n"}
+{"name": "classic", "stdin": "1 2 1 3\n", "stdout": "2 1 3\n"}
+{"name": "complex", "stdin": "3 1 2 1 3\n", "stdout": "2 1 3\n"}
+{"name": "all-same", "stdin": "5 5 5\n", "stdout": "5\n"}
+{"name": "single", "stdin": "42\n", "stdout": "42\n"}
+{"name": "two-swapped", "stdin": "1 2 2 1\n", "stdout": "2 1\n"}
+{"name": "negatives", "stdin": "-1 2 -1 3\n", "stdout": "2 -1 3\n"}
