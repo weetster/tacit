@@ -1,0 +1,5 @@
+{"name": "basic", "stdin": "hello\nhi\nhey there\n", "stdout": "hey there\n"}
+{"name": "tie-first", "stdin": "abc\ndef\nghi\n", "stdout": "abc\n"}
+{"name": "single", "stdin": "only line\n", "stdout": "only line\n"}
+{"name": "empty-lines", "stdin": "\nhello\n\n", "stdout": "hello\n"}
+{"name": "all-same", "stdin": "ab\ncd\nef\n", "stdout": "ab\n"}

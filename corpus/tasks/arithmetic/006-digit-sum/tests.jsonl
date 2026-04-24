@@ -1,0 +1,7 @@
+{"name": "basic", "stdin": "123\n", "stdout": "6\n"}
+{"name": "zero", "stdin": "0\n", "stdout": "0\n"}
+{"name": "single", "stdin": "7\n", "stdout": "7\n"}
+{"name": "all-nines", "stdin": "9999\n", "stdout": "36\n"}
+{"name": "large", "stdin": "1000000000000000000\n", "stdout": "1\n"}
+{"name": "hundred", "stdin": "100\n", "stdout": "1\n"}
+{"name": "repeated", "stdin": "55555\n", "stdout": "25\n"}

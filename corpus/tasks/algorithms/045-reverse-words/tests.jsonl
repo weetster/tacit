@@ -1,0 +1,5 @@
+{"name": "basic", "stdin": "the quick brown fox\n", "stdout": "fox brown quick the\n"}
+{"name": "single", "stdin": "hello\n", "stdout": "hello\n"}
+{"name": "two-words", "stdin": "one two\n", "stdout": "two one\n"}
+{"name": "three-words", "stdin": "one two three\n", "stdout": "three two one\n"}
+{"name": "already-reversed", "stdin": "z y x\n", "stdout": "x y z\n"}

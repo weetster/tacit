@@ -1,0 +1,6 @@
+{"name": "basic", "stdin": "the quick brown fox\n", "stdout": "quick\n"}
+{"name": "tie-first", "stdin": "cat bat hat\n", "stdout": "cat\n"}
+{"name": "two-word-tie", "stdin": "hello world\n", "stdout": "hello\n"}
+{"name": "single", "stdin": "programming\n", "stdout": "programming\n"}
+{"name": "all-same-length", "stdin": "ab cd ef\n", "stdout": "ab\n"}
+{"name": "one-long", "stdin": "a beautiful day\n", "stdout": "beautiful\n"}

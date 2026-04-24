@@ -1,0 +1,6 @@
+{"name": "basic", "stdin": "10\n", "stdout": "1010\n"}
+{"name": "zero", "stdin": "0\n", "stdout": "0\n"}
+{"name": "one", "stdin": "1\n", "stdout": "1\n"}
+{"name": "byte", "stdin": "255\n", "stdout": "11111111\n"}
+{"name": "power-of-two", "stdin": "16\n", "stdout": "10000\n"}
+{"name": "large", "stdin": "1024\n", "stdout": "10000000000\n"}

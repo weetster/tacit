@@ -1,0 +1,5 @@
+{"name": "basic", "stdin": "fox\nthe quick brown fox\njumped over the lazy dog\nthe fox trot\n", "stdout": "the quick brown fox\nthe fox trot\n"}
+{"name": "no-match", "stdin": "xyz\nhello world\ngoodbye\n", "stdout": ""}
+{"name": "all-match", "stdin": "a\ncat\nbat\nhat\n", "stdout": "cat\nbat\nhat\n"}
+{"name": "pattern-at-start", "stdin": "he\nhello\nworld\nhey\n", "stdout": "hello\nhey\n"}
+{"name": "single-match", "stdin": "foo\nfoo bar\nbaz\n", "stdout": "foo bar\n"}

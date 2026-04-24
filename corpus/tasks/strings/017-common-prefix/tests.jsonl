@@ -1,0 +1,6 @@
+{"name": "basic", "stdin": "flower\nflow\nflight\n", "stdout": "fl\n"}
+{"name": "no-prefix", "stdin": "dog\nracecar\ncar\n", "stdout": "\n"}
+{"name": "single-line", "stdin": "interview\n", "stdout": "interview\n"}
+{"name": "full-match", "stdin": "abc\nabc\nabc\n", "stdout": "abc\n"}
+{"name": "empty-prefix", "stdin": "abc\ndef\n", "stdout": "\n"}
+{"name": "one-char", "stdin": "apple\nape\nart\n", "stdout": "a\n"}

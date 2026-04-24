@@ -1,0 +1,6 @@
+{"name": "basic", "stdin": "2a3b2c\n", "stdout": "aabbbcc\n"}
+{"name": "no-runs", "stdin": "1a1b1c\n", "stdout": "abc\n"}
+{"name": "all-same", "stdin": "4a\n", "stdout": "aaaa\n"}
+{"name": "empty", "stdin": "\n", "stdout": "\n"}
+{"name": "mixed", "stdin": "3a2b3a\n", "stdout": "aaabbaaa\n"}
+{"name": "large-count", "stdin": "10x\n", "stdout": "xxxxxxxxxx\n"}

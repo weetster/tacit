@@ -1,0 +1,4 @@
+{"name": "basic", "stdin": "one\ntwo\nthree\n", "stdout": "three\ntwo\none\n"}
+{"name": "single", "stdin": "hello\n", "stdout": "hello\n"}
+{"name": "two-lines", "stdin": "a\nb\n", "stdout": "b\na\n"}
+{"name": "already-reversed", "stdin": "c\nb\na\n", "stdout": "a\nb\nc\n"}

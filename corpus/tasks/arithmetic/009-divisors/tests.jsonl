@@ -1,0 +1,7 @@
+{"name": "basic", "stdin": "12\n", "stdout": "1 2 3 4 6\n"}
+{"name": "prime", "stdin": "7\n", "stdout": "1\n"}
+{"name": "one", "stdin": "1\n", "stdout": "\n"}
+{"name": "perfect", "stdin": "6\n", "stdout": "1 2 3\n"}
+{"name": "square", "stdin": "36\n", "stdout": "1 2 3 4 6 9 12 18\n"}
+{"name": "two", "stdin": "2\n", "stdout": "1\n"}
+{"name": "large-prime", "stdin": "999983\n", "stdout": "1\n"}

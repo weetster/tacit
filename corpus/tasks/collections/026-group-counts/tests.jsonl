@@ -1,0 +1,5 @@
+{"name": "basic", "stdin": "the cat sat on the mat the cat\n", "stdout": "cat:2\nmat:1\non:1\nsat:1\nthe:3\n"}
+{"name": "all-same", "stdin": "a a a\n", "stdout": "a:3\n"}
+{"name": "single", "stdin": "hello\n", "stdout": "hello:1\n"}
+{"name": "two-words", "stdin": "b a\n", "stdout": "a:1\nb:1\n"}
+{"name": "sorted-order", "stdin": "c b a c b c\n", "stdout": "a:1\nb:2\nc:3\n"}

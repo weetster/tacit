@@ -1,0 +1,6 @@
+{"name": "basic", "stdin": "3 1 4 1 5 9 2 6\n1\n", "stdout": "1\n"}
+{"name": "not-found", "stdin": "1 2 3 4 5\n7\n", "stdout": "-1\n"}
+{"name": "single-found", "stdin": "5\n5\n", "stdout": "0\n"}
+{"name": "first-occ", "stdin": "1 2 3 2 1\n2\n", "stdout": "1\n"}
+{"name": "last-elem", "stdin": "1 2 3 4 5\n5\n", "stdout": "4\n"}
+{"name": "empty", "stdin": "\n7\n", "stdout": "-1\n"}

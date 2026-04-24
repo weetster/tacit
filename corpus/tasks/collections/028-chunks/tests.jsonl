@@ -1,0 +1,5 @@
+{"name": "basic", "stdin": "1 2 3 4 5\n2\n", "stdout": "1 2\n3 4\n5\n"}
+{"name": "exact-fit", "stdin": "1 2 3\n3\n", "stdout": "1 2 3\n"}
+{"name": "size-two-even", "stdin": "1 2 3 4\n2\n", "stdout": "1 2\n3 4\n"}
+{"name": "chunk-one", "stdin": "1 2 3\n1\n", "stdout": "1\n2\n3\n"}
+{"name": "single-element", "stdin": "42\n5\n", "stdout": "42\n"}

@@ -1,0 +1,7 @@
+{"name": "basic", "stdin": "1 1 2 2 2 3 1 1\n", "stdout": "3\n"}
+{"name": "all-distinct", "stdin": "1 2 3 4 5\n", "stdout": "1\n"}
+{"name": "all-same", "stdin": "7 7 7 7\n", "stdout": "4\n"}
+{"name": "single", "stdin": "42\n", "stdout": "1\n"}
+{"name": "run-at-end", "stdin": "1 2 3 3 3\n", "stdout": "3\n"}
+{"name": "run-at-start", "stdin": "5 5 5 1 2\n", "stdout": "3\n"}
+{"name": "two-tied-runs", "stdin": "1 1 2 2\n", "stdout": "2\n"}
