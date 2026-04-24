@@ -1,0 +1,11 @@
+{"name": "perfect-square", "stdin": "16\n", "stdout": "4\n"}
+{"name": "non-perfect", "stdin": "15\n", "stdout": "3\n"}
+{"name": "zero", "stdin": "0\n", "stdout": "0\n"}
+{"name": "one", "stdin": "1\n", "stdout": "1\n"}
+{"name": "two", "stdin": "2\n", "stdout": "1\n"}
+{"name": "three", "stdin": "3\n", "stdout": "1\n"}
+{"name": "four", "stdin": "4\n", "stdout": "2\n"}
+{"name": "large-perfect", "stdin": "1000000000000000000\n", "stdout": "1000000000\n"}
+{"name": "large-non-perfect", "stdin": "999999999999999999\n", "stdout": "999999999\n"}
+{"name": "100", "stdin": "100\n", "stdout": "10\n"}
+{"name": "99", "stdin": "99\n", "stdout": "9\n"}

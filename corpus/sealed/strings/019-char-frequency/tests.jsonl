@@ -1,0 +1,8 @@
+{"name": "basic", "stdin": "abracadabra\n", "stdout": "a:5\nb:2\nc:1\nd:1\nr:2\n"}
+{"name": "single-char", "stdin": "aab\n", "stdout": "a:2\nb:1\n"}
+{"name": "empty", "stdin": "\n", "stdout": ""}
+{"name": "digits-and-letters", "stdin": "a1b1\n", "stdout": "1:2\na:1\nb:1\n"}
+{"name": "spaces", "stdin": "a b\n", "stdout": " :1\na:1\nb:1\n"}
+{"name": "all-same", "stdin": "aaaa\n", "stdout": "a:4\n"}
+{"name": "ascii-order", "stdin": "zyxw\n", "stdout": "w:1\nx:1\ny:1\nz:1\n"}
+{"name": "mixed-case", "stdin": "aAbB\n", "stdout": "A:1\nB:1\na:1\nb:1\n"}

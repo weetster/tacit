@@ -1,0 +1,11 @@
+{"name": "basic-shift", "stdin": "3\nHello, World!\n", "stdout": "Khoor, Zruog!\n"}
+{"name": "shift-zero", "stdin": "0\nunchanged\n", "stdout": "unchanged\n"}
+{"name": "shift-negative", "stdin": "-1\nbca\n", "stdout": "abz\n"}
+{"name": "wrap-lower", "stdin": "3\nxyz\n", "stdout": "abc\n"}
+{"name": "wrap-upper", "stdin": "3\nXYZ\n", "stdout": "ABC\n"}
+{"name": "large-shift", "stdin": "29\nabc\n", "stdout": "def\n"}
+{"name": "negative-large", "stdin": "-29\ndef\n", "stdout": "abc\n"}
+{"name": "non-letters", "stdin": "13\n1234!@#$\n", "stdout": "1234!@#$\n"}
+{"name": "mixed", "stdin": "13\nAbCdEf\n", "stdout": "NoPqRs\n"}
+{"name": "empty-text", "stdin": "5\n\n", "stdout": "\n"}
+{"name": "rot13", "stdin": "13\nHello World\n", "stdout": "Uryyb Jbeyq\n"}
