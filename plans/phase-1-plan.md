@@ -106,7 +106,7 @@ The current `crates/tacit-views/tests/round_trip.rs` skip list enumerates
 the affected fixtures; any future canonical vector that falls into one of
 the categories above is also out of scope for this gate.
 
-### Stage 3: Inspection-view renderer (parallelizable with Stage 2) (~1 week)
+### Stage 3: Inspection-view renderer (parallelizable with Stage 2) (~1 week) ✓ DONE 2026-04-25
 
 Implementation of the spec at [`inspection-view.md`](inspection-view.md), per
 [ADR 0015](../decisions/0015-inspection-view-scope.md). Display-only — no
