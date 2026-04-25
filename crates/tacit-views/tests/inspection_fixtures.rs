@@ -49,10 +49,12 @@ fn section_6_1_l1() {
     let node = fixture_6_1_node();
     let sc = fixture_6_1_sidecar();
     let out = emit_inspection(&node, Some(&sc), &l1());
-    // "lambda x. x" → x is var 0; "id 5" → id is var 0
+    // "lambda x. x" → x is var 0; "id 5" → id is var 0.
+    // Annotations append to the assembled line, so `in` stays outside the
+    // comment (matching inspection-view.md § 6.1 L0+L1).
     assert_eq!(
         out,
-        "let id = lambda x. x  # x \u{2261} var 0 in\n  id 5  # id \u{2261} var 0",
+        "let id = lambda x. x in  # x \u{2261} var 0\n  id 5  # id \u{2261} var 0",
         "§6.1 L1 regression"
     );
 }
@@ -219,4 +221,29 @@ fn let_chain() {
     // Expect the chain to not grow indentation
     let expected = "let v0 = 1 in\nlet v1 = 2 in\n  v1";
     assert_eq!(out, expected, "let chain: {:?}", out);
+}
+
+#[test]
+fn ctor_arg_sidecar_indexing() {
+    // canonical (ctor Cons …) children are [name-sym, arg₀, arg₁],
+    // so an arg's sidecar lives at child(k+1), not child(k).
+    let node = parse(b"(ctor Cons (int 1) (int 2))").unwrap();
+    let sc: SidecarNode = serde_json::from_str(
+        r#"{"children":[{},{"comment":"first"},{"comment":"second"}]}"#,
+    )
+    .unwrap();
+    let out = emit_inspection(&node, Some(&sc), &l0());
+    let expected = "Cons\n  # first\n  1\n  # second\n  2";
+    assert_eq!(out, expected, "ctor arg sidecar indexing: {:?}", out);
+}
+
+#[test]
+fn ctor_propagates_var_annot_through_let() {
+    // (let (lam (ctor Pair (var 0) (var 0))) (var 0))
+    // L1 annotation must follow `in` on the header line, not embed inside it.
+    let node = parse(b"(let (lam (ctor Pair (var 0) (var 0))) (var 0))").unwrap();
+    let sc = sidecar_from_json(r#"{"binder":"p","children":[{"binder":"x"},{}]}"#);
+    let out = emit_inspection(&node, Some(&sc), &l1());
+    let expected = "let p = lambda x. Pair x x in  # x \u{2261} var 0, x \u{2261} var 0\n  p  # p \u{2261} var 0";
+    assert_eq!(out, expected, "ctor annot propagation: {:?}", out);
 }

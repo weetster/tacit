@@ -9,15 +9,10 @@ use tacit_canonical::hash_node;
 
 use crate::sidecar::SidecarNode;
 
+#[derive(Default)]
 pub struct InspectFlags {
     pub debruijn: bool,
     pub hashes: bool,
-}
-
-impl Default for InspectFlags {
-    fn default() -> Self {
-        InspectFlags { debruijn: false, hashes: false }
-    }
 }
 
 /// Render `node` to inspection-view text at the top level (indent 0).
@@ -32,7 +27,12 @@ pub fn emit_inspection(
         pat_var_counter: 0,
         flags,
     };
-    ctx.render(node, sidecar, 0).text
+    let r = ctx.render(node, sidecar, 0);
+    if r.inline {
+        Ctx::annotate(&r.text, &r.annots, flags)
+    } else {
+        r.text
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -137,7 +137,7 @@ impl<'f> Ctx<'f> {
             Node::Int { value } => Rendered::leaf(value.clone()),
             Node::Str { value } => Self::render_str(value),
             Node::Sym { name } => Rendered::leaf(format!("@{}", name)),
-            Node::Hole { diag_id, payload } => Self::render_hole(diag_id, payload),
+            Node::Hole { diag_id, payload } => self.render_hole(diag_id, payload, sc, indent),
             Node::PatWild => Rendered::leaf("_"),
             Node::PatVar => self.render_pat_var(sc),
             Node::PatCtor { name, sub_patterns } => {
@@ -185,24 +185,19 @@ impl<'f> Ctx<'f> {
         Rendered::leaf(out)
     }
 
-    fn render_hole(diag_id: &str, payload: &Node) -> Rendered {
-        let payload_str = match payload {
-            Node::Str { value } => {
-                let mut s = String::from('"');
-                for ch in value.chars() {
-                    match ch as u32 {
-                        0x22 => s.push_str("\\\""),
-                        0x5C => s.push_str("\\\\"),
-                        0x0A => s.push_str("\\n"),
-                        _ => s.push(ch),
-                    }
-                }
-                s.push('"');
-                s
-            }
-            Node::Int { value } => value.clone(),
-            _ => "?".to_string(),
-        };
+    fn render_hole(
+        &mut self,
+        diag_id: &str,
+        payload: &Node,
+        sc: Option<&SidecarNode>,
+        indent: usize,
+    ) -> Rendered {
+        // hole canonical children: [diag-id-sym, payload]; payload sidecar is child(1).
+        let payload_sc = sc.and_then(|s| s.child(1));
+        let payload_r = self.render(payload, payload_sc, indent);
+        // Holes are always inline (§ 3.10) — squash newlines so multi-line
+        // payloads collapse onto a single visual line.
+        let payload_str = payload_r.text.replace('\n', " ");
         // U+27E8 / U+27E9 mathematical angle brackets
         Rendered::leaf(format!("\u{27E8}hole:{} {}\u{27E9}", diag_id, payload_str))
     }
@@ -211,11 +206,8 @@ impl<'f> Ctx<'f> {
         let name = sc
             .and_then(|s| s.binder.as_deref())
             .map(|s| s.to_string())
-            .unwrap_or_else(|| {
-                let n = format!("p{}", self.pat_var_counter);
-                self.pat_var_counter += 1;
-                n
-            });
+            .unwrap_or_else(|| format!("p{}", self.pat_var_counter));
+        self.pat_var_counter += 1;
         Rendered::leaf(name)
     }
 
@@ -272,9 +264,11 @@ impl<'f> Ctx<'f> {
 
         let param_str = params.join(" ");
         let result = if body_r.inline {
-            let line = format!("lambda {}. {}", param_str, body_r.text);
-            let line = Self::annotate(&line, &body_r.annots, self.flags);
-            Rendered { text: line, inline: true, annots: Vec::new() }
+            // Propagate annots up; a parent line-builder (let header, arm body,
+            // top-level emit, …) appends the trailing comment so it lands at the
+            // end of the assembled line — keeping `in`/`=>` outside the comment.
+            let text = format!("lambda {}. {}", param_str, body_r.text);
+            Rendered { text, inline: true, annots: body_r.annots }
         } else {
             let text = format!(
                 "lambda {}.\n{}{}",
@@ -306,17 +300,12 @@ impl<'f> Ctx<'f> {
         let mut cur_fn_sc = sc.and_then(|s| s.child(0));
         args.push((arg, sc.and_then(|s| s.child(1))));
 
-        loop {
-            match cur_fn {
-                Node::App { fn_: f2, arg: a2 } => {
-                    let f2_sc = cur_fn_sc.and_then(|s| s.child(0));
-                    let a2_sc = cur_fn_sc.and_then(|s| s.child(1));
-                    args.push((a2, a2_sc));
-                    cur_fn = f2;
-                    cur_fn_sc = f2_sc;
-                }
-                _ => break,
-            }
+        while let Node::App { fn_: f2, arg: a2 } = cur_fn {
+            let f2_sc = cur_fn_sc.and_then(|s| s.child(0));
+            let a2_sc = cur_fn_sc.and_then(|s| s.child(1));
+            args.push((a2, a2_sc));
+            cur_fn = f2;
+            cur_fn_sc = f2_sc;
         }
         args.reverse(); // args[0] = first argument, args[N-1] = last argument
 
@@ -333,14 +322,15 @@ impl<'f> Ctx<'f> {
                 .chain(arg_rs.iter().map(|r| r.text.as_str()))
                 .collect();
             let text = parts.join(" ");
+            // Propagate annots; the parent line-builder appends the trailing
+            // comment after any structural keyword (`in`, `=>`, `then`, …).
             let annots: Vec<_> = head_r
                 .annots
                 .iter()
                 .chain(arg_rs.iter().flat_map(|r| r.annots.iter()))
                 .cloned()
                 .collect();
-            let text = Self::annotate(&text, &annots, self.flags);
-            Rendered { text, inline: true, annots: Vec::new() }
+            Rendered { text, inline: true, annots }
         } else {
             let mut text = head_r.text.clone();
             for ar in &arg_rs {
@@ -459,9 +449,17 @@ impl<'f> Ctx<'f> {
         self.lam_let_depth = old_depth;
         self.stack.pop();
 
+        // Body line: when the body is inline, append the L1 annotation here
+        // (so it follows the body text on its own line).
+        let body_line = if body_r.inline {
+            Self::annotate(&body_r.text, &body_r.annots, self.flags)
+        } else {
+            body_r.text
+        };
+
         let text = if rhs_inline {
             let header_line = Self::annotate(&format!("{} in", header), &rhs_annots, self.flags);
-            format!("{}\n{}{}", header_line, Self::pad(body_indent), body_r.text)
+            format!("{}\n{}{}", header_line, Self::pad(body_indent), body_line)
         } else {
             // "let X =\n  V\nin\n  B"
             format!(
@@ -469,7 +467,7 @@ impl<'f> Ctx<'f> {
                 header,
                 Self::pad(indent),
                 Self::pad(body_indent),
-                body_r.text
+                body_line
             )
         };
 
@@ -492,7 +490,7 @@ impl<'f> Ctx<'f> {
         let n = bindings.len();
         let names: Vec<String> = sc
             .and_then(|s| s.binders.as_ref())
-            .map(|v| v.clone())
+            .cloned()
             .unwrap_or_else(|| (0..n).map(|k| format!("B{}", k)).collect());
 
         // Push names: reverse so names[0] lands at stack top (= var 0).
@@ -529,12 +527,18 @@ impl<'f> Ctx<'f> {
             self.stack.pop();
         }
 
+        let body_line = if body_r.inline {
+            Self::annotate(&body_r.text, &body_r.annots, self.flags)
+        } else {
+            body_r.text
+        };
+
         text.push('\n');
         text.push_str(&Self::pad(indent));
         text.push_str("in");
         text.push('\n');
         text.push_str(&Self::pad(indent + 2));
-        text.push_str(&body_r.text);
+        text.push_str(&body_line);
 
         let result = Rendered::always_break(text);
         if self.flags.hashes { self.badge(node, result) } else { result }
@@ -554,7 +558,7 @@ impl<'f> Ctx<'f> {
         let n = bindings.len();
         let names: Vec<String> = sc
             .and_then(|s| s.binders.as_ref())
-            .map(|v| v.clone())
+            .cloned()
             .unwrap_or_else(|| (0..n).map(|k| format!("B{}", k)).collect());
 
         for name in names.iter().rev() {
@@ -571,7 +575,8 @@ impl<'f> Ctx<'f> {
             text.push('\n');
             text.push_str(&Self::pad(pipe_indent));
             if rhs_r.inline {
-                text.push_str(&format!("| {} = {}", name, rhs_r.text));
+                let line = format!("| {} = {}", name, rhs_r.text);
+                text.push_str(&Self::annotate(&line, &rhs_r.annots, self.flags));
             } else {
                 text.push_str(&format!(
                     "| {} =\n{}{}",
@@ -785,7 +790,7 @@ impl<'f> Ctx<'f> {
         let n = fields.len();
         let render_order: Vec<usize> = sc
             .and_then(|s| s.field_order.as_ref())
-            .map(|fo| fo.clone())
+            .cloned()
             .unwrap_or_else(|| (0..n).collect());
 
         let mut rendered_fields: Vec<(String, Rendered)> = Vec::new();
@@ -807,11 +812,17 @@ impl<'f> Ctx<'f> {
         }
 
         // Multi-field or non-inline: one-field-per-line with trailing comma.
+        // L1 annotation appends after the comma so it doesn't swallow it.
         let mut text = String::from("{");
         for (key, val_r) in &rendered_fields {
             text.push('\n');
             text.push_str(&Self::pad(indent + 2));
-            text.push_str(&format!("{}: {},", key, val_r.text));
+            let field_line = format!("{}: {},", key, val_r.text);
+            if val_r.inline {
+                text.push_str(&Self::annotate(&field_line, &val_r.annots, self.flags));
+            } else {
+                text.push_str(&field_line);
+            }
         }
         text.push('\n');
         text.push_str(&Self::pad(indent));
@@ -885,7 +896,9 @@ impl<'f> Ctx<'f> {
 
         let mut arg_rs: Vec<Rendered> = Vec::new();
         for (k, arg) in args.iter().enumerate() {
-            let arg_sc = sc.and_then(|s| s.child(k));
+            // Canonical children of (ctor name arg₀ …) are [name-sym, arg₀, …];
+            // skip child(0) (the name-sym slot) and start args at child(1).
+            let arg_sc = sc.and_then(|s| s.child(k + 1));
             let ar = self.render_as_arg(arg, arg_sc, indent + 2);
             arg_rs.push(ar);
         }
@@ -894,10 +907,10 @@ impl<'f> Ctx<'f> {
         let result = if all_inline {
             let args_text = arg_rs.iter().map(|r| r.text.as_str()).collect::<Vec<_>>().join(" ");
             let text = format!("{} {}", name, args_text);
+            // Propagate annots; parent line-builder applies the trailing comment.
             let annots: Vec<_> =
                 arg_rs.iter().flat_map(|r| r.annots.iter().cloned()).collect();
-            let text = Self::annotate(&text, &annots, self.flags);
-            Rendered { text, inline: true, annots: Vec::new() }
+            Rendered { text, inline: true, annots }
         } else {
             let mut text = name.to_string();
             for ar in &arg_rs {
