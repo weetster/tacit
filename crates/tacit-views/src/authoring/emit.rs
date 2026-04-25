@@ -1,0 +1,434 @@
+//! Authoring-view emitter: Node + optional SidecarNode → BPE-compact text.
+//!
+//! Uses sidecar binder names when present; falls back to synthetic names per
+//! sidecar-format.md § 5.  Projection rules: authoring-bpe-compact.md § "Direction 2".
+
+use tacit_canonical::ast::Node;
+
+use crate::sidecar::SidecarNode;
+
+/// Emit a Node as authoring-view text.
+/// Pass `sidecar = None` to use fully synthetic names.
+pub fn emit_authoring(node: &Node, sidecar: Option<&SidecarNode>) -> String {
+    let mut out = String::new();
+    let mut ctx = EmitCtx {
+        stack: Vec::new(),
+        lam_let_depth: 0,
+    };
+    ctx.emit_expr(node, sidecar, &mut out);
+    out
+}
+
+struct EmitCtx {
+    /// Names in scope, innermost last.
+    stack: Vec<String>,
+    /// Count of lam/let binders currently in scope (for v{n} synthetic names).
+    lam_let_depth: usize,
+}
+
+impl EmitCtx {
+    fn emit_expr(&mut self, node: &Node, sc: Option<&SidecarNode>, out: &mut String) {
+        match node {
+            Node::Lam { body } => self.emit_lam(body, sc, out),
+            Node::Let { rhs, body } => self.emit_let(rhs, body, sc, out),
+            Node::Rec { bindings, body } => self.emit_rec(bindings, body, sc, out),
+            Node::Module { bindings } => self.emit_module(bindings, sc, out),
+            Node::If { cond, then, else_ } => self.emit_if(cond, then, else_, sc, out),
+            Node::Match { scrutinee, arms } => self.emit_match(scrutinee, arms, sc, out),
+            _ => self.emit_app_expr(node, sc, out),
+        }
+    }
+
+    fn emit_lam(&mut self, body: &Node, sc: Option<&SidecarNode>, out: &mut String) {
+        let name = sc.and_then(|s| s.binder.as_deref())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| format!("v{}", self.lam_let_depth));
+        out.push_str("lambda ");
+        out.push_str(&name);
+        out.push_str(". ");
+        self.stack.push(name);
+        let old_depth = self.lam_let_depth;
+        self.lam_let_depth += 1;
+        let body_sc = sc.and_then(|s| s.child(0));
+        self.emit_expr(body, body_sc, out);
+        self.lam_let_depth = old_depth;
+        self.stack.pop();
+    }
+
+    fn emit_let(&mut self, rhs: &Node, body: &Node, sc: Option<&SidecarNode>, out: &mut String) {
+        let name = sc.and_then(|s| s.binder.as_deref())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| format!("v{}", self.lam_let_depth));
+
+        // Increment depth before rhs so any lambdas inside rhs get unique names.
+        let old_depth = self.lam_let_depth;
+        self.lam_let_depth += 1;
+
+        // Check if rhs is Ann (let x: T = V case).
+        if let Node::Ann { expr: inner_rhs, type_ } = rhs {
+            let ann_sc = sc.and_then(|s| s.child(0));
+            let inner_rhs_sc = ann_sc.and_then(|s| s.child(0));
+            let type_sc = ann_sc.and_then(|s| s.child(1));
+            out.push_str("let ");
+            out.push_str(&name);
+            out.push(':');
+            self.emit_expr(type_, type_sc, out);
+            out.push_str(" = ");
+            self.emit_expr(inner_rhs, inner_rhs_sc, out);
+        } else {
+            let rhs_sc = sc.and_then(|s| s.child(0));
+            out.push_str("let ");
+            out.push_str(&name);
+            out.push_str(" = ");
+            self.emit_expr(rhs, rhs_sc, out);
+        }
+
+        out.push_str(" in ");
+        let body_sc = sc.and_then(|s| s.child(1));
+        self.stack.push(name);
+        self.emit_expr(body, body_sc, out);
+        self.lam_let_depth = old_depth;
+        self.stack.pop();
+    }
+
+    fn emit_rec(&mut self, bindings: &[Node], body: &Node, sc: Option<&SidecarNode>, out: &mut String) {
+        let n = bindings.len();
+        let names: Vec<String> = if let Some(binders) = sc.and_then(|s| s.binders.as_ref()) {
+            binders.iter().map(|s| s.clone()).collect()
+        } else {
+            (0..n).map(|k| format!("B{}", k)).collect()
+        };
+
+        // Push names: N-1 first so names[0] ends up at top (= var 0).
+        for name in names.iter().rev() {
+            self.stack.push(name.clone());
+        }
+
+        out.push_str("rec {");
+        for (k, (name, binding)) in names.iter().zip(bindings.iter()).enumerate() {
+            if k > 0 { out.push_str("; "); }
+            out.push_str(name);
+            out.push_str(" = ");
+            let b_sc = sc.and_then(|s| s.child(k));
+            self.emit_expr(binding, b_sc, out);
+        }
+        out.push_str("} in ");
+
+        let body_sc = sc.and_then(|s| s.child(n));
+        self.emit_expr(body, body_sc, out);
+
+        for _ in 0..n {
+            self.stack.pop();
+        }
+    }
+
+    fn emit_module(&mut self, bindings: &[Node], sc: Option<&SidecarNode>, out: &mut String) {
+        let n = bindings.len();
+        let names: Vec<String> = if let Some(binders) = sc.and_then(|s| s.binders.as_ref()) {
+            binders.iter().map(|s| s.clone()).collect()
+        } else {
+            (0..n).map(|k| format!("B{}", k)).collect()
+        };
+
+        for name in names.iter().rev() {
+            self.stack.push(name.clone());
+        }
+
+        out.push_str("module {");
+        for (k, (name, binding)) in names.iter().zip(bindings.iter()).enumerate() {
+            if k > 0 { out.push_str("; "); }
+            out.push_str(name);
+            out.push_str(" = ");
+            let b_sc = sc.and_then(|s| s.child(k));
+            self.emit_expr(binding, b_sc, out);
+        }
+        out.push('}');
+
+        for _ in 0..n {
+            self.stack.pop();
+        }
+    }
+
+    fn emit_if(
+        &mut self, cond: &Node, then: &Node, else_: &Node,
+        sc: Option<&SidecarNode>, out: &mut String,
+    ) {
+        out.push_str("if ");
+        self.emit_app_expr(cond, sc.and_then(|s| s.child(0)), out);
+        out.push_str(" then ");
+        self.emit_app_expr(then, sc.and_then(|s| s.child(1)), out);
+        out.push_str(" else ");
+        self.emit_expr(else_, sc.and_then(|s| s.child(2)), out);
+    }
+
+    fn emit_match(&mut self, scrutinee: &Node, arms: &[Node], sc: Option<&SidecarNode>, out: &mut String) {
+        out.push_str("match ");
+        self.emit_app_expr(scrutinee, sc.and_then(|s| s.child(0)), out);
+        out.push_str(" with");
+        for (i, arm) in arms.iter().enumerate() {
+            out.push(' ');
+            let arm_sc = sc.and_then(|s| s.child(i + 1));
+            self.emit_arm(arm, arm_sc, out);
+        }
+    }
+
+    fn emit_arm(&mut self, arm: &Node, sc: Option<&SidecarNode>, out: &mut String) {
+        let Node::Arm { pattern, body } = arm else {
+            out.push_str("| _ => _");
+            return;
+        };
+        out.push_str("| ");
+        let pat_sc = sc.and_then(|s| s.child(0));
+        // Fresh counter per arm; synthetic names are p0, p1, …
+        let mut counter = 0usize;
+        let pat_vars = emit_pattern_counted(pattern, pat_sc, &mut counter, out);
+        out.push_str(" => ");
+
+        let save_len = self.stack.len();
+        for name in &pat_vars {
+            self.stack.push(name.clone());
+        }
+        let body_sc = sc.and_then(|s| s.child(1));
+        self.emit_expr(body, body_sc, out);
+        self.stack.truncate(save_len);
+    }
+
+    // -------------------------------------------------------------------------
+    // Application-level and atoms
+    // -------------------------------------------------------------------------
+
+    fn emit_app_expr(&mut self, node: &Node, sc: Option<&SidecarNode>, out: &mut String) {
+        match node {
+            Node::App { .. } => {
+                // Flatten left-recursive app spine for clean emission.
+                let (spine_fn, args) = collect_app_spine(node);
+                // spine_fn may itself be a ctor or sym or var.
+                let spine_sc = sc; // sidecar for the outermost app
+                self.emit_app_spine(spine_fn, &args, spine_sc, out);
+            }
+            Node::Ctor { name, args } => {
+                out.push_str(name);
+                for (k, arg) in args.iter().enumerate() {
+                    out.push(' ');
+                    // Ctor sidecar has no leading null on the value side; children are arg entries.
+                    let arg_sc = sc.and_then(|s| s.child(k));
+                    if needs_parens_as_arg(arg) {
+                        out.push('(');
+                        self.emit_expr(arg, arg_sc, out);
+                        out.push(')');
+                    } else {
+                        self.emit_proj_atom(arg, arg_sc, out);
+                    }
+                }
+            }
+            _ => self.emit_proj_atom(node, sc, out),
+        }
+    }
+
+    /// Emit the flat app spine: fn_ arg0 arg1 ...
+    fn emit_app_spine(
+        &mut self,
+        fn_node: &Node,
+        args: &[(&Node, Option<&SidecarNode>)],
+        _spine_sc: Option<&SidecarNode>,
+        out: &mut String,
+    ) {
+        // Emit function; wrap in parens if it's a structural form.
+        if needs_parens_as_fn(fn_node) {
+            out.push('(');
+            self.emit_expr(fn_node, None, out);
+            out.push(')');
+        } else {
+            self.emit_proj_atom(fn_node, None, out);
+        }
+        // Emit each argument.
+        for (arg, arg_sc) in args {
+            out.push(' ');
+            if needs_parens_as_arg(arg) {
+                out.push('(');
+                self.emit_expr(arg, *arg_sc, out);
+                out.push(')');
+            } else {
+                self.emit_proj_atom(arg, *arg_sc, out);
+            }
+        }
+    }
+
+    fn emit_proj_atom(&mut self, node: &Node, sc: Option<&SidecarNode>, out: &mut String) {
+        match node {
+            Node::Proj { record, field } => {
+                let rec_sc = sc.and_then(|s| s.child(0));
+                // record needs parens if it's a structural form (rare but possible).
+                if needs_parens_as_fn(record) {
+                    out.push('(');
+                    self.emit_expr(record, rec_sc, out);
+                    out.push(')');
+                } else {
+                    self.emit_proj_atom(record, rec_sc, out);
+                }
+                out.push('.');
+                out.push_str(field);
+            }
+            _ => self.emit_atom(node, sc, out),
+        }
+    }
+
+    fn emit_atom(&mut self, node: &Node, sc: Option<&SidecarNode>, out: &mut String) {
+        match node {
+            Node::Var { index } => {
+                let i = *index as usize;
+                let len = self.stack.len();
+                if i < len {
+                    out.push_str(&self.stack[len - 1 - i]);
+                } else {
+                    // Index out of range; emit a placeholder.
+                    out.push_str(&format!("?var{}", index));
+                }
+            }
+            Node::Int { value } => out.push_str(value),
+            Node::Str { value } => {
+                out.push('"');
+                for ch in value.chars() {
+                    match ch {
+                        '"'  => out.push_str("\\\""),
+                        '\\' => out.push_str("\\\\"),
+                        '\n' => out.push_str("\\n"),
+                        '\t' => out.push_str("\\t"),
+                        '\r' => out.push_str("\\r"),
+                        c if (c as u32) < 0x20 || c as u32 == 0x7F => {
+                            out.push_str(&format!("\\u{{{:x}}}", c as u32));
+                        }
+                        c => out.push(c),
+                    }
+                }
+                out.push('"');
+            }
+            Node::Sym { name } => {
+                out.push('@');
+                out.push_str(name);
+            }
+            Node::Hole { .. } | Node::PatWild | Node::PatVar => out.push('_'),
+            Node::Record { fields } => {
+                out.push('{');
+                let n = fields.len();
+                // field_order[authoring_pos] = canonical_index; emit in authoring order.
+                let emit_order: Vec<usize> = if let Some(fo) = sc.and_then(|s| s.field_order.as_ref()) {
+                    fo.clone()
+                } else {
+                    (0..n).collect()
+                };
+                for (display_pos, &canon_idx) in emit_order.iter().enumerate() {
+                    if display_pos > 0 { out.push_str(", "); }
+                    if canon_idx < fields.len() {
+                        let (key, val) = &fields[canon_idx];
+                        out.push_str(key);
+                        out.push(':');
+                        // Child index in sidecar for records: 2*canon_idx+1 (val after sym).
+                        let val_sc = sc.and_then(|s| s.child(2 * canon_idx + 1));
+                        self.emit_as_arg(val, val_sc, out);
+                    }
+                }
+                out.push('}');
+            }
+            Node::Ann { expr, type_ } => {
+                // Standalone ann: (E : T)
+                out.push('(');
+                self.emit_expr(expr, sc.and_then(|s| s.child(0)), out);
+                out.push(':');
+                self.emit_expr(type_, sc.and_then(|s| s.child(1)), out);
+                out.push(')');
+            }
+            Node::Ctor { name, args } if args.is_empty() => {
+                out.push_str(name);
+            }
+            // Structural forms that shouldn't appear as bare atoms — wrap in parens.
+            other => {
+                out.push('(');
+                self.emit_expr(other, sc, out);
+                out.push(')');
+            }
+        }
+    }
+
+    /// Emit a node in argument position (parens if non-atomic).
+    fn emit_as_arg(&mut self, node: &Node, sc: Option<&SidecarNode>, out: &mut String) {
+        if needs_parens_as_arg(node) {
+            out.push('(');
+            self.emit_expr(node, sc, out);
+            out.push(')');
+        } else {
+            self.emit_proj_atom(node, sc, out);
+        }
+    }
+}
+
+// -------------------------------------------------------------------------
+// Helpers
+// -------------------------------------------------------------------------
+
+/// Collect the left-recursive App spine: App(App(f, a), b) → (f, [a, b]).
+/// Returns the base function node and argument nodes with sidecar paths set to None
+/// Emit a pattern node, counting pat-vars to generate synthetic p0, p1, … names.
+/// Returns pat-var names in textual order (same order they were pushed: first → last).
+fn emit_pattern_counted(
+    node: &Node,
+    sc: Option<&SidecarNode>,
+    counter: &mut usize,
+    out: &mut String,
+) -> Vec<String> {
+    match node {
+        Node::PatWild => { out.push('_'); vec![] }
+        Node::PatVar => {
+            let name = sc.and_then(|s| s.binder.as_deref())
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| { let n = format!("p{}", counter); n });
+            *counter += 1;
+            out.push_str(&name);
+            vec![name]
+        }
+        Node::PatCtor { name, sub_patterns } => {
+            out.push_str(name);
+            let mut all_vars: Vec<String> = Vec::new();
+            // Sidecar: child(0) = null (ctor-name sym), child(k+1) = sub-pat k.
+            for (k, sp) in sub_patterns.iter().enumerate() {
+                out.push(' ');
+                let sp_sc = sc.and_then(|s| s.child(k + 1));
+                let vars = emit_pattern_counted(sp, sp_sc, counter, out);
+                all_vars.extend(vars);
+            }
+            all_vars
+        }
+        _ => { out.push('_'); vec![] }
+    }
+}
+
+/// (spine-level sidecar reconstruction is expensive; callers pass None).
+fn collect_app_spine(mut node: &Node) -> (&Node, Vec<(&Node, Option<&SidecarNode>)>) {
+    let mut args: Vec<(&Node, Option<&SidecarNode>)> = Vec::new();
+    loop {
+        match node {
+            Node::App { fn_, arg } => {
+                args.push((arg.as_ref(), None));
+                node = fn_.as_ref();
+            }
+            _ => break,
+        }
+    }
+    args.reverse();
+    (node, args)
+}
+
+fn needs_parens_as_fn(node: &Node) -> bool {
+    matches!(node, Node::Lam { .. } | Node::Let { .. } | Node::Rec { .. }
+             | Node::If { .. } | Node::Match { .. } | Node::Ann { .. })
+}
+
+fn needs_parens_as_arg(node: &Node) -> bool {
+    match node {
+        Node::App { .. } | Node::Lam { .. } | Node::Let { .. }
+        | Node::Rec { .. } | Node::If { .. } | Node::Match { .. }
+        | Node::Ann { .. } => true,
+        Node::Ctor { args, .. } => !args.is_empty(),
+        _ => false,
+    }
+}

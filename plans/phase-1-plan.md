@@ -61,7 +61,7 @@ Layout decision in [ADR 0029](../decisions/0029-cargo-workspace-layout.md).
 Stage 1 has no spec changes; it is purely scaffolding. Exit gate: CI green
 under the new workspace layout, all 38 canonical-vector hashes still match.
 
-### Stage 2: Authoring view + sidecar round-trip (parallelizable with Stage 3) (~2 weeks)
+### Stage 2: Authoring view + sidecar round-trip (parallelizable with Stage 3) (~2 weeks) ✓ DONE 2026-04-24
 
 Greenfield. New crate `tacit-views`.
 
