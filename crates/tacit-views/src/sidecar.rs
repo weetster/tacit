@@ -47,8 +47,8 @@ impl SidecarNode {
             && self.binders.is_none()
             && self.comment.is_none()
             && self.field_order.is_none()
-            && self.children.as_ref().map_or(true, |c| {
-                c.iter().all(|opt| opt.as_ref().map_or(true, |n| n.is_empty()))
+            && self.children.as_ref().is_none_or(|c| {
+                c.iter().all(|opt| opt.as_ref().is_none_or(|n| n.is_empty()))
             })
     }
 }

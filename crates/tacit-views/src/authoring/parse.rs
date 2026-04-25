@@ -87,6 +87,21 @@ impl Parser {
         }
     }
 
+    /// Skip tokens up to (but not consuming) the next `=` at depth 0.
+    /// Used by the first pass of parse_rec to skip a binding's type annotation.
+    fn skip_to_eq(&mut self) -> Result<(), ParseError> {
+        let mut depth = 0i32;
+        loop {
+            match self.peek() {
+                Some(Token::LBrace) | Some(Token::LParen) => { depth += 1; self.advance(); }
+                Some(Token::RBrace) | Some(Token::RParen) if depth > 0 => { depth -= 1; self.advance(); }
+                Some(Token::Eq) if depth == 0 => return Ok(()),
+                None => return err("unexpected end of input in rec binding type"),
+                _ => { self.advance(); }
+            }
+        }
+    }
+
     fn consume_ident(&mut self, what: &str) -> Result<String, ParseError> {
         match self.peek().cloned() {
             Some(Token::Ident(name)) => { self.advance(); Ok(name) }
@@ -202,7 +217,7 @@ impl Parser {
             // Skip optional ": type".
             if matches!(self.peek(), Some(Token::Colon)) {
                 self.advance();
-                self.skip_to_delimiter()?; // skip type expr
+                self.skip_to_eq()?; // skip type expr
             }
             // Expect "=", then skip binding body to ";" or "}".
             if !matches!(self.peek(), Some(Token::Eq)) {
@@ -406,7 +421,7 @@ impl Parser {
                 self.advance();
                 if let Some(idx) = self.lookup(&name) {
                     Ok((Node::Var { index: idx }, SidecarNode::default(), false))
-                } else if name.chars().next().map_or(false, |c| c.is_uppercase()) {
+                } else if name.chars().next().is_some_and(|c| c.is_uppercase()) {
                     // Unbound capitalized ident → ctor head; args collected by caller.
                     Ok((Node::Ctor { name, args: vec![] }, SidecarNode::default(), true))
                 } else {
@@ -522,7 +537,7 @@ impl Parser {
             children.push(Some(val_scs[auth_i].clone()));
         }
         // Trim trailing None entries
-        while children.last().map_or(false, |c| c.is_none()) {
+        while children.last().is_some_and(|c| c.is_none()) {
             children.pop();
         }
         let children_opt = if children.is_empty() { None } else { Some(children) };
@@ -546,7 +561,7 @@ impl Parser {
                 self.advance();
                 Ok((Node::PatWild, SidecarNode::default(), vec![]))
             }
-            Some(Token::Ident(name)) if name.chars().next().map_or(false, |c| c.is_uppercase()) => {
+            Some(Token::Ident(name)) if name.chars().next().is_some_and(|c| c.is_uppercase()) => {
                 self.advance();
                 let ctor_name = name;
                 let mut sub_pats: Vec<Node> = Vec::new();
@@ -584,7 +599,7 @@ impl Parser {
                 self.advance();
                 Ok((Node::PatWild, SidecarNode::default(), vec![]))
             }
-            Some(Token::Ident(name)) if name.chars().next().map_or(false, |c| c.is_uppercase()) => {
+            Some(Token::Ident(name)) if name.chars().next().is_some_and(|c| c.is_uppercase()) => {
                 // Nullary ctor in pattern atom position.
                 self.advance();
                 let sc = SidecarNode { children: Some(vec![None]), ..Default::default() };

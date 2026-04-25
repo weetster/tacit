@@ -335,3 +335,23 @@ fn sidecar_rec_names_preserved() {
         "rec sidecar names not preserved\n  original:     {}\n  roundtripped: {}",
         authoring, roundtripped);
 }
+
+#[test]
+fn sidecar_names_preserved_inside_app_arg() {
+    // A binder inside an application argument should keep its name through emit.
+    let authoring = "let f = lambda x. x in f (lambda y. y)";
+    let (node, sidecar) = parse_authoring(authoring.as_bytes()).unwrap();
+    let roundtripped = emit_authoring(&node, Some(&sidecar));
+    assert_eq!(roundtripped, authoring,
+        "binder name inside app arg not preserved\n  original:     {}\n  roundtripped: {}",
+        authoring, roundtripped);
+}
+
+#[test]
+fn parse_rec_typed_binding() {
+    // First-pass scan must stop at `=`, not skip past it to `;`/`}`.
+    check_parse(
+        "rec {x:@Int = 1} in x",
+        "(rec (ann (int 1) (sym Int)) (var 0))",
+    );
+}

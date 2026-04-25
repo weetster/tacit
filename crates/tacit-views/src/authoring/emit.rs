@@ -94,7 +94,7 @@ impl EmitCtx {
     fn emit_rec(&mut self, bindings: &[Node], body: &Node, sc: Option<&SidecarNode>, out: &mut String) {
         let n = bindings.len();
         let names: Vec<String> = if let Some(binders) = sc.and_then(|s| s.binders.as_ref()) {
-            binders.iter().map(|s| s.clone()).collect()
+            binders.clone()
         } else {
             (0..n).map(|k| format!("B{}", k)).collect()
         };
@@ -125,7 +125,7 @@ impl EmitCtx {
     fn emit_module(&mut self, bindings: &[Node], sc: Option<&SidecarNode>, out: &mut String) {
         let n = bindings.len();
         let names: Vec<String> = if let Some(binders) = sc.and_then(|s| s.binders.as_ref()) {
-            binders.iter().map(|s| s.clone()).collect()
+            binders.clone()
         } else {
             (0..n).map(|k| format!("B{}", k)).collect()
         };
@@ -199,12 +199,26 @@ impl EmitCtx {
 
     fn emit_app_expr(&mut self, node: &Node, sc: Option<&SidecarNode>, out: &mut String) {
         match node {
-            Node::App { .. } => {
-                // Flatten left-recursive app spine for clean emission.
-                let (spine_fn, args) = collect_app_spine(node);
-                // spine_fn may itself be a ctor or sym or var.
-                let spine_sc = sc; // sidecar for the outermost app
-                self.emit_app_spine(spine_fn, &args, spine_sc, out);
+            Node::App { fn_, arg } => {
+                // App sidecar children: [fn_sc, arg_sc].
+                let fn_sc = sc.and_then(|s| s.child(0));
+                let arg_sc = sc.and_then(|s| s.child(1));
+                // Function position: another App is fine (left-assoc); structural forms need parens.
+                if needs_parens_as_fn(fn_) {
+                    out.push('(');
+                    self.emit_expr(fn_, fn_sc, out);
+                    out.push(')');
+                } else {
+                    self.emit_app_expr(fn_, fn_sc, out);
+                }
+                out.push(' ');
+                if needs_parens_as_arg(arg) {
+                    out.push('(');
+                    self.emit_expr(arg, arg_sc, out);
+                    out.push(')');
+                } else {
+                    self.emit_proj_atom(arg, arg_sc, out);
+                }
             }
             Node::Ctor { name, args } => {
                 out.push_str(name);
@@ -222,35 +236,6 @@ impl EmitCtx {
                 }
             }
             _ => self.emit_proj_atom(node, sc, out),
-        }
-    }
-
-    /// Emit the flat app spine: fn_ arg0 arg1 ...
-    fn emit_app_spine(
-        &mut self,
-        fn_node: &Node,
-        args: &[(&Node, Option<&SidecarNode>)],
-        _spine_sc: Option<&SidecarNode>,
-        out: &mut String,
-    ) {
-        // Emit function; wrap in parens if it's a structural form.
-        if needs_parens_as_fn(fn_node) {
-            out.push('(');
-            self.emit_expr(fn_node, None, out);
-            out.push(')');
-        } else {
-            self.emit_proj_atom(fn_node, None, out);
-        }
-        // Emit each argument.
-        for (arg, arg_sc) in args {
-            out.push(' ');
-            if needs_parens_as_arg(arg) {
-                out.push('(');
-                self.emit_expr(arg, *arg_sc, out);
-                out.push(')');
-            } else {
-                self.emit_proj_atom(arg, *arg_sc, out);
-            }
         }
     }
 
@@ -366,8 +351,6 @@ impl EmitCtx {
 // Helpers
 // -------------------------------------------------------------------------
 
-/// Collect the left-recursive App spine: App(App(f, a), b) → (f, [a, b]).
-/// Returns the base function node and argument nodes with sidecar paths set to None
 /// Emit a pattern node, counting pat-vars to generate synthetic p0, p1, … names.
 /// Returns pat-var names in textual order (same order they were pushed: first → last).
 fn emit_pattern_counted(
@@ -381,7 +364,7 @@ fn emit_pattern_counted(
         Node::PatVar => {
             let name = sc.and_then(|s| s.binder.as_deref())
                 .map(|s| s.to_string())
-                .unwrap_or_else(|| { let n = format!("p{}", counter); n });
+                .unwrap_or_else(|| format!("p{}", counter));
             *counter += 1;
             out.push_str(&name);
             vec![name]
@@ -400,22 +383,6 @@ fn emit_pattern_counted(
         }
         _ => { out.push('_'); vec![] }
     }
-}
-
-/// (spine-level sidecar reconstruction is expensive; callers pass None).
-fn collect_app_spine(mut node: &Node) -> (&Node, Vec<(&Node, Option<&SidecarNode>)>) {
-    let mut args: Vec<(&Node, Option<&SidecarNode>)> = Vec::new();
-    loop {
-        match node {
-            Node::App { fn_, arg } => {
-                args.push((arg.as_ref(), None));
-                node = fn_.as_ref();
-            }
-            _ => break,
-        }
-    }
-    args.reverse();
-    (node, args)
 }
 
 fn needs_parens_as_fn(node: &Node) -> bool {
