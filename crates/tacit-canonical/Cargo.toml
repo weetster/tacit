@@ -1,8 +1,8 @@
 [package]
-name = "tacit-canon"
+name = "tacit-canonical"
 version = "0.1.0"
 edition = "2021"
-description = "Second canonicalizer for Tacit-Lite canonical text format (Rust reference)"
+description = "Canonical text format for Tacit-Lite: AST, parser, emitter, and BLAKE3 hasher"
 license = "MIT OR Apache-2.0"
 publish = false
 

@@ -5,7 +5,7 @@ use std::env;
 use std::fs;
 use std::path::PathBuf;
 
-use tacit_canon::{hash_node, parse};
+use tacit_canonical::{hash_node, parse};
 
 fn main() {
     let dir: PathBuf = env::args()

@@ -4,8 +4,8 @@
 //! bytes — they require constructing a non-canonical AST (or non-canonical
 //! input) and confirming the canonicalizer normalizes it.
 
-use tacit_canon::ast::Node;
-use tacit_canon::{emit, parse};
+use tacit_canonical::ast::Node;
+use tacit_canonical::{emit, parse};
 
 #[test]
 fn i1_signed_zero_normalizes() {

@@ -27,12 +27,9 @@ jobs:
       - name: Run tests
         run: uv run pytest
 
-  rs-canonicalizer:
-    name: rs-canonicalizer
+  tacit-canonical:
+    name: tacit-canonical
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: impls/rs-canonicalizer
     steps:
       - uses: actions/checkout@v4
 
@@ -47,8 +44,8 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            impls/rs-canonicalizer/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('impls/rs-canonicalizer/Cargo.lock') }}
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
 

@@ -12,10 +12,10 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use tacit_canon::{emit, hash_bytes, hash_node, parse};
+use tacit_canonical::{emit, hash_bytes, hash_node, parse};
 
 fn vectors_dir() -> PathBuf {
-    // CARGO_MANIFEST_DIR = impls/rs-canonicalizer
+    // CARGO_MANIFEST_DIR = crates/tacit-canonical
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     manifest
         .parent()

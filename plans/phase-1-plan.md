@@ -26,16 +26,17 @@ scope and belong to Phase 2.
 
 ## What already exists from Phase 0
 
-- AST enum at [`impls/rs-canonicalizer/src/ast.rs`](../impls/rs-canonicalizer/src/ast.rs)
-  — the Stage 3 conforming transcription per [ADR 0016](../decisions/0016-rust-ast-enum-location.md).
+- AST enum at [`crates/tacit-canonical/src/ast.rs`](../crates/tacit-canonical/src/ast.rs)
+  — the Stage 3 conforming transcription per [ADR 0016](../decisions/0016-rust-ast-enum-location.md),
+  promoted to the workspace crate `tacit-canonical` per [ADR 0029](../decisions/0029-cargo-workspace-layout.md).
 - Lexer + parser for canonical text at
-  [`impls/rs-canonicalizer/src/lex.rs`](../impls/rs-canonicalizer/src/lex.rs)
-  and [`parse.rs`](../impls/rs-canonicalizer/src/parse.rs). Already round-trips
+  [`crates/tacit-canonical/src/lex.rs`](../crates/tacit-canonical/src/lex.rs)
+  and [`parse.rs`](../crates/tacit-canonical/src/parse.rs). Already round-trips
   all 38 `*.canonical` test vectors and rejects every `*.forbidden` /
   `*.reject`.
 - Canonical-text emitter and BLAKE3 hasher
-  ([`emit.rs`](../impls/rs-canonicalizer/src/emit.rs),
-  [`hashing.rs`](../impls/rs-canonicalizer/src/hashing.rs)).
+  ([`emit.rs`](../crates/tacit-canonical/src/emit.rs),
+  [`hashing.rs`](../crates/tacit-canonical/src/hashing.rs)).
 
 The "parser for canonical storage view" deliverable is therefore largely
 *move-and-promote* work, not greenfield. The authoring-view parser, sidecar
@@ -43,19 +44,19 @@ I/O, inspection-view renderer, LLVM emitter, and CLI are all greenfield.
 
 ## Sequencing
 
-### Stage 1: Cargo workspace + AST crate promotion (~3 days)
+### Stage 1: Cargo workspace + AST crate promotion (~3 days) ✓ DONE 2026-04-24
 
 Closes the deferred clause from [ADR 0016](../decisions/0016-rust-ast-enum-location.md).
+Layout decision in [ADR 0029](../decisions/0029-cargo-workspace-layout.md).
 
-- Introduce a top-level `Cargo.toml` workspace.
-- Move the canonical-text crate into the workspace as `tacit-canonical`
-  (re-exports `ast`, `lex`, `parse`, `emit`, `hashing`). The existing
-  `impls/rs-canonicalizer/` source becomes the new crate's source.
-- Wire the existing test-vector tests at the workspace level so the CI job
-  defined in [ADR 0018](../decisions/0018-stage-5-frozen.md) keeps passing
-  unchanged.
-- ADR for the workspace layout (crate names, layering rules: `tacit-canonical`
-  has no deps on view/codegen crates).
+- Root `Cargo.toml` workspace at repo root; all Rust crates under `crates/`.
+- `impls/rs-canonicalizer/` promoted to `crates/tacit-canonical/` (package
+  renamed `tacit-canon` → `tacit-canonical`). Re-exports `ast`, `lex`,
+  `parse`, `emit`, `hashing` at crate root. Old directory removed.
+- All 14 test-vector tests pass under the new workspace layout; 38 canonical
+  vector hashes still match.
+- CI job renamed `rs-canonicalizer` → `tacit-canonical`, runs from workspace
+  root; cache key updated to `Cargo.lock` at repo root.
 
 Stage 1 has no spec changes; it is purely scaffolding. Exit gate: CI green
 under the new workspace layout, all 38 canonical-vector hashes still match.

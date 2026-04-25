@@ -1,0 +1,3 @@
+[workspace]
+members = ["crates/tacit-canonical"]
+resolver = "2"
