@@ -12,15 +12,16 @@ Notation varies across languages. Koka uses `sort :: [int] → [int]` for pure a
 
 ### Fixed lattice
 
-"Lattice" is math jargon for a partial order with union and intersection operations. The effect lattice is the space of possible effect sets. In Lite, the set of *atomic* effects is fixed at five:
+"Lattice" is math jargon for a partial order with union and intersection operations. The effect lattice is the space of possible effect sets. In Lite, the set of *atomic* effects is fixed at four:
 
 - **`IO`** — touches the outside world (files, network, stdin/stdout)
 - **`Alloc`** — allocates on the heap
 - **`Mut`** — mutates existing state someone else can observe
-- **`Exn`** — can fail / raise an exception
 - **`Div`** — might not terminate (diverge)
 
-Every function's effect set is a subset of those five. Users can't add new atoms. This keeps the system decidable and simple, at the cost of expressiveness.
+Every function's effect set is a subset of those four. Users can't add new atoms. This keeps the system decidable and simple, at the cost of expressiveness.
+
+Note that there is no `Exn` atom: failure is expressed as `Result` types in the return value, not as a side effect. Panic aborts the process and is not normal control flow. See [tacit-plan.md § Decisions baked in](../plans/tacit-plan.md).
 
 ### Effect inference
 

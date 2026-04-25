@@ -134,9 +134,9 @@ uv run corpus-verify-sealed --write  # regen manifest after an ADR-approved seal
 `corpus-run` compiles each Rust reference with `rustc --edition 2024` into
 a tempdir and feeds each test case's `stdin` to both the Python and Rust
 binaries, asserting byte-identical `stdout`. Failures print a diff. The CI
-workflow in [.github/workflows/ci.yml](../.github/workflows/ci.yml) is
-expected to gain a corpus job plus the `corpus-verify-sealed` check at
-Stage 4 freeze.
+workflow in [.github/workflows/ci.yml](../.github/workflows/ci.yml) runs
+`corpus-verify-sealed` and `corpus-run` (open tasks only) on every push
+and pull request to `main`.
 
 `corpus-tokens` measures `reference.py` and `reference.rs` with tiktoken's
 `o200k_base` encoding per [ADR 0001](../decisions/0001-target-tokenizer.md).

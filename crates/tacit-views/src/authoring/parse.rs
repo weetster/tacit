@@ -40,7 +40,11 @@ fn err<T>(msg: impl Into<String>) -> Result<T, ParseError> {
 /// Parse authoring-view bytes into a typed AST node + parallel sidecar tree.
 pub fn parse_authoring(input: &[u8]) -> Result<(Node, SidecarNode), ParseError> {
     let tokens = lex(input)?;
-    let mut p = Parser { tokens, pos: 0, stack: Vec::new() };
+    let mut p = Parser {
+        tokens,
+        pos: 0,
+        stack: Vec::new(),
+    };
     let (node, sidecar) = p.parse_expr()?;
     if p.pos != p.tokens.len() {
         return err(format!("trailing tokens after position {}", p.pos));
@@ -66,7 +70,10 @@ impl Parser {
 
     fn consume(&mut self, expected: &Token, what: &str) -> Result<(), ParseError> {
         match self.peek() {
-            Some(t) if t == expected => { self.advance(); Ok(()) }
+            Some(t) if t == expected => {
+                self.advance();
+                Ok(())
+            }
             Some(t) => err(format!("expected {} but got {:?}", what, t)),
             None => err(format!("expected {} but got end of input", what)),
         }
@@ -78,11 +85,19 @@ impl Parser {
         let mut depth = 0i32;
         loop {
             match self.peek() {
-                Some(Token::LBrace) | Some(Token::LParen) => { depth += 1; self.advance(); }
-                Some(Token::RBrace) | Some(Token::RParen) if depth > 0 => { depth -= 1; self.advance(); }
+                Some(Token::LBrace) | Some(Token::LParen) => {
+                    depth += 1;
+                    self.advance();
+                }
+                Some(Token::RBrace) | Some(Token::RParen) if depth > 0 => {
+                    depth -= 1;
+                    self.advance();
+                }
                 Some(Token::RBrace) | Some(Token::Semicolon) if depth == 0 => return Ok(()),
                 None => return err("unexpected end of input in rec block"),
-                _ => { self.advance(); }
+                _ => {
+                    self.advance();
+                }
             }
         }
     }
@@ -93,20 +108,34 @@ impl Parser {
         let mut depth = 0i32;
         loop {
             match self.peek() {
-                Some(Token::LBrace) | Some(Token::LParen) => { depth += 1; self.advance(); }
-                Some(Token::RBrace) | Some(Token::RParen) if depth > 0 => { depth -= 1; self.advance(); }
+                Some(Token::LBrace) | Some(Token::LParen) => {
+                    depth += 1;
+                    self.advance();
+                }
+                Some(Token::RBrace) | Some(Token::RParen) if depth > 0 => {
+                    depth -= 1;
+                    self.advance();
+                }
                 Some(Token::Eq) if depth == 0 => return Ok(()),
                 None => return err("unexpected end of input in rec binding type"),
-                _ => { self.advance(); }
+                _ => {
+                    self.advance();
+                }
             }
         }
     }
 
     fn consume_ident(&mut self, what: &str) -> Result<String, ParseError> {
         match self.peek().cloned() {
-            Some(Token::Ident(name)) => { self.advance(); Ok(name) }
+            Some(Token::Ident(name)) => {
+                self.advance();
+                Ok(name)
+            }
             // Allow `_` as a bare identifier (for record field keys, etc.)
-            Some(Token::Underscore) => { self.advance(); Ok("_".to_string()) }
+            Some(Token::Underscore) => {
+                self.advance();
+                Ok("_".to_string())
+            }
             Some(t) => err(format!("expected {} but got {:?}", what, t)),
             None => err(format!("expected {} but got end of input", what)),
         }
@@ -114,15 +143,27 @@ impl Parser {
 
     /// Look up a name in the binding stack. Returns DeBruijn index (0 = innermost).
     fn lookup(&self, name: &str) -> Option<u64> {
-        self.stack.iter().rev().position(|n| n == name).map(|i| i as u64)
+        self.stack
+            .iter()
+            .rev()
+            .position(|n| n == name)
+            .map(|i| i as u64)
     }
 
     /// True if the next token can start an atomic expression (not a structural keyword).
     fn can_start_atom(&self) -> bool {
-        matches!(self.peek(), Some(
-            Token::Ident(_) | Token::Int(_) | Token::Str(_) |
-            Token::At | Token::Underscore | Token::LParen | Token::LBrace
-        ))
+        matches!(
+            self.peek(),
+            Some(
+                Token::Ident(_)
+                    | Token::Int(_)
+                    | Token::Str(_)
+                    | Token::At
+                    | Token::Underscore
+                    | Token::LParen
+                    | Token::LBrace
+            )
+        )
     }
 
     /// True if next token can start an atomic pattern.
@@ -157,7 +198,12 @@ impl Parser {
             children: Some(vec![Some(body_sc)]),
             ..Default::default()
         };
-        Ok((Node::Lam { body: Box::new(body) }, sc))
+        Ok((
+            Node::Lam {
+                body: Box::new(body),
+            },
+            sc,
+        ))
     }
 
     fn parse_let(&mut self) -> Result<(Node, SidecarNode), ParseError> {
@@ -185,20 +231,35 @@ impl Parser {
                 children: Some(vec![Some(rhs_sc), Some(type_sc)]),
                 ..Default::default()
             };
-            let ann = Node::Ann { expr: Box::new(rhs), type_: Box::new(type_node) };
+            let ann = Node::Ann {
+                expr: Box::new(rhs),
+                type_: Box::new(type_node),
+            };
             let sc = SidecarNode {
                 binder: Some(binder),
                 children: Some(vec![Some(ann_sc), Some(body_sc)]),
                 ..Default::default()
             };
-            Ok((Node::Let { rhs: Box::new(ann), body: Box::new(body) }, sc))
+            Ok((
+                Node::Let {
+                    rhs: Box::new(ann),
+                    body: Box::new(body),
+                },
+                sc,
+            ))
         } else {
             let sc = SidecarNode {
                 binder: Some(binder),
                 children: Some(vec![Some(rhs_sc), Some(body_sc)]),
                 ..Default::default()
             };
-            Ok((Node::Let { rhs: Box::new(rhs), body: Box::new(body) }, sc))
+            Ok((
+                Node::Let {
+                    rhs: Box::new(rhs),
+                    body: Box::new(body),
+                },
+                sc,
+            ))
         }
     }
 
@@ -247,7 +308,8 @@ impl Parser {
 
         for i in 0..n {
             let _name = self.consume_ident("binding name")?;
-            let type_ann: Option<(Node, SidecarNode)> = if matches!(self.peek(), Some(Token::Colon)) {
+            let type_ann: Option<(Node, SidecarNode)> = if matches!(self.peek(), Some(Token::Colon))
+            {
                 self.advance();
                 Some(self.parse_expr()?)
             } else {
@@ -261,7 +323,10 @@ impl Parser {
                     children: Some(vec![Some(expr_sc), Some(t_sc.clone())]),
                     ..Default::default()
                 };
-                let node = Node::Ann { expr: Box::new(expr), type_: Box::new(t_node) };
+                let node = Node::Ann {
+                    expr: Box::new(expr),
+                    type_: Box::new(t_node),
+                };
                 (node, ann_sc)
             } else {
                 (expr, expr_sc)
@@ -291,7 +356,13 @@ impl Parser {
             children: Some(children),
             ..Default::default()
         };
-        Ok((Node::Rec { bindings: binding_nodes, body: Box::new(body) }, sc))
+        Ok((
+            Node::Rec {
+                bindings: binding_nodes,
+                body: Box::new(body),
+            },
+            sc,
+        ))
     }
 
     fn parse_if(&mut self) -> Result<(Node, SidecarNode), ParseError> {
@@ -305,7 +376,14 @@ impl Parser {
             children: Some(vec![Some(cond_sc), Some(then_sc), Some(else_sc)]),
             ..Default::default()
         };
-        Ok((Node::If { cond: Box::new(cond), then: Box::new(then), else_: Box::new(else_) }, sc))
+        Ok((
+            Node::If {
+                cond: Box::new(cond),
+                then: Box::new(then),
+                else_: Box::new(else_),
+            },
+            sc,
+        ))
     }
 
     fn parse_match(&mut self) -> Result<(Node, SidecarNode), ParseError> {
@@ -327,8 +405,17 @@ impl Parser {
 
         let mut children = vec![Some(scrut_sc)];
         children.extend(arm_scs);
-        let sc = SidecarNode { children: Some(children), ..Default::default() };
-        Ok((Node::Match { scrutinee: Box::new(scrut), arms: arm_nodes }, sc))
+        let sc = SidecarNode {
+            children: Some(children),
+            ..Default::default()
+        };
+        Ok((
+            Node::Match {
+                scrutinee: Box::new(scrut),
+                arms: arm_nodes,
+            },
+            sc,
+        ))
     }
 
     fn parse_arm(&mut self) -> Result<(Node, SidecarNode), ParseError> {
@@ -348,7 +435,13 @@ impl Parser {
             children: Some(vec![Some(pat_sc), Some(body_sc)]),
             ..Default::default()
         };
-        Ok((Node::Arm { pattern: Box::new(pat_node), body: Box::new(body) }, sc))
+        Ok((
+            Node::Arm {
+                pattern: Box::new(pat_node),
+                body: Box::new(body),
+            },
+            sc,
+        ))
     }
 
     // -------------------------------------------------------------------------
@@ -372,10 +465,20 @@ impl Parser {
                 arg_scs.push(Some(sc));
             }
             let sc = SidecarNode {
-                children: if arg_scs.is_empty() { None } else { Some(arg_scs) },
+                children: if arg_scs.is_empty() {
+                    None
+                } else {
+                    Some(arg_scs)
+                },
                 ..Default::default()
             };
-            return Ok((Node::Ctor { name: ctor_name, args }, sc));
+            return Ok((
+                Node::Ctor {
+                    name: ctor_name,
+                    args,
+                },
+                sc,
+            ));
         }
 
         let mut lhs = head_node;
@@ -386,7 +489,10 @@ impl Parser {
                 children: Some(vec![Some(lhs_sc), Some(rhs_sc)]),
                 ..Default::default()
             };
-            lhs = Node::App { fn_: Box::new(lhs), arg: Box::new(rhs) };
+            lhs = Node::App {
+                fn_: Box::new(lhs),
+                arg: Box::new(rhs),
+            };
             lhs_sc = sc;
         }
         Ok((lhs, lhs_sc))
@@ -408,7 +514,10 @@ impl Parser {
                 children: Some(vec![Some(sc)]),
                 ..Default::default()
             };
-            node = Node::Proj { record: Box::new(node), field };
+            node = Node::Proj {
+                record: Box::new(node),
+                field,
+            };
         }
         Ok((node, sc, false))
     }
@@ -423,7 +532,11 @@ impl Parser {
                     Ok((Node::Var { index: idx }, SidecarNode::default(), false))
                 } else if name.chars().next().is_some_and(|c| c.is_uppercase()) {
                     // Unbound capitalized ident → ctor head; args collected by caller.
-                    Ok((Node::Ctor { name, args: vec![] }, SidecarNode::default(), true))
+                    Ok((
+                        Node::Ctor { name, args: vec![] },
+                        SidecarNode::default(),
+                        true,
+                    ))
                 } else {
                     // Unbound lowercase ident → hole (per projection rules).
                     let msg = format!("identifier '{}' not in scope", name);
@@ -450,7 +563,9 @@ impl Parser {
             }
             Some(Token::Underscore) => {
                 self.advance();
-                let payload = Node::Str { value: "missing expression".to_string() };
+                let payload = Node::Str {
+                    value: "missing expression".to_string(),
+                };
                 let node = Node::Hole {
                     diag_id: "expected-expr".to_string(),
                     payload: Box::new(payload),
@@ -469,7 +584,14 @@ impl Parser {
                         children: Some(vec![Some(e_sc), Some(t_sc)]),
                         ..Default::default()
                     };
-                    return Ok((Node::Ann { expr: Box::new(e), type_: Box::new(t) }, sc, false));
+                    return Ok((
+                        Node::Ann {
+                            expr: Box::new(e),
+                            type_: Box::new(t),
+                        },
+                        sc,
+                        false,
+                    ));
                 }
                 self.consume(&Token::RParen, "')'")?;
                 Ok((e, e_sc, false))
@@ -521,10 +643,8 @@ impl Parser {
         }
 
         // Build canonical-order fields list.
-        let canonical_fields: Vec<(String, Node)> = sorted_indices
-            .iter()
-            .map(|&i| fields[i].clone())
-            .collect();
+        let canonical_fields: Vec<(String, Node)> =
+            sorted_indices.iter().map(|&i| fields[i].clone()).collect();
 
         // Sidecar: 2N children (null for sym, val_sc for value) in canonical order.
         // field_order if not identity.
@@ -540,14 +660,23 @@ impl Parser {
         while children.last().is_some_and(|c| c.is_none()) {
             children.pop();
         }
-        let children_opt = if children.is_empty() { None } else { Some(children) };
+        let children_opt = if children.is_empty() {
+            None
+        } else {
+            Some(children)
+        };
 
         let sc = SidecarNode {
             field_order: sidecar_field_order,
             children: children_opt,
             ..Default::default()
         };
-        Ok((Node::Record { fields: canonical_fields }, sc))
+        Ok((
+            Node::Record {
+                fields: canonical_fields,
+            },
+            sc,
+        ))
     }
 
     // -------------------------------------------------------------------------
@@ -578,13 +707,26 @@ impl Parser {
                 // Sidecar: leading null for ctor-name sym, then sub-pattern entries.
                 let mut children = vec![None];
                 children.extend(sub_scs);
-                let sc = SidecarNode { children: Some(children), ..Default::default() };
-                Ok((Node::PatCtor { name: ctor_name, sub_patterns: sub_pats }, sc, all_vars))
+                let sc = SidecarNode {
+                    children: Some(children),
+                    ..Default::default()
+                };
+                Ok((
+                    Node::PatCtor {
+                        name: ctor_name,
+                        sub_patterns: sub_pats,
+                    },
+                    sc,
+                    all_vars,
+                ))
             }
             Some(Token::Ident(name)) => {
                 self.advance();
                 // Lowercase ident → pat-var (creates new binding).
-                let sc = SidecarNode { binder: Some(name.clone()), ..Default::default() };
+                let sc = SidecarNode {
+                    binder: Some(name.clone()),
+                    ..Default::default()
+                };
                 Ok((Node::PatVar, sc, vec![name]))
             }
             Some(t) => err(format!("expected pattern, got {:?}", t)),
@@ -602,12 +744,25 @@ impl Parser {
             Some(Token::Ident(name)) if name.chars().next().is_some_and(|c| c.is_uppercase()) => {
                 // Nullary ctor in pattern atom position.
                 self.advance();
-                let sc = SidecarNode { children: Some(vec![None]), ..Default::default() };
-                Ok((Node::PatCtor { name, sub_patterns: vec![] }, sc, vec![]))
+                let sc = SidecarNode {
+                    children: Some(vec![None]),
+                    ..Default::default()
+                };
+                Ok((
+                    Node::PatCtor {
+                        name,
+                        sub_patterns: vec![],
+                    },
+                    sc,
+                    vec![],
+                ))
             }
             Some(Token::Ident(name)) => {
                 self.advance();
-                let sc = SidecarNode { binder: Some(name.clone()), ..Default::default() };
+                let sc = SidecarNode {
+                    binder: Some(name.clone()),
+                    ..Default::default()
+                };
                 Ok((Node::PatVar, sc, vec![name]))
             }
             Some(t) => err(format!("expected pattern atom, got {:?}", t)),

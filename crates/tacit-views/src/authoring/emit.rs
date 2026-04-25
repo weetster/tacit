@@ -40,7 +40,8 @@ impl EmitCtx {
     }
 
     fn emit_lam(&mut self, body: &Node, sc: Option<&SidecarNode>, out: &mut String) {
-        let name = sc.and_then(|s| s.binder.as_deref())
+        let name = sc
+            .and_then(|s| s.binder.as_deref())
             .map(|s| s.to_string())
             .unwrap_or_else(|| format!("v{}", self.lam_let_depth));
         out.push_str("lambda ");
@@ -56,7 +57,8 @@ impl EmitCtx {
     }
 
     fn emit_let(&mut self, rhs: &Node, body: &Node, sc: Option<&SidecarNode>, out: &mut String) {
-        let name = sc.and_then(|s| s.binder.as_deref())
+        let name = sc
+            .and_then(|s| s.binder.as_deref())
             .map(|s| s.to_string())
             .unwrap_or_else(|| format!("v{}", self.lam_let_depth));
 
@@ -65,7 +67,11 @@ impl EmitCtx {
         self.lam_let_depth += 1;
 
         // Check if rhs is Ann (let x: T = V case).
-        if let Node::Ann { expr: inner_rhs, type_ } = rhs {
+        if let Node::Ann {
+            expr: inner_rhs,
+            type_,
+        } = rhs
+        {
             let ann_sc = sc.and_then(|s| s.child(0));
             let inner_rhs_sc = ann_sc.and_then(|s| s.child(0));
             let type_sc = ann_sc.and_then(|s| s.child(1));
@@ -91,7 +97,13 @@ impl EmitCtx {
         self.stack.pop();
     }
 
-    fn emit_rec(&mut self, bindings: &[Node], body: &Node, sc: Option<&SidecarNode>, out: &mut String) {
+    fn emit_rec(
+        &mut self,
+        bindings: &[Node],
+        body: &Node,
+        sc: Option<&SidecarNode>,
+        out: &mut String,
+    ) {
         let n = bindings.len();
         let names: Vec<String> = if let Some(binders) = sc.and_then(|s| s.binders.as_ref()) {
             binders.clone()
@@ -106,7 +118,9 @@ impl EmitCtx {
 
         out.push_str("rec {");
         for (k, (name, binding)) in names.iter().zip(bindings.iter()).enumerate() {
-            if k > 0 { out.push_str("; "); }
+            if k > 0 {
+                out.push_str("; ");
+            }
             out.push_str(name);
             out.push_str(" = ");
             let b_sc = sc.and_then(|s| s.child(k));
@@ -136,7 +150,9 @@ impl EmitCtx {
 
         out.push_str("module {");
         for (k, (name, binding)) in names.iter().zip(bindings.iter()).enumerate() {
-            if k > 0 { out.push_str("; "); }
+            if k > 0 {
+                out.push_str("; ");
+            }
             out.push_str(name);
             out.push_str(" = ");
             let b_sc = sc.and_then(|s| s.child(k));
@@ -150,8 +166,12 @@ impl EmitCtx {
     }
 
     fn emit_if(
-        &mut self, cond: &Node, then: &Node, else_: &Node,
-        sc: Option<&SidecarNode>, out: &mut String,
+        &mut self,
+        cond: &Node,
+        then: &Node,
+        else_: &Node,
+        sc: Option<&SidecarNode>,
+        out: &mut String,
     ) {
         out.push_str("if ");
         self.emit_app_expr(cond, sc.and_then(|s| s.child(0)), out);
@@ -161,7 +181,13 @@ impl EmitCtx {
         self.emit_expr(else_, sc.and_then(|s| s.child(2)), out);
     }
 
-    fn emit_match(&mut self, scrutinee: &Node, arms: &[Node], sc: Option<&SidecarNode>, out: &mut String) {
+    fn emit_match(
+        &mut self,
+        scrutinee: &Node,
+        arms: &[Node],
+        sc: Option<&SidecarNode>,
+        out: &mut String,
+    ) {
         out.push_str("match ");
         self.emit_app_expr(scrutinee, sc.and_then(|s| s.child(0)), out);
         out.push_str(" with");
@@ -275,7 +301,7 @@ impl EmitCtx {
                 out.push('"');
                 for ch in value.chars() {
                     match ch {
-                        '"'  => out.push_str("\\\""),
+                        '"' => out.push_str("\\\""),
                         '\\' => out.push_str("\\\\"),
                         '\n' => out.push_str("\\n"),
                         '\t' => out.push_str("\\t"),
@@ -297,13 +323,16 @@ impl EmitCtx {
                 out.push('{');
                 let n = fields.len();
                 // field_order[authoring_pos] = canonical_index; emit in authoring order.
-                let emit_order: Vec<usize> = if let Some(fo) = sc.and_then(|s| s.field_order.as_ref()) {
-                    fo.clone()
-                } else {
-                    (0..n).collect()
-                };
+                let emit_order: Vec<usize> =
+                    if let Some(fo) = sc.and_then(|s| s.field_order.as_ref()) {
+                        fo.clone()
+                    } else {
+                        (0..n).collect()
+                    };
                 for (display_pos, &canon_idx) in emit_order.iter().enumerate() {
-                    if display_pos > 0 { out.push_str(", "); }
+                    if display_pos > 0 {
+                        out.push_str(", ");
+                    }
                     if canon_idx < fields.len() {
                         let (key, val) = &fields[canon_idx];
                         out.push_str(key);
@@ -360,9 +389,13 @@ fn emit_pattern_counted(
     out: &mut String,
 ) -> Vec<String> {
     match node {
-        Node::PatWild => { out.push('_'); vec![] }
+        Node::PatWild => {
+            out.push('_');
+            vec![]
+        }
         Node::PatVar => {
-            let name = sc.and_then(|s| s.binder.as_deref())
+            let name = sc
+                .and_then(|s| s.binder.as_deref())
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| format!("p{}", counter));
             *counter += 1;
@@ -381,19 +414,33 @@ fn emit_pattern_counted(
             }
             all_vars
         }
-        _ => { out.push('_'); vec![] }
+        _ => {
+            out.push('_');
+            vec![]
+        }
     }
 }
 
 fn needs_parens_as_fn(node: &Node) -> bool {
-    matches!(node, Node::Lam { .. } | Node::Let { .. } | Node::Rec { .. }
-             | Node::If { .. } | Node::Match { .. } | Node::Ann { .. })
+    matches!(
+        node,
+        Node::Lam { .. }
+            | Node::Let { .. }
+            | Node::Rec { .. }
+            | Node::If { .. }
+            | Node::Match { .. }
+            | Node::Ann { .. }
+    )
 }
 
 fn needs_parens_as_arg(node: &Node) -> bool {
     match node {
-        Node::App { .. } | Node::Lam { .. } | Node::Let { .. }
-        | Node::Rec { .. } | Node::If { .. } | Node::Match { .. }
+        Node::App { .. }
+        | Node::Lam { .. }
+        | Node::Let { .. }
+        | Node::Rec { .. }
+        | Node::If { .. }
+        | Node::Match { .. }
         | Node::Ann { .. } => true,
         Node::Ctor { args, .. } => !args.is_empty(),
         _ => false,

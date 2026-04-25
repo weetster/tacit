@@ -68,16 +68,46 @@ pub fn lex(input: &[u8]) -> Result<Vec<Token>, LexError> {
             // Whitespace
             b' ' | b'\t' | b'\n' | b'\r' => i += 1,
             // Punctuation
-            b'(' => { tokens.push(Token::LParen); i += 1; }
-            b')' => { tokens.push(Token::RParen); i += 1; }
-            b'{' => { tokens.push(Token::LBrace); i += 1; }
-            b'}' => { tokens.push(Token::RBrace); i += 1; }
-            b'.' => { tokens.push(Token::Dot); i += 1; }
-            b',' => { tokens.push(Token::Comma); i += 1; }
-            b':' => { tokens.push(Token::Colon); i += 1; }
-            b';' => { tokens.push(Token::Semicolon); i += 1; }
-            b'|' => { tokens.push(Token::Pipe); i += 1; }
-            b'@' => { tokens.push(Token::At); i += 1; }
+            b'(' => {
+                tokens.push(Token::LParen);
+                i += 1;
+            }
+            b')' => {
+                tokens.push(Token::RParen);
+                i += 1;
+            }
+            b'{' => {
+                tokens.push(Token::LBrace);
+                i += 1;
+            }
+            b'}' => {
+                tokens.push(Token::RBrace);
+                i += 1;
+            }
+            b'.' => {
+                tokens.push(Token::Dot);
+                i += 1;
+            }
+            b',' => {
+                tokens.push(Token::Comma);
+                i += 1;
+            }
+            b':' => {
+                tokens.push(Token::Colon);
+                i += 1;
+            }
+            b';' => {
+                tokens.push(Token::Semicolon);
+                i += 1;
+            }
+            b'|' => {
+                tokens.push(Token::Pipe);
+                i += 1;
+            }
+            b'@' => {
+                tokens.push(Token::At);
+                i += 1;
+            }
             b'=' => {
                 if i + 1 < n && input[i + 1] == b'>' {
                     tokens.push(Token::FatArrow);
@@ -158,15 +188,15 @@ fn lex_int(input: &[u8], start: usize) -> (String, usize) {
 fn keyword_or_ident(name: String) -> Token {
     match name.as_str() {
         "lambda" => Token::Lambda,
-        "let"    => Token::Let,
-        "rec"    => Token::Rec,
-        "in"     => Token::In,
-        "if"     => Token::If,
-        "then"   => Token::Then,
-        "else"   => Token::Else,
-        "match"  => Token::Match,
-        "with"   => Token::With,
-        _        => Token::Ident(name),
+        "let" => Token::Let,
+        "rec" => Token::Rec,
+        "in" => Token::In,
+        "if" => Token::If,
+        "then" => Token::Then,
+        "else" => Token::Else,
+        "match" => Token::Match,
+        "with" => Token::With,
+        _ => Token::Ident(name),
     }
 }
 
@@ -191,8 +221,8 @@ fn lex_string(input: &[u8], start: usize) -> Result<(String, usize), LexError> {
                 return Err(LexError::UnexpectedByte(b, i));
             }
             0x80..=0xFF => {
-                let (ch, ni) = lex_utf8(input, i)
-                    .map_err(|e| LexError::BadEscape(e.to_string()))?;
+                let (ch, ni) =
+                    lex_utf8(input, i).map_err(|e| LexError::BadEscape(e.to_string()))?;
                 out.push(ch);
                 i = ni;
             }
@@ -209,12 +239,12 @@ fn lex_escape(input: &[u8], i: usize) -> Result<(char, usize), LexError> {
         return Err(LexError::BadEscape("dangling backslash".to_string()));
     }
     match input[i + 1] {
-        b'"'  => Ok(('"',  i + 2)),
+        b'"' => Ok(('"', i + 2)),
         b'\\' => Ok(('\\', i + 2)),
-        b'n'  => Ok(('\n', i + 2)),
-        b't'  => Ok(('\t', i + 2)),
-        b'r'  => Ok(('\r', i + 2)),
-        b'u'  => lex_unicode_escape(input, i),
+        b'n' => Ok(('\n', i + 2)),
+        b't' => Ok(('\t', i + 2)),
+        b'r' => Ok(('\r', i + 2)),
+        b'u' => lex_unicode_escape(input, i),
         other => Err(LexError::BadEscape(format!("\\{}", other as char))),
     }
 }
@@ -234,7 +264,9 @@ fn lex_unicode_escape(input: &[u8], i: usize) -> Result<(char, usize), LexError>
     }
     let hex = &input[hex_start..j];
     if hex.is_empty() || hex.len() > 6 {
-        return Err(LexError::BadEscape("\\u{} requires 1-6 hex digits".to_string()));
+        return Err(LexError::BadEscape(
+            "\\u{} requires 1-6 hex digits".to_string(),
+        ));
     }
     let text = std::str::from_utf8(hex)
         .map_err(|_| LexError::BadEscape("non-ascii in \\u{}".to_string()))?;
@@ -249,15 +281,20 @@ fn lex_unicode_escape(input: &[u8], i: usize) -> Result<(char, usize), LexError>
 
 fn lex_utf8(input: &[u8], i: usize) -> Result<(char, usize), LexError> {
     let b = input[i];
-    let width = if b >> 5 == 0b110 { 2 }
-        else if b >> 4 == 0b1110 { 3 }
-        else if b >> 3 == 0b11110 { 4 }
-        else { return Err(LexError::UnexpectedByte(b, i)); };
+    let width = if b >> 5 == 0b110 {
+        2
+    } else if b >> 4 == 0b1110 {
+        3
+    } else if b >> 3 == 0b11110 {
+        4
+    } else {
+        return Err(LexError::UnexpectedByte(b, i));
+    };
     if i + width > input.len() {
         return Err(LexError::UnexpectedByte(b, i));
     }
-    let s = std::str::from_utf8(&input[i..i + width])
-        .map_err(|_| LexError::UnexpectedByte(b, i))?;
+    let s =
+        std::str::from_utf8(&input[i..i + width]).map_err(|_| LexError::UnexpectedByte(b, i))?;
     let ch = s.chars().next().unwrap();
     let cp = ch as u32;
     if (0xD800..=0xDFFF).contains(&cp) {

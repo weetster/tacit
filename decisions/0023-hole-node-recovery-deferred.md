@@ -11,12 +11,13 @@
 nodes for malformed subtrees: parser error recovery produces `Hole` AST nodes
 carrying structured diagnostics, so the rest of the file stays analyzable.
 The existing canonical-text parser at
-[`impls/rs-canonicalizer/src/parse.rs`](../impls/rs-canonicalizer/src/parse.rs)
+[`crates/tacit-canonical/src/parse.rs`](../crates/tacit-canonical/src/parse.rs)
 does not implement this — it hard-fails with a `ParseError` on the first
 malformed construct.
 
-The AST enum at [`impls/rs-canonicalizer/src/ast.rs`](../impls/rs-canonicalizer/src/ast.rs)
-(per [ADR 0016](0016-rust-ast-enum-location.md)) already carries a `Hole`
+The AST enum at [`crates/tacit-canonical/src/ast.rs`](../crates/tacit-canonical/src/ast.rs)
+(per [ADR 0016](0016-rust-ast-enum-location.md), promoted to its current
+workspace location by [ADR 0029](0029-cargo-workspace-layout.md)) already carries a `Hole`
 variant transcribed from the spec, and the canonical emitter and BLAKE3
 hasher both handle `Hole` nodes. Canonical text that *contains* an
 explicitly-constructed `Hole` parses, hashes, and round-trips today.

@@ -57,3 +57,29 @@ jobs:
 
       - name: Run tests
         run: cargo test
+
+  corpus:
+    name: corpus
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: corpus/harness
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Verify sealed manifest
+        run: uv run corpus-verify-sealed
+
+      - name: Run open corpus tasks
+        run: uv run corpus-run

@@ -76,12 +76,35 @@ Greenfield. New crate `tacit-views`.
   [`sidecar-format.md`](sidecar-format.md) and [ADR 0014](../decisions/0014-sidecar-format.md),
   including stale-sidecar detection via `targets_hash_blake3` and the
   synthetic-name fallback.
-- Property tests over the existing 38 canonical vectors: for each vector,
-  emit authoring + sidecar, parse them back, canonicalize, assert byte- and
-  hash-identity with the original.
+- Property tests over the existing 38 canonical vectors: for each vector
+  in the in-scope subset (see exclusions below), emit authoring + sidecar,
+  parse them back, canonicalize, assert byte- and hash-identity with the
+  original.
 
-Exit gate: round-trip property holds on every Phase 0 test vector and on
-the corpus reference solutions (once Stage 4 below feeds them in via Rust).
+Exit gate: round-trip property holds on every Phase 0 test vector in the
+in-scope subset, and on the corpus reference solutions (once Stage 4 below
+feeds them in via Rust).
+
+Out of scope for the round-trip property in Phase 1, by spec design rather
+than implementation gap (see
+[`candidates/authoring-bpe-compact.md`](candidates/authoring-bpe-compact.md)
+*Direction 3* and § *Module syntax*):
+
+- **Holes are lossy through the authoring view.** All `(hole DIAG-ID …)`
+  variants render as a single `_` marker, dropping the diag-id and payload.
+  Hole round-trip lives on the inspection view, which preserves them
+  visibly.
+- **Top-level `module` syntax is deferred to Phase 2.** Module trees can
+  still be canonicalized and inspected; only the authoring-view surface
+  for `module { … }` is held back.
+- **Open terms** (free vars at top level with no binder in scope) and
+  **symbol-edge field names** containing dashes or a lone `_` are not
+  expressible in the authoring grammar and are excluded from the
+  round-trip property. They remain valid at the canonical layer.
+
+The current `crates/tacit-views/tests/round_trip.rs` skip list enumerates
+the affected fixtures; any future canonical vector that falls into one of
+the categories above is also out of scope for this gate.
 
 ### Stage 3: Inspection-view renderer (parallelizable with Stage 2) (~1 week)
 
@@ -276,7 +299,7 @@ Node::App {
 ```
 
 (Node-kind names are illustrative — match the actual enum in
-`impls/rs-canonicalizer/src/ast.rs`.)
+`crates/tacit-canonical/src/ast.rs`.)
 
 ### A.4 Codegen pattern-match (the load-bearing step)
 

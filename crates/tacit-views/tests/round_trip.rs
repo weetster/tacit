@@ -76,7 +76,10 @@ fn authoring_round_trip_all_canonical_vectors() {
         let canonical_bytes = fs::read(path).unwrap();
         let node = match parse(&canonical_bytes) {
             Ok(n) => n,
-            Err(e) => { failures.push(format!("{}: canonical parse failed: {}", name, e)); continue; }
+            Err(e) => {
+                failures.push(format!("{}: canonical parse failed: {}", name, e));
+                continue;
+            }
         };
         let canonical_original = emit(&node);
         let authoring_text = emit_authoring(&node, None);
@@ -104,7 +107,11 @@ fn authoring_round_trip_all_canonical_vectors() {
     }
 
     if !failures.is_empty() {
-        panic!("{} round-trip failure(s):\n{}", failures.len(), failures.join("\n---\n"));
+        panic!(
+            "{} round-trip failure(s):\n{}",
+            failures.len(),
+            failures.join("\n---\n")
+        );
     }
 }
 
@@ -113,11 +120,14 @@ fn authoring_round_trip_all_canonical_vectors() {
 // -------------------------------------------------------------------------
 
 fn check_emit(canonical: &str, expected_authoring: &str) {
-    let node = parse(canonical.as_bytes()).unwrap_or_else(|e| panic!("parse {:?}: {}", canonical, e));
+    let node =
+        parse(canonical.as_bytes()).unwrap_or_else(|e| panic!("parse {:?}: {}", canonical, e));
     let got = emit_authoring(&node, None);
-    assert_eq!(got, expected_authoring,
+    assert_eq!(
+        got, expected_authoring,
         "authoring emit mismatch\n  canonical: {}\n  expected:  {}\n  got:       {}",
-        canonical, expected_authoring, got);
+        canonical, expected_authoring, got
+    );
 }
 
 #[test]
@@ -127,7 +137,10 @@ fn emit_identity_lambda() {
 
 #[test]
 fn emit_let_cascade() {
-    check_emit("(let (int 1) (let (int 2) (var 1)))", "let v0 = 1 in let v1 = 2 in v0");
+    check_emit(
+        "(let (int 1) (let (int 2) (var 1)))",
+        "let v0 = 1 in let v1 = 2 in v0",
+    );
 }
 
 #[test]
@@ -207,7 +220,10 @@ fn emit_single_rec() {
 #[test]
 fn emit_lam_in_let_rhs_no_parens() {
     // rhs extends to `in`; lambda should NOT be wrapped in parens.
-    check_emit("(let (lam (var 0)) (app (var 0) (int 5)))", "let v0 = lambda v1. v1 in v0 5");
+    check_emit(
+        "(let (lam (var 0)) (app (var 0) (int 5)))",
+        "let v0 = lambda v1. v1 in v0 5",
+    );
 }
 
 // -------------------------------------------------------------------------
@@ -218,9 +234,11 @@ fn check_parse(authoring: &str, expected_canonical: &str) {
     let (node, _sc) = parse_authoring(authoring.as_bytes())
         .unwrap_or_else(|e| panic!("parse {:?}: {}", authoring, e));
     let got = String::from_utf8(emit(&node)).unwrap();
-    assert_eq!(got, expected_canonical,
+    assert_eq!(
+        got, expected_canonical,
         "parse mismatch\n  input:    {}\n  expected: {}\n  got:      {}",
-        authoring, expected_canonical, got);
+        authoring, expected_canonical, got
+    );
 }
 
 #[test]
@@ -321,9 +339,11 @@ fn sidecar_preserves_names() {
     let authoring = "let id = lambda x. x in id 5";
     let (node, sidecar) = parse_authoring(authoring.as_bytes()).unwrap();
     let roundtripped = emit_authoring(&node, Some(&sidecar));
-    assert_eq!(roundtripped, authoring,
+    assert_eq!(
+        roundtripped, authoring,
         "sidecar names not preserved\n  original:     {}\n  roundtripped: {}",
-        authoring, roundtripped);
+        authoring, roundtripped
+    );
 }
 
 #[test]
@@ -331,9 +351,11 @@ fn sidecar_rec_names_preserved() {
     let authoring = "rec {even = lambda n. odd n; odd = lambda n. even n} in even 10";
     let (node, sidecar) = parse_authoring(authoring.as_bytes()).unwrap();
     let roundtripped = emit_authoring(&node, Some(&sidecar));
-    assert_eq!(roundtripped, authoring,
+    assert_eq!(
+        roundtripped, authoring,
         "rec sidecar names not preserved\n  original:     {}\n  roundtripped: {}",
-        authoring, roundtripped);
+        authoring, roundtripped
+    );
 }
 
 #[test]
@@ -342,9 +364,11 @@ fn sidecar_names_preserved_inside_app_arg() {
     let authoring = "let f = lambda x. x in f (lambda y. y)";
     let (node, sidecar) = parse_authoring(authoring.as_bytes()).unwrap();
     let roundtripped = emit_authoring(&node, Some(&sidecar));
-    assert_eq!(roundtripped, authoring,
+    assert_eq!(
+        roundtripped, authoring,
         "binder name inside app arg not preserved\n  original:     {}\n  roundtripped: {}",
-        authoring, roundtripped);
+        authoring, roundtripped
+    );
 }
 
 #[test]
