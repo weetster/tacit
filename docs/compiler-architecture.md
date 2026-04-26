@@ -1,11 +1,8 @@
 # Compiler Architecture
 
-**Status:** Phase 1 working draft. Stages 1–4 frozen by
-[ADR 0032](../decisions/0032-stage-4-frozen.md); LLVM 19 pinned via
-`inkwell` 0.9's `llvm19-1` feature. Stage 5 will replace this draft
-with the full architecture document (CLI + crate-graph rewrite); the
-LLVM-pin section below is load-bearing reference material in the
-meantime.
+**Status:** Phase 1 complete. Stages 1–5 frozen; see
+[ADR 0032](../decisions/0032-stage-4-frozen.md) for Stage 4 freeze details.
+LLVM 19 pinned via `inkwell` 0.9's `llvm19-1` feature.
 
 ## Crate layout
 
@@ -13,12 +10,20 @@ meantime.
 crates/
 ├── tacit-canonical/   — AST, lexer, parser, emitter, BLAKE3 hasher
 ├── tacit-views/       — authoring view (round-trip) + inspection view (display-only)
-└── tacit-codegen/     — Phase 1 LLVM IR emitter
+├── tacit-codegen/     — Phase 1 LLVM IR emitter
+└── tacit-cli/         — `tacit` binary: compile and view subcommands
 ```
 
-Dependency direction: `tacit-codegen` → `tacit-canonical`;
-`tacit-views` → `tacit-canonical`. No edges between `codegen` and
-`views`. The Stage 5 `tacit-cli` crate will depend on all three.
+Dependency graph (arrows point from dependent to dependency):
+
+```
+tacit-cli ──► tacit-views ──► tacit-canonical
+    │
+    └────────► tacit-codegen ──► tacit-canonical
+```
+
+No edges between `tacit-codegen` and `tacit-views`. `tacit-cli` is the only
+crate that depends on both.
 
 ## `tacit-codegen` layers
 
@@ -45,6 +50,9 @@ cargo build -p tacit-codegen --features llvm19-1   # pinned version
 cargo build -p tacit-codegen --features llvm18-1
 cargo build -p tacit-codegen --features llvm15-0
 ```
+
+`tacit-cli` mirrors this pattern — building without an LLVM feature produces
+a binary that supports `tacit view` but reports an error for `tacit compile`.
 
 ## LLVM dependency
 
@@ -105,33 +113,99 @@ LLVM.org tarball or use a different LLVM version. Source builds take
 hours and are not a supported path
 ([ADR 0031 § 1](../decisions/0031-llvm-distribution-and-self-hosting.md)).
 
-## Pipeline
+## `tacit compile` pipeline
 
 ```
-.tac (authoring view bytes)
+foo.tac  (authoring view bytes on disk)
     │
-    │  tacit-views::authoring::parse_authoring
+    │  tacit_views::authoring::parse_authoring(&src)
     ▼
-(Node, Sidecar)
-    │
-    │  tacit-canonical::emit ─────► canonical text bytes
-    │  tacit-canonical::hash_node ─► BLAKE3 hash
-    │
-    ▼
-Node ─── tacit-codegen::analysis ──► validated Node (no holes, closed lambdas)
-    │
-    │  tacit-codegen::compile (LLVM-gated)
+(Node, SidecarNode)
+    │ Node
+    │  tacit_codegen::compile_to_object / compile_to_ir_string
+    │  (LLVM-gated; analysis::check_no_holes runs first)
     ▼
 inkwell::Module
     │
-    │  TargetMachine::write_to_file  (object emission)
+    │  TargetMachine::write_to_file  (object emission, in-process)
     ▼
-foo.o
+foo.o  (temp file)
     │
-    │  system linker (cc / clang)
+    │  system linker (cc / clang / gcc)
     ▼
-foo (executable)
+foo  (native executable)
 ```
+
+The SidecarNode from parsing is discarded for `compile` — it carries
+display metadata only and is not needed by codegen.
+
+`--emit-llvm-ir` taps the pipeline just before object emission and prints
+the textual `.ll` representation to stdout. Textual IR is an output only;
+it is never read back in (ADR 0031).
+
+## `tacit view` pipeline
+
+The view pipeline shares the parse step with compile but branches into
+two separate renderers instead of codegen.
+
+```
+foo.tac  (authoring view bytes on disk)
+    │
+    │  tacit_views::authoring::parse_authoring(&src)
+    ▼
+(Node, SidecarNode)
+    │           │
+    │           │  SidecarNode: binder names, field order,
+    │           │  comments (advisory metadata extracted from
+    │           │  the authoring source text)
+    │           │
+    ├── --as authoring ──────────────────────────────────────────┐
+    │   tacit_views::authoring::emit_authoring(node, sidecar)    │
+    │                                                            ▼
+    │                                              authoring text on stdout
+    │
+    └── --as inspection ─────────────────────────────────────────┐
+        tacit_views::emit_inspection(node, sidecar, flags)       │
+        flags: InspectFlags { debruijn, hashes }                 ▼
+                                                  inspection text on stdout
+```
+
+### How the sidecar flows through `tacit view`
+
+`parse_authoring` reconstructs display metadata from the authoring text as it
+parses: binder names (variable names from `lambda x.`, `let x =`, pattern
+variables) become `SidecarNode::binder` entries; `rec` group names become
+`SidecarNode::binders`; record field authoring order is recorded in
+`SidecarNode::field_order`.
+
+For `--as authoring`: `emit_authoring` reads these entries to reproduce the
+original names rather than synthetic `v0`, `v1`, … fallbacks. The result is a
+normalised authoring-view text that round-trips through canonical form with
+byte-identical hashes.
+
+For `--as inspection`: `emit_inspection` reads the same entries to label
+variable occurrences and binders; the `--debruijn` flag (`InspectFlags.debruijn`)
+appends trailing `# x ≡ var N` annotations, and `--hashes`
+(`InspectFlags.hashes`) prepends 4-byte BLAKE3 badges.
+
+An external `.tacd` sidecar file (comments, additional metadata) is not loaded
+by `tacit view` in Phase 1. Comment rendering in the inspection view is
+possible when a sidecar is supplied programmatically (e.g., from a future
+`tacit view --sidecar foo.tacd`); Phase 1 does not expose that flag.
+
+## `tacit-cli` feature flags
+
+`tacit-cli` mirrors `tacit-codegen`'s per-version LLVM feature flags:
+
+```toml
+# Cargo.toml / tacit-cli
+llvm19-1 = ["tacit-codegen/llvm19-1", "llvm"]   # pinned; CI default
+```
+
+Building with a version feature enables the local `llvm` aggregate, which
+gates the `compile_with_llvm` function in `main.rs`. Without any LLVM
+feature, `tacit view` works fully; `tacit compile` exits with an error
+explaining how to rebuild.
 
 ## Phase 1 codegen subset
 

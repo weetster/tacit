@@ -56,10 +56,21 @@ jobs:
         run: cargo fmt --check
 
       - name: Run clippy
-        run: cargo clippy --all-targets --features tacit-codegen/llvm19-1 -- -D warnings
+        run: cargo clippy --all-targets --features tacit-codegen/llvm19-1,tacit-cli/llvm19-1 -- -D warnings
 
       - name: Run tests
-        run: cargo test --features tacit-codegen/llvm19-1
+        run: cargo test --features tacit-codegen/llvm19-1,tacit-cli/llvm19-1
+
+      - name: Build tacit CLI
+        run: cargo build --features tacit-cli/llvm19-1 --bin tacit
+
+      - name: Smoke-test tacit CLI (compile + view)
+        run: |
+          ./target/debug/tacit compile examples/smoke/hello.tac -o /tmp/tacit-hello
+          output=$(/tmp/tacit-hello)
+          test "$output" = "hello, world"
+          ./target/debug/tacit view examples/smoke/hello.tac --as authoring > /dev/null
+          ./target/debug/tacit view examples/smoke/hello.tac --as inspection > /dev/null
 
   corpus:
     name: corpus

@@ -1,0 +1,33 @@
+[package]
+name = "tacit-cli"
+version = "0.1.0"
+edition = "2021"
+description = "tacit CLI: compile and view Tacit-Lite programs"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[[bin]]
+name = "tacit"
+path = "src/main.rs"
+
+[dependencies]
+tacit-canonical = { path = "../tacit-canonical" }
+tacit-views = { path = "../tacit-views" }
+tacit-codegen = { path = "../tacit-codegen" }
+clap = { version = "4", features = ["derive"] }
+tempfile = "3"
+
+# Feature flags mirror tacit-codegen: pick one llvm<N>-<M> to enable the
+# compile subcommand.  The local `llvm` aggregate gates the compile code in
+# main.rs without requiring a direct inkwell dependency.
+#
+#   cargo build --features llvm19-1   # LLVM 19 (pinned; CI default)
+#
+[features]
+default = []
+llvm = []
+llvm15-0 = ["tacit-codegen/llvm15-0", "llvm"]
+llvm16-0 = ["tacit-codegen/llvm16-0", "llvm"]
+llvm17-0 = ["tacit-codegen/llvm17-0", "llvm"]
+llvm18-1 = ["tacit-codegen/llvm18-1", "llvm"]
+llvm19-1 = ["tacit-codegen/llvm19-1", "llvm"]

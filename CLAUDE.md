@@ -2,7 +2,7 @@
 
 Tacit is an AI-first programming language. See [plans/tacit-plan.md](plans/tacit-plan.md) for the full vision and [plans/phase-1-plan.md](plans/phase-1-plan.md) for current work.
 
-**Current phase: Phase 1 — minimum viable compiler.** Phase 0 is frozen ([ADR 0013](decisions/0013-canonical-text-format-frozen.md), [ADR 0017](decisions/0017-stage-3-frozen.md), [ADR 0018](decisions/0018-stage-5-frozen.md)). Phase 1 Stages 1–4 are frozen ([ADR 0032](decisions/0032-stage-4-frozen.md)); only Stage 5 (CLI + architecture doc) remains.
+**Current phase: Phase 1 — minimum viable compiler (complete).** Phase 0 is frozen ([ADR 0013](decisions/0013-canonical-text-format-frozen.md), [ADR 0017](decisions/0017-stage-3-frozen.md), [ADR 0018](decisions/0018-stage-5-frozen.md)). Phase 1 Stages 1–5 are all complete; the phase is frozen pending a Phase 1 freeze ADR before Phase 2 begins.
 
 ## What Phase 1 produces
 
@@ -11,7 +11,7 @@ Tacit is an AI-first programming language. See [plans/tacit-plan.md](plans/tacit
 - Inspection-view renderer (display-only, L0/L1/L2 layers) per [ADR 0015](decisions/0015-inspection-view-scope.md).
 - LLVM IR emitter for the Phase 1 codegen subset (closed lambdas, `rec`, `if`, `let`, `match`, `@name` primitives) — see [docs/compiler-architecture.md § Phase 1 codegen subset](docs/compiler-architecture.md).
 - A frozen seven-program smoke corpus under `examples/smoke/` exercising the emitter end-to-end.
-- `tacit` CLI exposing `compile` and `view` subcommands (Stage 5, in progress).
+- `tacit` CLI exposing `compile` and `view` subcommands (Stage 5, complete).
 
 Phase 1 exit is gated on: end-to-end CI runs each smoke program, the authoring round-trip property holds on every Phase 0 test vector in scope, and inspection-view § 6 fixtures render byte-identically.
 

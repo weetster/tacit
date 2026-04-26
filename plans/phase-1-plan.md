@@ -183,7 +183,7 @@ Stage 1. Frozen by [ADR 0032](../decisions/0032-stage-4-frozen.md).
 Exit gate: each smoke program canonicalizes, parses, lowers, links, and
 runs with the expected stdout. End-to-end test runs in CI on `ubuntu-latest`.
 
-### Stage 5: `tacit` CLI + architecture doc (~1 week)
+### Stage 5: `tacit` CLI + architecture doc (~1 week) ✓ DONE 2026-04-26
 
 Depends on Stages 2, 3, 4.
 

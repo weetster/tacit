@@ -76,6 +76,14 @@ pub fn compile_to_object(node: &Node, module_name: &str, out_path: &Path) -> Res
     compiler.write_object(out_path)
 }
 
+/// Build the module and return its textual LLVM IR as a `String` (for `--emit-llvm-ir`).
+pub fn compile_to_ir_string(node: &Node, module_name: &str) -> Result<String> {
+    let context = Context::create();
+    let mut compiler = Compiler::new(&context, module_name);
+    compiler.compile_program(node)?;
+    Ok(compiler.print_to_string())
+}
+
 /// Holds the inkwell-side state for one compilation unit.
 pub struct Compiler<'ctx> {
     context: &'ctx Context,
