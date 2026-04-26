@@ -2,7 +2,7 @@
 
 Tacit is an AI-first programming language. See [plans/tacit-plan.md](plans/tacit-plan.md) for the full vision and [plans/phase-2-plan.md](plans/phase-2-plan.md) for current work (once created).
 
-**Current phase: Phase 2 — type and effect system.** Phase 1 is frozen ([ADR 0033](decisions/0033-phase-1-frozen.md)); all five stages are complete. Phase 2 scope is defined in [plans/tacit-plan.md § Phase 2](plans/tacit-plan.md) and will be detailed in a `phase-2-plan.md` document.
+**Current phase: Phase 2 — type and effect system.** Phase 1 is frozen ([ADR 0033](decisions/0033-phase-1-frozen.md)); all five stages are complete. Phase 2 scope lives in [plans/phase-2-plan.md](plans/phase-2-plan.md), layered onto [plans/tacit-plan.md § Phase 2](plans/tacit-plan.md).
 
 ## What Phase 1 produced (frozen baseline)
 
