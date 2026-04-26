@@ -120,10 +120,40 @@ parser, no round-trip claim.
 
 Exit gate: every § 6 fixture renders byte-identically across L0/L1/L2.
 
-### Stage 4: LLVM IR emitter + libc hello-world (~3 weeks)
+### Stage 4: LLVM IR emitter + libc hello-world (~3 weeks) — In progress
 
 The critical-path technical risk for Phase 1. Greenfield, depends only on
 Stage 1.
+
+**Progress as of 2026-04-25** (LLVM-version pin still deferred):
+
+- ✓ `tacit-codegen` crate scaffolded under `crates/tacit-codegen/`.
+- ✓ AST analysis layer (no LLVM): `analysis`, `error`, `primitives`
+  modules with 23 passing tests covering App-spine unfolding, hole
+  detection, free-var checks, primitive arity, integer parsing.
+- ✓ IR emission layer (`compile.rs`) written against `inkwell` 0.5,
+  gated behind per-version features (`llvm15-0`, `llvm16-0`,
+  `llvm17-0`, `llvm18-0`). Compiles without an installed LLVM when
+  no feature is selected; an LLVM library is required to enable any
+  per-version feature.
+- ✓ Smoke corpus in `examples/smoke/` (7 of 9 programs from
+  Appendix B) — all 7 parse cleanly through the authoring view
+  and pass the pre-codegen analysis (see
+  `crates/tacit-codegen/tests/smoke_parse.rs`).
+- ✓ ADR 0030 ([arith / cmp primitives](../decisions/0030-phase-1-arith-primitives.md))
+  closes the Phase 1 spec gap surfaced by smoke programs #2/#4/#5/#6.
+- ✓ ADR 0031 ([distribution + self-hosting](../decisions/0031-llvm-distribution-and-self-hosting.md))
+  scopes the Phase 1 inkwell choice and pins the eventual self-hosted
+  textual-IR path.
+- ✓ `stdlib/libc-effects.toml` populated with the three OS-boundary
+  symbols per ADR 0025.
+- ⏳ End-to-end smoke run (parse → AST → IR → object → link → execute)
+  blocked on installing LLVM and running with `--features llvm<N>-<M>`.
+  Smoke #7 (`match-int.tac`) and #8 (`echo.tac`) deferred behind
+  follow-up ADRs (canonical `pat-int` + writable-buffer model).
+- ⏳ CI install step for LLVM, pinned LLVM-version note in
+  `docs/compiler-architecture.md`, and Stage 4 freeze ADR all wait
+  on the version pin being chosen.
 
 - New crate `tacit-codegen` using `inkwell`
   (per [ADR 0024](../decisions/0024-llvm-bindings-inkwell.md)). LLVM and

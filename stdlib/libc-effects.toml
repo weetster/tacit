@@ -1,0 +1,21 @@
+# Phase 1 libc effect signatures, dormant for Phase 1.
+# Schema and contents frozen by ADR 0025; consumed by Phase 2's effect checker.
+# OS-boundary symbols only — see ADR 0025 for the boundary test.
+
+[[symbol]]
+name = "write"
+c_signature = "ssize_t write(int fd, const void *buf, size_t count)"
+tacit_effect_set = ["IO"]
+notes = "stdout is fd 1; stderr is fd 2; errno is not surfaced to Tacit in Phase 1."
+
+[[symbol]]
+name = "read"
+c_signature = "ssize_t read(int fd, void *buf, size_t count)"
+tacit_effect_set = ["IO"]
+notes = "stdin is fd 0; partial reads are possible per POSIX; errno is not surfaced to Tacit in Phase 1."
+
+[[symbol]]
+name = "exit"
+c_signature = "void exit(int status)"
+tacit_effect_set = ["IO"]
+notes = "Process termination. Phase 1 main returns i32 directly; @exit is reserved for non-main exit paths."

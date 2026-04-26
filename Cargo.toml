@@ -1,3 +1,7 @@
 [workspace]
-members = ["crates/tacit-canonical", "crates/tacit-views"]
+members = [
+    "crates/tacit-canonical",
+    "crates/tacit-codegen",
+    "crates/tacit-views",
+]
 resolver = "2"

@@ -45,3 +45,5 @@ Keep ADRs short. They record the decision, not the full analysis that led to it.
 - [0027 — Phase 1 mutual recursion lowering: forward-declare under C calling convention](0027-phase-1-rec-lowering.md)
 - [0028 — Phase 1 libc call surface: `@name` sym heads at function position](0028-phase-1-libc-call-surface.md)
 - [0029 — Cargo workspace layout: `crates/` directory, `tacit-canonical` as first crate](0029-cargo-workspace-layout.md)
+- [0030 — Phase 1 arithmetic and comparison primitives: codegen intrinsics under `@name`](0030-phase-1-arith-primitives.md)
+- [0031 — LLVM distribution model and self-hosted-Tacit interaction](0031-llvm-distribution-and-self-hosting.md)

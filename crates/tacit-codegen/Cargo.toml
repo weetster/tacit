@@ -1,0 +1,40 @@
+[package]
+name = "tacit-codegen"
+version = "0.1.0"
+edition = "2021"
+description = "Phase 1 LLVM IR emitter for Tacit-Lite"
+license = "MIT OR Apache-2.0"
+publish = false
+
+# `inkwell` is gated behind feature flags so the AST-analysis layer of
+# this crate compiles and tests without an installed LLVM. Pick a
+# feature when building the IR emitter:
+#
+#   cargo build --features llvm15-0   # LLVM 15 (last x86_64 macOS prebuilt on llvm.org)
+#   cargo build --features llvm17-0
+#   cargo build --features llvm18-0   # LLVM 18 (Linux apt / arm64-macOS brew bottle)
+#
+# The version pin is deferred per ADR 0031 + ADR 0024; choose at the
+# Stage 4 spike when an LLVM library is reachable. Decision recorded
+# in `docs/compiler-architecture.md` once made.
+[dependencies]
+tacit-canonical = { path = "../tacit-canonical" }
+inkwell = { version = "0.5", optional = true, default-features = false }
+thiserror = "1"
+
+[features]
+default = []
+# Convenience aggregate feature — a build that wants the IR emitter
+# turns on exactly one of the version features below; `llvm` itself is
+# not directly buildable.
+llvm = []
+# Per-version feature flags. Each enables `inkwell` with the matching
+# LLVM bindings. Pick one.
+llvm15-0 = ["dep:inkwell", "inkwell/llvm15-0", "llvm"]
+llvm16-0 = ["dep:inkwell", "inkwell/llvm16-0", "llvm"]
+llvm17-0 = ["dep:inkwell", "inkwell/llvm17-0", "llvm"]
+llvm18-0 = ["dep:inkwell", "inkwell/llvm18-0", "llvm"]
+
+[dev-dependencies]
+tacit-views = { path = "../tacit-views" }
+tempfile = "3"
