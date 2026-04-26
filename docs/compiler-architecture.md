@@ -39,9 +39,9 @@ cargo build -p tacit-codegen
 cargo test -p tacit-codegen
 
 # With LLVM (pick one matching your installed library):
+cargo build -p tacit-codegen --features llvm19-1   # pinned version
+cargo build -p tacit-codegen --features llvm18-1
 cargo build -p tacit-codegen --features llvm15-0
-cargo build -p tacit-codegen --features llvm17-0
-cargo build -p tacit-codegen --features llvm18-0
 ```
 
 ## LLVM dependency
@@ -61,20 +61,15 @@ emitter uses `inkwell` over LLVM-C. Per
 
 ### Pinned LLVM version
 
-**TODO** — choose at the Stage 4 spike once an LLVM library is reachable
-on the build machine. The default `tacit-codegen/Cargo.toml`
-**does not pin a version** (no `default = ["llvm…"]`); contributors
-opt in by passing `--features llvm<N>-<M>` to match their installed
-library.
+**LLVM 19**, `inkwell` feature flag `llvm19-1` (inkwell 0.9).
 
-When the pin is chosen, this section gets:
+Rationale: LLVM 19 is the newest version available in Debian bookworm's
+default apt repos (`llvm-19-dev`) without adding a third-party source.
+It is also available as a brew bottle for arm64 macOS. inkwell 0.9 is
+the first release to support LLVM 19 via the `llvm19-1` feature.
 
-- The selected LLVM major version + the `inkwell` feature flag name.
-- A one-line rationale (typically: "matches the broadest contributor
-  platform coverage available at the time").
-- The CI install step pointing at the same version.
-- A note in [ADR 0024](../decisions/0024-llvm-bindings-inkwell.md) or
-  a follow-up ADR locking it in.
+Contributors pass `--features llvm19-1` to build the IR emitter.
+CI installs `llvm-19-dev` via apt (see `.github/workflows/ci.yml`).
 
 ### Installing LLVM (dev-loop)
 
@@ -91,7 +86,7 @@ root if `llvm-config` isn't on `PATH` (the `inkwell`/`llvm-sys` build
 script discovers LLVM through this env var). For brew installs:
 
 ```bash
-export LLVM_SYS_180_PREFIX="$(brew --prefix llvm@18)"
+export LLVM_SYS_191_PREFIX="$(brew --prefix llvm@19)"
 ```
 
 ### Pre-flight bottle check
@@ -99,7 +94,7 @@ export LLVM_SYS_180_PREFIX="$(brew --prefix llvm@18)"
 **Always** verify a pre-built option exists before installing on macOS:
 
 ```bash
-brew info llvm@18 | grep -A 2 'bottle:'
+brew info llvm@19 | grep -A 2 'bottle:'
 ```
 
 If only an `arm64` line is listed and you're on Intel — or if no
