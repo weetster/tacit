@@ -16,11 +16,7 @@ pub struct InspectFlags {
 }
 
 /// Render `node` to inspection-view text at the top level (indent 0).
-pub fn emit_inspection(
-    node: &Node,
-    sidecar: Option<&SidecarNode>,
-    flags: &InspectFlags,
-) -> String {
+pub fn emit_inspection(node: &Node, sidecar: Option<&SidecarNode>, flags: &InspectFlags) -> String {
     let mut ctx = Ctx {
         stack: Vec::new(),
         lam_let_depth: 0,
@@ -48,11 +44,19 @@ struct Rendered {
 
 impl Rendered {
     fn leaf(text: impl Into<String>) -> Self {
-        Rendered { text: text.into(), inline: true, annots: Vec::new() }
+        Rendered {
+            text: text.into(),
+            inline: true,
+            annots: Vec::new(),
+        }
     }
 
     fn always_break(text: impl Into<String>) -> Self {
-        Rendered { text: text.into(), inline: false, annots: Vec::new() }
+        Rendered {
+            text: text.into(),
+            inline: false,
+            annots: Vec::new(),
+        }
     }
 }
 
@@ -164,7 +168,11 @@ impl<'f> Ctx<'f> {
         } else {
             Vec::new()
         };
-        Rendered { text: name, inline: true, annots }
+        Rendered {
+            text: name,
+            inline: true,
+            annots,
+        }
     }
 
     fn render_str(value: &str) -> Rendered {
@@ -268,7 +276,11 @@ impl<'f> Ctx<'f> {
             // top-level emit, …) appends the trailing comment so it lands at the
             // end of the assembled line — keeping `in`/`=>` outside the comment.
             let text = format!("lambda {}. {}", param_str, body_r.text);
-            Rendered { text, inline: true, annots: body_r.annots }
+            Rendered {
+                text,
+                inline: true,
+                annots: body_r.annots,
+            }
         } else {
             let text = format!(
                 "lambda {}.\n{}{}",
@@ -279,7 +291,11 @@ impl<'f> Ctx<'f> {
             Rendered::always_break(text)
         };
 
-        if self.flags.hashes { self.badge(node, result) } else { result }
+        if self.flags.hashes {
+            self.badge(node, result)
+        } else {
+            result
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -330,7 +346,11 @@ impl<'f> Ctx<'f> {
                 .chain(arg_rs.iter().flat_map(|r| r.annots.iter()))
                 .cloned()
                 .collect();
-            Rendered { text, inline: true, annots }
+            Rendered {
+                text,
+                inline: true,
+                annots,
+            }
         } else {
             let mut text = head_r.text.clone();
             for ar in &arg_rs {
@@ -341,7 +361,11 @@ impl<'f> Ctx<'f> {
             Rendered::always_break(text)
         };
 
-        if self.flags.hashes { self.badge(node, result) } else { result }
+        if self.flags.hashes {
+            self.badge(node, result)
+        } else {
+            result
+        }
     }
 
     /// Render a node in argument position, wrapping in parens when needed.
@@ -472,7 +496,11 @@ impl<'f> Ctx<'f> {
         };
 
         let result = Rendered::always_break(text);
-        if self.flags.hashes { self.badge(node, result) } else { result }
+        if self.flags.hashes {
+            self.badge(node, result)
+        } else {
+            result
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -541,7 +569,11 @@ impl<'f> Ctx<'f> {
         text.push_str(&body_line);
 
         let result = Rendered::always_break(text);
-        if self.flags.hashes { self.badge(node, result) } else { result }
+        if self.flags.hashes {
+            self.badge(node, result)
+        } else {
+            result
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -592,7 +624,11 @@ impl<'f> Ctx<'f> {
         }
 
         let result = Rendered::always_break(text);
-        if self.flags.hashes { self.badge(node, result) } else { result }
+        if self.flags.hashes {
+            self.badge(node, result)
+        } else {
+            result
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -650,7 +686,11 @@ impl<'f> Ctx<'f> {
         }
 
         let result = Rendered::always_break(text);
-        if self.flags.hashes { self.badge(node, result) } else { result }
+        if self.flags.hashes {
+            self.badge(node, result)
+        } else {
+            result
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -684,7 +724,11 @@ impl<'f> Ctx<'f> {
         }
 
         let result = Rendered::always_break(text);
-        if self.flags.hashes { self.badge(node, result) } else { result }
+        if self.flags.hashes {
+            self.badge(node, result)
+        } else {
+            result
+        }
     }
 
     fn render_arm(
@@ -713,14 +757,26 @@ impl<'f> Ctx<'f> {
         let result = if body_r.inline {
             let line = format!("| {} => {}", pat_text, body_r.text);
             let line = Self::annotate(&line, &body_r.annots, self.flags);
-            Rendered { text: line, inline: true, annots: Vec::new() }
+            Rendered {
+                text: line,
+                inline: true,
+                annots: Vec::new(),
+            }
         } else {
-            let text =
-                format!("| {} =>\n{}{}", pat_text, Self::pad(indent + 4), body_r.text);
+            let text = format!(
+                "| {} =>\n{}{}",
+                pat_text,
+                Self::pad(indent + 4),
+                body_r.text
+            );
             Rendered::always_break(text)
         };
 
-        if self.flags.hashes { self.badge(node, result) } else { result }
+        if self.flags.hashes {
+            self.badge(node, result)
+        } else {
+            result
+        }
     }
 
     /// Render a pattern, returning (text, pat_var_names_in_textual_order).
@@ -784,7 +840,11 @@ impl<'f> Ctx<'f> {
     ) -> Rendered {
         if fields.is_empty() {
             let r = Rendered::leaf("{}");
-            return if self.flags.hashes { self.badge(node, r) } else { r };
+            return if self.flags.hashes {
+                self.badge(node, r)
+            } else {
+                r
+            };
         }
 
         let n = fields.len();
@@ -807,8 +867,16 @@ impl<'f> Ctx<'f> {
         if rendered_fields.len() == 1 && rendered_fields[0].1.inline {
             let (key, val_r) = &rendered_fields[0];
             let text = format!("{{ {}: {} }}", key, val_r.text);
-            let r = Rendered { text, inline: true, annots: val_r.annots.clone() };
-            return if self.flags.hashes { self.badge(node, r) } else { r };
+            let r = Rendered {
+                text,
+                inline: true,
+                annots: val_r.annots.clone(),
+            };
+            return if self.flags.hashes {
+                self.badge(node, r)
+            } else {
+                r
+            };
         }
 
         // Multi-field or non-inline: one-field-per-line with trailing comma.
@@ -829,7 +897,11 @@ impl<'f> Ctx<'f> {
         text.push('}');
 
         let result = Rendered::always_break(text);
-        if self.flags.hashes { self.badge(node, result) } else { result }
+        if self.flags.hashes {
+            self.badge(node, result)
+        } else {
+            result
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -849,7 +921,11 @@ impl<'f> Ctx<'f> {
         let mut cur: &Node = record;
         let mut cur_sc = sc.and_then(|s| s.child(0));
 
-        while let Node::Proj { record: inner_rec, field: inner_field } = cur {
+        while let Node::Proj {
+            record: inner_rec,
+            field: inner_field,
+        } = cur
+        {
             fields.push(inner_field.as_str());
             let next_sc = cur_sc.and_then(|s| s.child(0));
             cur = inner_rec;
@@ -874,7 +950,11 @@ impl<'f> Ctx<'f> {
             }
         };
 
-        if self.flags.hashes { self.badge(node, result) } else { result }
+        if self.flags.hashes {
+            self.badge(node, result)
+        } else {
+            result
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -891,7 +971,11 @@ impl<'f> Ctx<'f> {
     ) -> Rendered {
         if args.is_empty() {
             let r = Rendered::leaf(name.to_string());
-            return if self.flags.hashes { self.badge(node, r) } else { r };
+            return if self.flags.hashes {
+                self.badge(node, r)
+            } else {
+                r
+            };
         }
 
         let mut arg_rs: Vec<Rendered> = Vec::new();
@@ -905,12 +989,22 @@ impl<'f> Ctx<'f> {
 
         let all_inline = arg_rs.iter().all(|r| r.inline);
         let result = if all_inline {
-            let args_text = arg_rs.iter().map(|r| r.text.as_str()).collect::<Vec<_>>().join(" ");
+            let args_text = arg_rs
+                .iter()
+                .map(|r| r.text.as_str())
+                .collect::<Vec<_>>()
+                .join(" ");
             let text = format!("{} {}", name, args_text);
             // Propagate annots; parent line-builder applies the trailing comment.
-            let annots: Vec<_> =
-                arg_rs.iter().flat_map(|r| r.annots.iter().cloned()).collect();
-            Rendered { text, inline: true, annots }
+            let annots: Vec<_> = arg_rs
+                .iter()
+                .flat_map(|r| r.annots.iter().cloned())
+                .collect();
+            Rendered {
+                text,
+                inline: true,
+                annots,
+            }
         } else {
             let mut text = name.to_string();
             for ar in &arg_rs {
@@ -921,7 +1015,11 @@ impl<'f> Ctx<'f> {
             Rendered::always_break(text)
         };
 
-        if self.flags.hashes { self.badge(node, result) } else { result }
+        if self.flags.hashes {
+            self.badge(node, result)
+        } else {
+            result
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -943,15 +1041,22 @@ impl<'f> Ctx<'f> {
 
         let result = if expr_r.inline && type_r.inline {
             let text = format!("({} : {})", expr_r.text, type_r.text);
-            let annots: Vec<_> =
-                expr_r.annots.into_iter().chain(type_r.annots).collect();
-            Rendered { text, inline: true, annots }
+            let annots: Vec<_> = expr_r.annots.into_iter().chain(type_r.annots).collect();
+            Rendered {
+                text,
+                inline: true,
+                annots,
+            }
         } else {
             let text = format!("({} : {})", expr_r.text, type_r.text);
             Rendered::always_break(text)
         };
 
-        if self.flags.hashes { self.badge(node, result) } else { result }
+        if self.flags.hashes {
+            self.badge(node, result)
+        } else {
+            result
+        }
     }
 }
 

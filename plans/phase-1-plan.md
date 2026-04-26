@@ -120,26 +120,25 @@ parser, no round-trip claim.
 
 Exit gate: every § 6 fixture renders byte-identically across L0/L1/L2.
 
-### Stage 4: LLVM IR emitter + libc hello-world (~3 weeks) — In progress
+### Stage 4: LLVM IR emitter + libc hello-world (~3 weeks) ✓ DONE 2026-04-25
 
 The critical-path technical risk for Phase 1. Greenfield, depends only on
-Stage 1.
+Stage 1. Frozen by [ADR 0032](../decisions/0032-stage-4-frozen.md).
 
-**Progress as of 2026-04-25** (LLVM-version pin still deferred):
+**Outcomes:**
 
-- ✓ `tacit-codegen` crate scaffolded under `crates/tacit-codegen/`.
-- ✓ AST analysis layer (no LLVM): `analysis`, `error`, `primitives`
-  modules with 23 passing tests covering App-spine unfolding, hole
-  detection, free-var checks, primitive arity, integer parsing.
-- ✓ IR emission layer (`compile.rs`) written against `inkwell` 0.5,
-  gated behind per-version features (`llvm15-0`, `llvm16-0`,
-  `llvm17-0`, `llvm18-0`). Compiles without an installed LLVM when
-  no feature is selected; an LLVM library is required to enable any
-  per-version feature.
-- ✓ Smoke corpus in `examples/smoke/` (7 of 9 programs from
-  Appendix B) — all 7 parse cleanly through the authoring view
-  and pass the pre-codegen analysis (see
-  `crates/tacit-codegen/tests/smoke_parse.rs`).
+- ✓ `tacit-codegen` crate under `crates/tacit-codegen/` with the
+  analysis / emission split locked in: `analysis`, `error`,
+  `primitives` build without LLVM; `compile` is gated behind
+  `llvm<N>-<M>` features.
+- ✓ LLVM 19 / `inkwell` 0.9 pinned via the `llvm19-1` feature
+  (ADR 0032 § 1; see `docs/compiler-architecture.md`).
+- ✓ Seven smoke programs (`return-zero`, `return-computed`, `hello`,
+  `if-branch`, `factorial`, `even-odd`, `exit-nonzero`) lower,
+  link, and run with the expected stdout / exit code under
+  `cargo test -p tacit-codegen --features llvm19-1`.
+- ✓ CI installs `llvm-19-dev` + `libpolly-19-dev` and runs the
+  feature-gated tests on `ubuntu-latest`.
 - ✓ ADR 0030 ([arith / cmp primitives](../decisions/0030-phase-1-arith-primitives.md))
   closes the Phase 1 spec gap surfaced by smoke programs #2/#4/#5/#6.
 - ✓ ADR 0031 ([distribution + self-hosting](../decisions/0031-llvm-distribution-and-self-hosting.md))
@@ -147,13 +146,10 @@ Stage 1.
   textual-IR path.
 - ✓ `stdlib/libc-effects.toml` populated with the three OS-boundary
   symbols per ADR 0025.
-- ⏳ End-to-end smoke run (parse → AST → IR → object → link → execute)
-  blocked on installing LLVM and running with `--features llvm<N>-<M>`.
-  Smoke #7 (`match-int.tac`) and #8 (`echo.tac`) deferred behind
-  follow-up ADRs (canonical `pat-int` + writable-buffer model).
-- ⏳ CI install step for LLVM, pinned LLVM-version note in
-  `docs/compiler-architecture.md`, and Stage 4 freeze ADR all wait
-  on the version pin being chosen.
+- Deferred: smoke #7 (`match-int.tac`) and #8 (`echo.tac`) stay in
+  the corpus inventory but out of the Stage 4 gate; they are gated
+  on follow-up Phase 2 ADRs (canonical `pat-int` + writable-buffer
+  model) per ADR 0032 § 3.
 
 - New crate `tacit-codegen` using `inkwell`
   (per [ADR 0024](../decisions/0024-llvm-bindings-inkwell.md)). LLVM and
@@ -289,25 +285,30 @@ of the smoke corpus.
 File `examples/hello.tac`:
 
 ```
-@write 1 "hello, world\n" 13
+let _ = @write 1 "hello, world\n" 13 in 0
 ```
 
 Features exercised: integer literal, string literal, four-argument
 left-associative juxtaposition (`app`), `@name` primitive-call surface
-per [ADR 0028](../decisions/0028-phase-1-libc-call-surface.md). No
-binders, no recursion, no `match`. A deliberately small surface for
-the first end-to-end run.
+per [ADR 0028](../decisions/0028-phase-1-libc-call-surface.md), and a
+discard `let` whose body is the program's exit value. The `let _ = e
+in 0` shape is how a side-effect-only `main` is written: `compile_program`
+uses the program's value as `main`'s exit code, so a program that wants
+to exit `0` evaluates to `0` after running its side effects.
+No recursion, no `match`. A deliberately small surface for the first
+end-to-end run.
 
 ### A.2 Canonical text
 
-Left-associative `app` unfolds into three nested `app` nodes. The
-`@` is surface-only — it projects to a `sym` node whose canonical
-name is the bare identifier. Per canonical-text-format.md § 3, `\n`
-in the string literal round-trips as the named escape `\n` (S1), not
-the raw LF byte.
+Left-associative `app` unfolds into three nested `app` nodes inside
+the `let`'s rhs. The `@` is surface-only — it projects to a `sym` node
+whose canonical name is the bare identifier. Per canonical-text-format.md
+§ 3, `\n` in the string literal round-trips as the named escape `\n`
+(S1), not the raw LF byte. The `_` binder name is sidecar metadata only;
+the canonical `let` carries no name.
 
 ```
-(app (app (app (sym write) (int 1)) (str "hello, world\n")) (int 13))
+(let (app (app (app (sym write) (int 1)) (str "hello, world\n")) (int 13)) (int 0))
 ```
 
 BLAKE3 of the UTF-8 bytes above is the program's content hash. The
@@ -316,20 +317,24 @@ canonical text carries no trailing newline.
 ### A.3 AST (Rust, `tacit-canonical::ast`)
 
 ```rust
-Node::App {
-    f: Box::new(Node::App {
+Node::Let {
+    rhs: Box::new(Node::App {
         f: Box::new(Node::App {
-            f: Box::new(Node::Sym("write".into())),
-            a: Box::new(Node::Int("1".into())),
+            f: Box::new(Node::App {
+                f: Box::new(Node::Sym("write".into())),
+                a: Box::new(Node::Int("1".into())),
+            }),
+            a: Box::new(Node::Str("hello, world\n".into())),
         }),
-        a: Box::new(Node::Str("hello, world\n".into())),
+        a: Box::new(Node::Int("13".into())),
     }),
-    a: Box::new(Node::Int("13".into())),
+    body: Box::new(Node::Int("0".into())),
 }
 ```
 
 (Node-kind names are illustrative — match the actual enum in
-`crates/tacit-canonical/src/ast.rs`.)
+`crates/tacit-canonical/src/ast.rs`. The `_` binder lives in the
+sidecar, not the AST.)
 
 ### A.4 Codegen pattern-match (the load-bearing step)
 
@@ -346,12 +351,14 @@ direct libc call:
 > other `App` spines lower via the standard closed-lambda path
 > ([ADR 0026](../decisions/0026-phase-1-closed-lambdas.md)).
 
-For the hello-world AST, the spine yields symbol `write` and arguments
-`[Int 1, Str "hello, world\n", Int 13]`. The string literal lowers to
-a private global constant holding the 13 raw bytes
-(`h e l l o , SP w o r l d LF`); the integers lower to `i64`
-constants; the call target is the external declaration
-`declare i64 @write(i32, i8*, i64)`.
+For the hello-world AST, the rhs of the outer `let` is an `App` whose
+spine yields symbol `write` and arguments `[Int 1, Str "hello, world\n",
+Int 13]`. The string literal lowers to a private global constant
+holding the 13 raw bytes (`h e l l o , SP w o r l d LF`); the integers
+lower to `i64` constants; the call target is the external declaration
+`declare i64 @write(i32, i8*, i64)`. The `let`'s body — `(int 0)` —
+becomes the program's value, which `compile_program` truncates to
+`i32` and returns from `main`.
 
 ### A.5 LLVM IR (what `--emit-llvm-ir` should dump)
 

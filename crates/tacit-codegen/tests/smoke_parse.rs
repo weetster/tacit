@@ -20,8 +20,8 @@ fn smoke_dir() -> PathBuf {
 fn parse_and_check(name: &str) {
     let path = smoke_dir().join(format!("{}.tac", name));
     let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {}: {}", path.display(), e));
-    let (node, _sidecar) = parse_authoring(&bytes)
-        .unwrap_or_else(|e| panic!("parse {}: {}", path.display(), e));
+    let (node, _sidecar) =
+        parse_authoring(&bytes).unwrap_or_else(|e| panic!("parse {}: {}", path.display(), e));
     check_no_holes(&node).unwrap_or_else(|e| panic!("hole check {}: {}", name, e));
     // Top-level depth = 0; any lambda inside extends depth itself.
     check_closed(&node, 0).unwrap_or_else(|e| panic!("closed check {}: {}", name, e));

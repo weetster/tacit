@@ -10,10 +10,16 @@ use tacit_views::inspection::{emit_inspection, InspectFlags};
 use tacit_views::SidecarNode;
 
 fn l0() -> InspectFlags {
-    InspectFlags { debruijn: false, hashes: false }
+    InspectFlags {
+        debruijn: false,
+        hashes: false,
+    }
 }
 fn l1() -> InspectFlags {
-    InspectFlags { debruijn: true, hashes: false }
+    InspectFlags {
+        debruijn: true,
+        hashes: false,
+    }
 }
 fn sidecar_from_json(json: &str) -> SidecarNode {
     serde_json::from_str(json).expect("valid sidecar JSON")
@@ -38,8 +44,7 @@ fn section_6_1_l0() {
     let sc = fixture_6_1_sidecar();
     let out = emit_inspection(&node, Some(&sc), &l0());
     assert_eq!(
-        out,
-        "let id = lambda x. x in\n  id 5",
+        out, "let id = lambda x. x in\n  id 5",
         "§6.1 L0 must match spec exactly"
     );
 }
@@ -53,8 +58,7 @@ fn section_6_1_l1() {
     // Annotations append to the assembled line, so `in` stays outside the
     // comment (matching inspection-view.md § 6.1 L0+L1).
     assert_eq!(
-        out,
-        "let id = lambda x. x in  # x \u{2261} var 0\n  id 5  # id \u{2261} var 0",
+        out, "let id = lambda x. x in  # x \u{2261} var 0\n  id 5  # id \u{2261} var 0",
         "§6.1 L1 regression"
     );
 }
@@ -84,14 +88,16 @@ fn fixture_6_2_node() -> Node {
 }
 
 fn fixture_6_2_sidecar() -> SidecarNode {
-    sidecar_from_json(r#"{
+    sidecar_from_json(
+        r#"{
         "binders": ["even", "odd"],
         "children": [
             {"binder": "n"},
             {"binder": "n"},
             {}
         ]
-    }"#)
+    }"#,
+    )
 }
 
 #[test]
@@ -203,7 +209,11 @@ fn match_arms() {
     let node = parse(b"(match (var 0) (arm pat-wild (int 0)))").unwrap();
     // var 0 is out of scope → ?var0
     let out = emit_inspection(&node, None, &l0());
-    assert!(out.starts_with("match ?var0\n| _ => 0"), "match rendering: {:?}", out);
+    assert!(
+        out.starts_with("match ?var0\n| _ => 0"),
+        "match rendering: {:?}",
+        out
+    );
 }
 
 #[test]
@@ -228,10 +238,9 @@ fn ctor_arg_sidecar_indexing() {
     // canonical (ctor Cons …) children are [name-sym, arg₀, arg₁],
     // so an arg's sidecar lives at child(k+1), not child(k).
     let node = parse(b"(ctor Cons (int 1) (int 2))").unwrap();
-    let sc: SidecarNode = serde_json::from_str(
-        r#"{"children":[{},{"comment":"first"},{"comment":"second"}]}"#,
-    )
-    .unwrap();
+    let sc: SidecarNode =
+        serde_json::from_str(r#"{"children":[{},{"comment":"first"},{"comment":"second"}]}"#)
+            .unwrap();
     let out = emit_inspection(&node, Some(&sc), &l0());
     let expected = "Cons\n  # first\n  1\n  # second\n  2";
     assert_eq!(out, expected, "ctor arg sidecar indexing: {:?}", out);

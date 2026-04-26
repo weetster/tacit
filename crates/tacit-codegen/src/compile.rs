@@ -306,6 +306,7 @@ impl<'ctx> Compiler<'ctx> {
     ///   1. `Sym(name)` head → primitive (libc / arith / cmp).
     ///   2. `Lam(_)` head     → hoist + direct call.
     ///   3. `Var(i)` head whose binding is `Function(_)` → direct call.
+    ///
     /// Anything else fails.
     fn compile_app(
         &mut self,
@@ -358,7 +359,7 @@ impl<'ctx> Compiler<'ctx> {
         // C calling convention is the LLVM default (ADR 0027 § 2); no override needed.
         let ret = call
             .try_as_basic_value()
-            .left()
+            .basic()
             .ok_or_else(|| CodegenError::Llvm("call returned no value".into()))?;
         Ok(ret.into_int_value())
     }
@@ -525,7 +526,7 @@ impl<'ctx> Compiler<'ctx> {
             .map_err(|e| CodegenError::Llvm(e.to_string()))?;
         Ok(call
             .try_as_basic_value()
-            .left()
+            .basic()
             .ok_or_else(|| CodegenError::Llvm("write returned no value".into()))?
             .into_int_value())
     }
@@ -558,7 +559,7 @@ impl<'ctx> Compiler<'ctx> {
             .map_err(|e| CodegenError::Llvm(e.to_string()))?;
         Ok(call
             .try_as_basic_value()
-            .left()
+            .basic()
             .ok_or_else(|| CodegenError::Llvm("read returned no value".into()))?
             .into_int_value())
     }
@@ -898,7 +899,7 @@ impl<'ctx> Compiler<'ctx> {
     }
 }
 
-fn lookup_var<'ctx>(env: &'ctx [Binding<'ctx>], idx: u64) -> Result<&'ctx Binding<'ctx>> {
+fn lookup_var<'a, 'ctx>(env: &'a [Binding<'ctx>], idx: u64) -> Result<&'a Binding<'ctx>> {
     let i = idx as usize;
     if i >= env.len() {
         return Err(CodegenError::FreeVarInLambda { index: idx });
