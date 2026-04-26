@@ -1,6 +1,6 @@
 # Phase 1 Implementation Plan
 
-**Status:** Draft
+**Status:** Frozen 2026-04-26 — [ADR 0033](../decisions/0033-phase-1-frozen.md)
 **Parent:** [tacit-plan.md](tacit-plan.md)
 **Predecessor:** [phase-0-plan.md](phase-0-plan.md) (frozen 2026-04-23)
 
