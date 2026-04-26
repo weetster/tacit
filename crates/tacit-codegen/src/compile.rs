@@ -43,6 +43,7 @@
 
 use std::path::Path;
 
+use inkwell::attributes::{Attribute, AttributeLoc};
 use inkwell::basic_block::BasicBlock;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
@@ -53,6 +54,10 @@ use inkwell::targets::{
 use inkwell::types::BasicMetadataTypeEnum;
 use inkwell::values::{BasicMetadataValueEnum, FunctionValue, IntValue, PointerValue};
 use inkwell::{AddressSpace, IntPredicate, OptimizationLevel};
+
+/// `LLVMCCallConv` from `llvm-sys`. Not exposed as a typed enum by inkwell
+/// 0.9, which takes a raw `u32` for `set_call_conventions`. ADR 0027 § 2.
+const LLVM_C_CALL_CONV: u32 = 0;
 
 use tacit_canonical::ast::Node;
 
@@ -124,7 +129,7 @@ impl<'ctx> Compiler<'ctx> {
         let main_fn = self
             .module
             .add_function("main", main_ty, Some(Linkage::External));
-        main_fn.set_call_conventions(0); // C calling convention (ADR 0027)
+        main_fn.set_call_conventions(LLVM_C_CALL_CONV); // ADR 0027 § 2
 
         let entry = self.context.append_basic_block(main_fn, "entry");
         self.builder.position_at_end(entry);
@@ -386,7 +391,7 @@ impl<'ctx> Compiler<'ctx> {
             PrimKind::Arith(op) => {
                 let a = self.compile_expr(args[0], env, cur_fn)?;
                 let b = self.compile_expr(args[1], env, cur_fn)?;
-                self.emit_arith(op, a, b, name)
+                self.emit_arith(op, a, b)
             }
             PrimKind::Cmp(op) => {
                 let a = self.compile_expr(args[0], env, cur_fn)?;
@@ -404,7 +409,6 @@ impl<'ctx> Compiler<'ctx> {
         op: ArithOp,
         a: IntValue<'ctx>,
         b: IntValue<'ctx>,
-        _name: &str,
     ) -> Result<IntValue<'ctx>> {
         let v = match op {
             ArithOp::Add => self.builder.build_int_nsw_add(a, b, "add"),
@@ -490,8 +494,9 @@ impl<'ctx> Compiler<'ctx> {
         let f = self
             .module
             .add_function("exit", ty, Some(Linkage::External));
-        // exit is noreturn; mark accordingly so LLVM doesn't expect a fallthrough.
-        // (The codegen emits an `unreachable` immediately after the call too.)
+        let kind_id = Attribute::get_named_enum_kind_id("noreturn");
+        let attr = self.context.create_enum_attribute(kind_id, 0);
+        f.add_attribute(AttributeLoc::Function, attr);
         f
     }
 
@@ -579,9 +584,16 @@ impl<'ctx> Compiler<'ctx> {
         self.builder
             .build_call(f, &[BasicMetadataValueEnum::IntValue(code_i32)], "do_exit")
             .map_err(|e| CodegenError::Llvm(e.to_string()))?;
-        // exit() is noreturn; emit `unreachable` and start a dead block so
-        // the surrounding code can still build a valid CFG (the value here
-        // is never observed; we return an i64 0 placeholder via a phi-free path).
+        // exit() is noreturn (attribute set on the libc decl). Terminate the
+        // current block with `unreachable`, then position the builder in a
+        // fresh block so callers higher in `compile_expr` can keep emitting
+        // — they expect a builder positioned at an open block and an `i64`
+        // result value. Both are placeholders: the new block is dead (not
+        // reachable from `entry`), and the returned `const_zero` is never
+        // observed at runtime because control never falls past `unreachable`.
+        // LLVM's verifier accepts dead blocks; subsequent IR emitted into
+        // `after_exit` (e.g. `compile_program`'s `ret i32`) is well-formed
+        // unreachable code.
         self.builder
             .build_unreachable()
             .map_err(|e| CodegenError::Llvm(e.to_string()))?;
@@ -636,9 +648,12 @@ impl<'ctx> Compiler<'ctx> {
             // for Phase 1 correctness we make the global non-constant when
             // the arg is the read buffer slot. Done at the call site above.
             _ => {
-                // Fallback: compile the expression as an i64; treat it as a
-                // raw pointer. Useful if a future smoke program builds a
-                // pointer via primitives. Not exercised in the smoke corpus.
+                // TODO(phase-2): the writable-buffer model lands here. Today's
+                // fallback compiles the expression as an i64 and treats it as
+                // a raw pointer — usable only if a future smoke program builds
+                // a pointer via primitives. Not exercised by the Stage 4
+                // corpus; replace this arm when the writable-buffer ADR (the
+                // blocker for smoke #8 / `echo.tac`) lands.
                 let v = self.compile_expr(node, env, cur_fn)?;
                 let ptr_ty = self.context.ptr_type(AddressSpace::default());
                 let ptr = self
@@ -730,18 +745,12 @@ impl<'ctx> Compiler<'ctx> {
 
         // Build the rec-frame env once; it's the same for every member's body
         // and for the rec-block body. Per ADR 0007, position K = DeBruijn K,
-        // so member 0 ends up at index 0 — which means in `env`, member 0 is
-        // *innermost* (first), and member N-1 is *outermost* in this frame.
-        // We stack the frame on top of the existing env.
+        // so member K lives at rec_env[K]. The outer env stacks after the
+        // frame so DeBruijn N+i still resolves to env[i].
         let mut rec_env: Vec<Binding<'ctx>> = Vec::with_capacity(n + env.len());
         for f in &fns {
-            rec_env.insert(0, Binding::Function(*f));
+            rec_env.push(Binding::Function(*f));
         }
-        // After the loop above, fns[0] is at index N-1 and fns[N-1] is at index 0.
-        // Per ADR 0007 we want fns[K] at index K. Reverse:
-        rec_env.reverse();
-        // Now rec_env[0..N] has fns[0..N] in order. Append outer env after the
-        // frame so DeBruijn N+i still resolves to env[i].
         rec_env.extend_from_slice(env);
 
         // Define each member body.
@@ -831,6 +840,12 @@ impl<'ctx> Compiler<'ctx> {
                         .map_err(|e| CodegenError::Llvm(e.to_string()))?;
                 }
                 Node::PatCtor { name, sub_patterns } => {
+                    // TODO(phase-2): retire this special case when the
+                    // canonical `pat-int` extension lands (the deferred ADR
+                    // unblocking smoke #7 / `match-int.tac`). Until then, a
+                    // numeric `pat-ctor` name is interpreted as an integer
+                    // literal arm — the smallest reading of the frozen
+                    // canonical surface that lets smoke #7 round-trip.
                     if !sub_patterns.is_empty() {
                         return Err(CodegenError::UnsupportedMatchPattern);
                     }

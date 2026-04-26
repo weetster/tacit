@@ -1,9 +1,11 @@
 # Compiler Architecture
 
-**Status:** Phase 1 working draft. Stage 5 will replace this with the
-full architecture document; Phase 1 Stage 4 leaves the LLVM-version
-specifics as TODO until an LLVM library is reachable on the build
-machine.
+**Status:** Phase 1 working draft. Stages 1–4 frozen by
+[ADR 0032](../decisions/0032-stage-4-frozen.md); LLVM 19 pinned via
+`inkwell` 0.9's `llvm19-1` feature. Stage 5 will replace this draft
+with the full architecture document (CLI + crate-graph rewrite); the
+LLVM-pin section below is load-bearing reference material in the
+meantime.
 
 ## Crate layout
 

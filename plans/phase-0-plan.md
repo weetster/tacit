@@ -61,18 +61,21 @@ Drafted and frozen on 2026-04-22 directly after Stage 2 freeze. The four deliver
 
 Stage 3 exit criterion (per [ADR 0015](../decisions/0015-inspection-view-scope.md)): spec docs are internally consistent and an independent implementer could reproduce the worked examples byte-for-byte. Met on 2026-04-22. Unlike Stage 2, Stage 3 has no byte-equivalence gate against a built artifact — the inspection-view renderer is Phase 1+ work. Further changes to Stage 3 artifacts require a new ADR per [CLAUDE.md § Ground rules](../CLAUDE.md), matching the Stage 2 freeze discipline.
 
-### Stage 4: Evaluation corpus (2–3 weeks, parallelizable with Stage 3)
+### Stage 4: Evaluation corpus (2–3 weeks, parallelizable with Stage 3) — **Frozen 2026-04-23**
 
-Frozen upfront so Phase 3 does not grade its own homework.
+Frozen upfront so Phase 3 does not grade its own homework. Closed on
+2026-04-23 alongside the Stage 5 repo-scaffolding freeze; Phase 1 begins
+the next day.
 
-- 50–100 tasks spanning arithmetic, strings, collections, I/O, small algorithms
-- Reference solutions in Python + Rust, idiom rules per [ADR 0019](../decisions/0019-corpus-idiom-rules.md)
-- Executable test cases (stdin/stdout contracts)
-- Seal ~20% as held-out; sealing is **in-repo via multi-layer guardrails** per
+- 60 tasks spanning arithmetic, strings, collections, I/O, small algorithms; index at [`../corpus/MANIFEST.md`](../corpus/MANIFEST.md).
+- Reference solutions in Python + Rust, idiom rules per [ADR 0019](../decisions/0019-corpus-idiom-rules.md).
+- Executable test cases (stdin/stdout contracts) under [`../corpus/tasks/`](../corpus/tasks/) and [`../corpus/sealed/`](../corpus/sealed/).
+- Held-out subset listed at [`../corpus/held-out.txt`](../corpus/held-out.txt); sealing is **in-repo via multi-layer guardrails** per
   [ADR 0020](../decisions/0020-sealing-held-out-in-repo.md) (supersedes the
   original "separate repo" clause). Load-bearing check is
-  `corpus/sealed-hashes.txt` verified in CI; Claude permission denies and a
+  [`../corpus/sealed-hashes.txt`](../corpus/sealed-hashes.txt) verified in CI; Claude permission denies and a
   default-exclude harness flag are additional layers.
+- Stdlib-dominance reporting per [ADR 0021](../decisions/0021-corpus-stdlib-dominance-reporting.md), captured at [`../corpus/stdlib-dominance.toml`](../corpus/stdlib-dominance.toml).
 
 ### Stage 5: Repo scaffolding (parallel, low-effort) — **Frozen 2026-04-23** ([ADR 0018](../decisions/0018-stage-5-frozen.md))
 

@@ -42,12 +42,20 @@ The default target is **Tacit-Lite**, a smaller practical variant with structura
 
 ## Repository Guide
 
-- `plans/` - project vision and phase plans
-- `docs/` - supporting design notes
-- `decisions/` - ADR-style design decisions
-- `corpus/` - evaluation corpus work
+- `plans/` - project vision, phase plans, and frozen specs (canonical text format, inspection view, sidecar)
+- `docs/` - supporting design notes (compiler architecture, effect system)
+- `decisions/` - ADR-style design decisions (0001 onward)
+- `crates/` - Cargo workspace: `tacit-canonical`, `tacit-views`, `tacit-codegen`
+- `examples/` - Phase 1 smoke corpus (`smoke/`)
+- `corpus/` - Phase 3 evaluation corpus, with sealed held-out subset
+- `stdlib/` - libc effect signatures (dormant Phase 1 table)
+
+## Current status
+
+Phase 0 (specification + scaffolding) is frozen. Phase 1 (minimum viable compiler) Stages 1–4 are frozen — the LLVM IR emitter is wired up against LLVM 19 and seven smoke programs run end-to-end. Stage 5 (CLI + architecture doc) is the only Phase 1 stage remaining.
 
 Start with:
 
 - `plans/tacit-plan.md` for the full project vision
+- `plans/phase-1-plan.md` for current work
 - `CLAUDE.md` for the working rules used in this repo
