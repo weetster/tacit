@@ -78,6 +78,34 @@ pub enum Node {
         name: String,
         sub_patterns: Vec<Node>,
     },
+    /// `(pat-int N)` — integer literal pattern (ADR 0037).
+    PatInt {
+        value: String,
+    },
+    /// `(fn-ty arg ret eff)` — function type (ADR 0034).
+    FnTy {
+        arg: Box<Node>,
+        ret: Box<Node>,
+        eff: Box<Node>,
+    },
+    /// `(ty-var N)` — type variable reference, DeBruijn over `forall` (ADR 0034).
+    TyVar {
+        index: u64,
+    },
+    /// `(forall TY-COUNT EFF-COUNT body)` — universal quantification (ADR 0034).
+    Forall {
+        ty_count: u32,
+        eff_count: u32,
+        body: Box<Node>,
+    },
+    /// `(eff-set atom*)` — concrete effect set, atoms sorted (ADR 0035).
+    EffSet {
+        atoms: Vec<String>,
+    },
+    /// `(eff-var N)` — effect variable reference, DeBruijn over `forall` (ADR 0036).
+    EffVar {
+        index: u64,
+    },
 }
 
 impl Node {

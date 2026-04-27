@@ -148,6 +148,34 @@ impl<'f> Ctx<'f> {
                 let (text, _vars) = self.render_pattern_node(node, name, sub_patterns, sc);
                 Rendered::leaf(text)
             }
+            // Phase 2 type-level nodes: render as compact canonical text for now.
+            // Full --types/--effects rendering is Stage 5 work (ADR 0015).
+            Node::PatInt { value } => Rendered::leaf(value.clone()),
+            Node::FnTy { arg, ret, eff } => Rendered::leaf(format!(
+                "({} -> {} / {})",
+                self.render_compact(arg),
+                self.render_compact(ret),
+                self.render_compact(eff)
+            )),
+            Node::TyVar { index } => Rendered::leaf(format!("ty-var({})", index)),
+            Node::Forall {
+                ty_count,
+                eff_count,
+                body,
+            } => Rendered::leaf(format!(
+                "forall({},{},{})",
+                ty_count,
+                eff_count,
+                self.render_compact(body)
+            )),
+            Node::EffSet { atoms } => {
+                if atoms.is_empty() {
+                    Rendered::leaf("{}".to_string())
+                } else {
+                    Rendered::leaf(format!("{{{}}}", atoms.join(",")))
+                }
+            }
+            Node::EffVar { index } => Rendered::leaf(format!("eff-var({})", index)),
         };
 
         if let Some(c) = comment {
@@ -155,6 +183,13 @@ impl<'f> Ctx<'f> {
         } else {
             r
         }
+    }
+
+    /// Render a type-level node as a compact single-line string.
+    /// Used for Phase 2 type annotations before --types flag is wired (Stage 5).
+    fn render_compact(&self, node: &Node) -> String {
+        use tacit_canonical::emit::emit;
+        String::from_utf8_lossy(&emit(node)).into_owned()
     }
 
     // -----------------------------------------------------------------------

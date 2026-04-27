@@ -355,6 +355,16 @@ impl EmitCtx {
             Node::Ctor { name, args } if args.is_empty() => {
                 out.push_str(name);
             }
+            // Phase 2 type-expression nodes have no authoring syntax yet (Stage 5 will add it).
+            // Emit as canonical text to avoid infinite recursion through the emit_atom fallback.
+            Node::FnTy { .. }
+            | Node::TyVar { .. }
+            | Node::Forall { .. }
+            | Node::EffSet { .. }
+            | Node::EffVar { .. } => {
+                let canonical = tacit_canonical::emit::emit(node);
+                out.push_str(&String::from_utf8_lossy(&canonical));
+            }
             // Structural forms that shouldn't appear as bare atoms — wrap in parens.
             other => {
                 out.push('(');
@@ -413,6 +423,10 @@ fn emit_pattern_counted(
                 all_vars.extend(vars);
             }
             all_vars
+        }
+        Node::PatInt { value } => {
+            out.push_str(value);
+            vec![]
         }
         _ => {
             out.push('_');

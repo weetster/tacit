@@ -233,9 +233,17 @@ impl<'ctx> Compiler<'ctx> {
             Node::Hole { diag_id, .. } => Err(CodegenError::Hole {
                 diag_id: diag_id.clone(),
             }),
-            Node::PatWild | Node::PatVar | Node::PatCtor { .. } => {
+            Node::PatWild
+            | Node::PatVar
+            | Node::PatCtor { .. }
+            | Node::PatInt { .. } => {
                 Err(CodegenError::Unsupported("pattern outside match arm"))
             }
+            Node::FnTy { .. }
+            | Node::TyVar { .. }
+            | Node::Forall { .. }
+            | Node::EffSet { .. }
+            | Node::EffVar { .. } => Err(CodegenError::Unsupported("type expression in value position")),
         }
     }
 

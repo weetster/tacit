@@ -161,6 +161,55 @@ fn emit_into(node: &Node, out: &mut String) {
             }
             out.push(')');
         }
+        Node::PatInt { value } => {
+            out.push_str("(pat-int ");
+            out.push_str(value);
+            out.push(')');
+        }
+        Node::FnTy { arg, ret, eff } => {
+            out.push_str("(fn-ty ");
+            emit_into(arg, out);
+            out.push(' ');
+            emit_into(ret, out);
+            out.push(' ');
+            emit_into(eff, out);
+            out.push(')');
+        }
+        Node::TyVar { index } => {
+            out.push_str("(ty-var ");
+            out.push_str(&index.to_string());
+            out.push(')');
+        }
+        Node::Forall {
+            ty_count,
+            eff_count,
+            body,
+        } => {
+            out.push_str("(forall ");
+            out.push_str(&ty_count.to_string());
+            out.push(' ');
+            out.push_str(&eff_count.to_string());
+            out.push(' ');
+            emit_into(body, out);
+            out.push(')');
+        }
+        Node::EffSet { atoms } => {
+            if atoms.is_empty() {
+                out.push_str("(eff-set)");
+            } else {
+                out.push_str("(eff-set");
+                for a in atoms {
+                    out.push(' ');
+                    out.push_str(a);
+                }
+                out.push(')');
+            }
+        }
+        Node::EffVar { index } => {
+            out.push_str("(eff-var ");
+            out.push_str(&index.to_string());
+            out.push(')');
+        }
     }
 }
 

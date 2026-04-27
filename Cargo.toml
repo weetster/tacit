@@ -3,6 +3,7 @@ members = [
     "crates/tacit-canonical",
     "crates/tacit-codegen",
     "crates/tacit-views",
+    "crates/tacit-typecheck",
     "crates/tacit-cli",
 ]
 resolver = "2"

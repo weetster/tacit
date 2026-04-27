@@ -51,6 +51,15 @@ const SKIP: &[&str] = &[
     "26-ctor-mixed-args.canonical",
     // Module syntax deferred to Phase 2.
     "28-module-one-binding.canonical",
+    // Phase 2 type nodes (fn-ty, forall, eff-set, ty-var, eff-var): authoring syntax
+    // is Stage 5 work; no round-trip until then.
+    "29-ann-generic-id.canonical",
+    "30-ann-io-fn.canonical",
+    "31-ann-eff-poly.canonical",
+    // pat-int: authoring pattern parser does not yet handle integer literal patterns.
+    "32-pat-int-match.canonical",
+    // buf-alloc / read: buf-alloc is not yet a known authoring-view symbol.
+    "33-buf-alloc-read.canonical",
 ];
 
 #[test]

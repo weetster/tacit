@@ -95,7 +95,13 @@ pub fn check_no_holes(node: &Node) -> Result<(), CodegenError> {
         | Node::Str { .. }
         | Node::Sym { .. }
         | Node::PatWild
-        | Node::PatVar => Ok(()),
+        | Node::PatVar
+        | Node::PatInt { .. }
+        | Node::FnTy { .. }
+        | Node::TyVar { .. }
+        | Node::Forall { .. }
+        | Node::EffSet { .. }
+        | Node::EffVar { .. } => Ok(()),
     }
 }
 
@@ -171,7 +177,13 @@ pub fn check_closed(body: &Node, n: u64) -> Result<(), CodegenError> {
             | Node::Sym { .. }
             | Node::PatWild
             | Node::PatVar
-            | Node::PatCtor { .. } => Ok(()),
+            | Node::PatCtor { .. }
+            | Node::PatInt { .. }
+            | Node::FnTy { .. }
+            | Node::TyVar { .. }
+            | Node::Forall { .. }
+            | Node::EffSet { .. }
+            | Node::EffVar { .. } => Ok(()),
         }
     }
     go(body, n)

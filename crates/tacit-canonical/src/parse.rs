@@ -309,6 +309,71 @@ fn build_form(tag: &str, args: &[SItem]) -> Result<Node, ParseError> {
                 sub_patterns: sub,
             })
         }
+        "pat-int" => {
+            check_arity(tag, args, 1)?;
+            let text = bare_int(&args[0], "pat-int literal")?;
+            Ok(Node::PatInt {
+                value: if text == "-0" {
+                    "0".to_string()
+                } else {
+                    text
+                },
+            })
+        }
+        "fn-ty" => {
+            check_arity(tag, args, 3)?;
+            Ok(Node::FnTy {
+                arg: Box::new(build(&args[0])?),
+                ret: Box::new(build(&args[1])?),
+                eff: Box::new(build(&args[2])?),
+            })
+        }
+        "ty-var" => {
+            check_arity(tag, args, 1)?;
+            let text = bare_int(&args[0], "ty-var index")?;
+            if text.starts_with('-') {
+                return err("ty-var index must be >= 0");
+            }
+            let idx: u64 = text.parse().map_err(|e: std::num::ParseIntError| {
+                ParseError::Structural(format!("invalid ty-var index: {}", e))
+            })?;
+            Ok(Node::TyVar { index: idx })
+        }
+        "forall" => {
+            check_arity(tag, args, 3)?;
+            let ty_text = bare_int(&args[0], "forall ty-count")?;
+            let eff_text = bare_int(&args[1], "forall eff-count")?;
+            let ty_count: u32 = ty_text.parse().map_err(|e: std::num::ParseIntError| {
+                ParseError::Structural(format!("invalid forall ty-count: {}", e))
+            })?;
+            let eff_count: u32 = eff_text.parse().map_err(|e: std::num::ParseIntError| {
+                ParseError::Structural(format!("invalid forall eff-count: {}", e))
+            })?;
+            Ok(Node::Forall {
+                ty_count,
+                eff_count,
+                body: Box::new(build(&args[2])?),
+            })
+        }
+        "eff-set" => {
+            // Children are bare symbol atoms (effect atom names), sorted required.
+            let mut atoms = Vec::with_capacity(args.len());
+            for a in args {
+                atoms.push(bare_sym(a, "eff-set atom")?);
+            }
+            Ok(Node::EffSet { atoms })
+        }
+        "eff-var" => {
+            check_arity(tag, args, 1)?;
+            let text = bare_int(&args[0], "eff-var index")?;
+            if text.starts_with('-') {
+                return err("eff-var index must be >= 0");
+            }
+            let idx: u64 = text.parse().map_err(|e: std::num::ParseIntError| {
+                ParseError::Structural(format!("invalid eff-var index: {}", e))
+            })?;
+            Ok(Node::EffVar { index: idx })
+        }
         _ => err(format!("unknown tag {:?}", tag)),
     }
 }

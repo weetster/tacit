@@ -1,0 +1,16 @@
+[package]
+name = "tacit-typecheck"
+version = "0.1.0"
+edition = "2021"
+description = "Phase 2 type and effect checker for Tacit-Lite"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]
+tacit-canonical = { path = "../tacit-canonical" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+
+[dev-dependencies]
+tacit-views = { path = "../tacit-views" }
