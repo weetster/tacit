@@ -173,6 +173,8 @@ the existing canonical-form parser and the new typecheck consumer
 
 ### Stage 2: `tacit-typecheck` crate + structural type checker (~3–4 weeks)
 
+**Status: Complete 2026-04-27.** All seven smoke programs typecheck; negative-test corpus covers every error variant; crate builds without an LLVM feature flag.
+
 Greenfield crate. Depends on Stage 1 ADRs Q-P2-1, -8, -9, -10 (and -7
 to the extent Phase 2 wants Hole nodes to flow through cleanly; see
 note below). Independent of Stage 3's effect work — types first, effects
@@ -203,6 +205,8 @@ tests without an LLVM feature flag (parallel to the
 [docs/compiler-architecture.md](../docs/compiler-architecture.md)).
 
 ### Stage 3: Effect checker (~3 weeks)
+
+**Status: Complete 2026-04-27.** All seven smoke programs have verified effect signatures; effect polymorphism propagates through higher-order functions; pure-annotation-on-IO-body produces `effect-violation`. Inspection-view `--effects` rendering deferred to Stage 5 (view annotations).
 
 Sits on top of Stage 2 inside the same `tacit-typecheck` crate. Depends
 on Stage 1 ADRs Q-P2-2 and Q-P2-3.

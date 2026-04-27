@@ -3,7 +3,7 @@
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::ty::Ty;
+use crate::ty::{EffSet, FnEff, Ty};
 
 /// Top-level diagnostic output envelope.
 #[derive(Debug, Serialize)]
@@ -14,10 +14,7 @@ pub struct DiagOutput {
 
 impl DiagOutput {
     pub fn new(errors: Vec<Diagnostic>) -> Self {
-        DiagOutput {
-            schema_version: "p2.0".to_string(),
-            errors,
-        }
+        DiagOutput { schema_version: "p2.0".to_string(), errors }
     }
 
     pub fn to_json_string(&self) -> String {
@@ -103,10 +100,7 @@ impl Diagnostic {
             "module-missing-annotation",
             "warning",
             path,
-            format!(
-                "exported binding {} has no type+effect signature",
-                binding_idx
-            ),
+            format!("exported binding {} has no type+effect signature", binding_idx),
         )
     }
 
@@ -135,7 +129,6 @@ impl Diagnostic {
     }
 
     pub fn hole_diagnostic(path: &[usize], diag_id: &str, message: &str) -> Self {
-        // Per ADR 0041: the hole's diag-id IS the error kind.
         Self::new(diag_id, "error", path, message.to_string())
     }
 
@@ -159,12 +152,25 @@ impl Diagnostic {
             format!("effect variable {} has no enclosing forall", index),
         )
     }
+
+    pub fn effect_set_mismatch(path: &[usize], expected: &EffSet, actual: &EffSet) -> Self {
+        let mut d = Self::new(
+            "effect-violation",
+            "error",
+            path,
+            format!(
+                "effect set mismatch: expected {}, got {}",
+                expected, actual
+            ),
+        );
+        d.expected = Some(eff_set_to_json(expected));
+        d.actual = Some(eff_set_to_json(actual));
+        d
+    }
 }
 
 /// Reserved type names that Phase 3+ will implement (ADR 0042).
-const RESERVED_TYPE_NAMES: &[&str] = &[
-    "Int32", "Int16", "Int8", "Int64", "Nat", "Float64",
-];
+const RESERVED_TYPE_NAMES: &[&str] = &["Int32", "Int16", "Int8", "Int64", "Nat", "Float64"];
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Location {
@@ -210,11 +216,11 @@ pub fn ty_to_json(ty: &Ty) -> Value {
         Ty::Int => serde_json::json!({"sym": "Int"}),
         Ty::Bool => serde_json::json!({"sym": "Bool"}),
         Ty::Str => serde_json::json!({"sym": "Str"}),
-        Ty::Fn(a, b) => serde_json::json!({
+        Ty::Fn(a, b, eff) => serde_json::json!({
             "fn-ty": {
                 "arg": ty_to_json(a),
                 "ret": ty_to_json(b),
-                "eff": {"eff-set": []}
+                "eff": fn_eff_to_json(eff),
             }
         }),
         Ty::Record(fields) => {
@@ -230,4 +236,18 @@ pub fn ty_to_json(ty: &Ty) -> Value {
         Ty::Meta(id) => serde_json::json!({"meta": id}),
         Ty::Unknown => Value::Null,
     }
+}
+
+/// Convert a `FnEff` to JSON.
+pub fn fn_eff_to_json(eff: &FnEff) -> Value {
+    match eff {
+        FnEff::Concrete(set) => eff_set_to_json(set),
+        FnEff::Meta(id) => serde_json::json!({"eff-meta": id}),
+    }
+}
+
+/// Convert an `EffSet` to JSON: an array of sorted atom strings.
+pub fn eff_set_to_json(eff: &EffSet) -> Value {
+    let atoms: Vec<Value> = eff.atoms.iter().map(|a| Value::String(a.to_string())).collect();
+    Value::Array(atoms)
 }

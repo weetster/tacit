@@ -176,3 +176,85 @@ fn neg_sidecar_type_mismatch() {
     let diags = result.unwrap_err();
     expect_error(&diags, "type-mismatch");
 }
+
+// ── effect-violation ──────────────────────────────────────────────────────────
+
+/// Annotating a lambda as pure while its body calls @write produces effect-violation.
+#[test]
+fn neg_effect_violation_pure_annotation_on_io_body() {
+    use tacit_canonical::ast::Node;
+
+    // ann (lam n. let _ = @write 1 "x" 1 in n)
+    //     (fn-ty Int Int (eff-set))   ← declared pure
+    let fn_ty_node = Node::FnTy {
+        arg: Box::new(Node::Sym { name: "Int".to_string() }),
+        ret: Box::new(Node::Sym { name: "Int".to_string() }),
+        eff: Box::new(Node::EffSet { atoms: vec![] }),
+    };
+    let write_call = app(
+        app(app(sym("write"), int(1)), str_node("x")),
+        int(1),
+    );
+    // lam n. let _ = write(...) in n   (var 1 = n after let shifts context)
+    let body = Node::Let {
+        rhs: Box::new(write_call),
+        body: Box::new(Node::Var { index: 1 }),
+    };
+    let annotated = Node::Ann {
+        expr: Box::new(Node::Lam { body: Box::new(body) }),
+        type_: Box::new(fn_ty_node),
+    };
+
+    let mut subst = tacit_typecheck::ty::Subst::default();
+    let mut diags = Vec::new();
+    tacit_typecheck::infer::infer(&[], &annotated, &mut subst, &[], &mut diags);
+    expect_error(&diags, "effect-violation");
+}
+
+// ── sidecar effect mismatch ───────────────────────────────────────────────────
+
+/// check_against_sidecar reports an effect-violation when the inferred
+/// eval-effect does not match the sidecar's `effects` list.
+#[test]
+fn neg_sidecar_effect_mismatch() {
+    use std::collections::BTreeMap;
+    use tacit_typecheck::sidecar::TypeEntry;
+
+    // Expression is pure (int 0), but sidecar expects IO.
+    let ast = int(0);
+    let mut types = BTreeMap::new();
+    types.insert(
+        "main".to_string(),
+        TypeEntry {
+            type_str: "Int".to_string(),
+            effects: vec!["IO".to_string()],
+        },
+    );
+    let sidecar = TypeSidecar { types };
+    let result = check_against_sidecar(&ast, &sidecar);
+    let diags = result.unwrap_err();
+    expect_error(&diags, "effect-violation");
+}
+
+// ── unbound-effect-variable ──────────────────────────────────────────────────
+
+/// A fn-ty with eff-var(0) but no enclosing forall produces an error.
+#[test]
+fn neg_unbound_effect_variable() {
+    use tacit_canonical::ast::Node;
+
+    let fn_ty_node = Node::FnTy {
+        arg: Box::new(Node::Sym { name: "Int".to_string() }),
+        ret: Box::new(Node::Sym { name: "Int".to_string() }),
+        eff: Box::new(Node::EffVar { index: 0 }),
+    };
+    let annotated = ann(int(0), fn_ty_node);
+    let mut subst = tacit_typecheck::ty::Subst::default();
+    let mut diags = Vec::new();
+    tacit_typecheck::infer::infer(&[], &annotated, &mut subst, &[], &mut diags);
+    assert!(
+        diags.iter().any(|d| d.kind == "unbound-effect-variable"),
+        "expected unbound-effect-variable, got: {:?}",
+        diags.iter().map(|d| &d.kind).collect::<Vec<_>>()
+    );
+}

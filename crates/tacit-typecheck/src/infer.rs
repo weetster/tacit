@@ -1,12 +1,23 @@
-//! Local type inference for Tacit-Lite Phase 2.
+//! Local type and effect inference for Tacit-Lite Phase 2.
 //!
-//! Performs structural type checking with local inference inside function bodies.
-//! Exported definitions at module boundaries require explicit signatures (Phase 2
-//! plan § Stage 2).
+//! Each expression has both a **type** (the value it computes) and an
+//! **eval-effect** (the effects produced when evaluating it).  `infer`
+//! returns both as `(Ty, FnEff)`.  Callers that need a concrete `EffSet`
+//! call `subst.resolve_eff(&eff)` after inference is complete.
 //!
-//! Context (`ctx`) is a Vec<Ty> where `ctx[0]` is the type of `var 0` (innermost).
-//! Inference is monomorphic within each expression; explicit `forall` annotations
-//! are instantiated when encountered (ADR 0034).
+//! Returning `FnEff` instead of `EffSet` is critical for effect polymorphism:
+//! the effect of `f x` (where `f` has meta type) carries a `FnEff::Meta` that
+//! remains unresolved until the caller is later unified with a concrete function.
+//!
+//! Effect rules (Stage 3):
+//! - `lam body`: eval-eff = `{}`, fn-type carries `body_eff` as the call effect.
+//! - `app f x`: eval-eff = eff(f) ∪ eff(x) ∪ call-eff-of(f's type).
+//! - `let rhs in body`: eval-eff = eff(rhs) ∪ eff(body).
+//! - `if c t e`: eval-eff = eff(c) ∪ eff(t) ∪ eff(e)  (conservative).
+//! - `rec {b0..bn} in body`: n > 1 → all Fn bindings augmented with `Div`;
+//!   n = 1 → no automatic Div.  Body effects propagate normally.
+//! - Primitives (`@write`, `@read`, `@exit`): IO sits at the innermost
+//!   application (fully-applied call).
 
 use std::collections::BTreeMap;
 
@@ -15,50 +26,56 @@ use tacit_canonical::ast::Node;
 use crate::error::Diagnostic;
 use crate::primitives::{is_arith, is_cmp, prim_type};
 use crate::type_from_node::{child_path, type_from_node};
-use crate::ty::{unify, Subst, Ty};
+use crate::ty::{join_fn_eff, unify, EffAtom, EffSet, FnEff, Subst, Ty};
 
-/// Infer the type of a node given a variable context.
+/// Infer the type and eval-effect of a node given a variable context.
 ///
-/// `ctx[i]` is the type of `(var i)`. `path` tracks the AST path from the root
-/// for diagnostic location. Errors are appended to `diags`; inference continues
-/// past errors by returning `Ty::Unknown`.
+/// `ctx[i]` is the type of `(var i)`. Errors are appended to `diags`;
+/// inference continues past errors by returning `Ty::Unknown` / `FnEff::pure_()`.
 pub fn infer(
     ctx: &[Ty],
     node: &Node,
     subst: &mut Subst,
     path: &[usize],
     diags: &mut Vec<Diagnostic>,
-) -> Ty {
+) -> (Ty, FnEff) {
     match node {
-        Node::Int { .. } => Ty::Int,
-        Node::Str { .. } => Ty::Str,
+        Node::Int { .. } => (Ty::Int, FnEff::pure_()),
+        Node::Str { .. } => (Ty::Str, FnEff::pure_()),
 
         Node::Var { index } => {
             let i = *index as usize;
-            if i < ctx.len() {
+            let ty = if i < ctx.len() {
                 subst.apply(&ctx[i])
             } else {
-                // AST invariant violation — should not happen for well-formed programs.
                 Ty::Unknown
-            }
+            };
+            (ty, FnEff::pure_())
         }
 
         Node::Sym { name } => {
-            match prim_type(name) {
+            let ty = match prim_type(name) {
                 Some(t) => t,
                 None => {
-                    // Unknown @name — not in the Phase 2 primitive allowlist.
                     diags.push(Diagnostic::unresolved_type(path, name));
                     Ty::Unknown
                 }
-            }
+            };
+            // The symbol itself evaluates with no effects; effects appear on call.
+            (ty, FnEff::pure_())
         }
 
         Node::Lam { body } => {
             let param_ty = subst.fresh();
             let ctx_body = extend(ctx, param_ty.clone());
-            let body_ty = infer(&ctx_body, body, subst, &child_path(path, 0), diags);
-            Ty::Fn(Box::new(subst.apply(&param_ty)), Box::new(body_ty))
+            let (body_ty, body_eff) = infer(&ctx_body, body, subst, &child_path(path, 0), diags);
+            // body_eff is FnEff — use it directly as the lam's call-effect.
+            let lam_ty = Ty::Fn(
+                Box::new(subst.apply(&param_ty)),
+                Box::new(body_ty),
+                body_eff,
+            );
+            (lam_ty, FnEff::pure_())
         }
 
         Node::App { fn_, arg } => {
@@ -66,9 +83,10 @@ pub fn infer(
         }
 
         Node::Let { rhs, body } => {
-            let rhs_ty = infer(ctx, rhs, subst, &child_path(path, 0), diags);
+            let (rhs_ty, rhs_eff) = infer(ctx, rhs, subst, &child_path(path, 0), diags);
             let ctx_body = extend(ctx, rhs_ty);
-            infer(&ctx_body, body, subst, &child_path(path, 1), diags)
+            let (body_ty, body_eff) = infer(&ctx_body, body, subst, &child_path(path, 1), diags);
+            (body_ty, join_fn_eff(&rhs_eff, &body_eff, subst))
         }
 
         Node::Rec { bindings, body } => {
@@ -76,21 +94,12 @@ pub fn infer(
         }
 
         Node::If { cond, then, else_ } => {
-            // Infer branches first so that the condition meta is constrained by
-            // any sub-expression usage before we check it (e.g. `if n then @sub n 1 ...`
-            // constrains n to Int before the condition check).
-            let cond_ty = infer(ctx, cond, subst, &child_path(path, 0), diags);
-            let then_ty = infer(ctx, then, subst, &child_path(path, 1), diags);
-            let else_ty = infer(ctx, else_, subst, &child_path(path, 2), diags);
+            let (cond_ty, cond_eff) = infer(ctx, cond, subst, &child_path(path, 0), diags);
+            let (then_ty, then_eff) = infer(ctx, then, subst, &child_path(path, 1), diags);
+            let (else_ty, else_eff) = infer(ctx, else_, subst, &child_path(path, 2), diags);
 
-            // Check condition type after branches (metas may now be resolved).
             let cond_resolved = subst.apply(&cond_ty);
-            // Phase 2: accept Int or Bool as condition (ADR 0042); Metas and Unknown
-            // are also allowed (they will be constrained by enclosing context).
-            if !matches!(
-                cond_resolved,
-                Ty::Int | Ty::Bool | Ty::Unknown | Ty::Meta(_)
-            ) {
+            if !matches!(cond_resolved, Ty::Int | Ty::Bool | Ty::Unknown | Ty::Meta(_)) {
                 diags.push(Diagnostic::type_mismatch(
                     &child_path(path, 0),
                     &Ty::Bool,
@@ -105,42 +114,49 @@ pub fn infer(
                     diags.push(Diagnostic::type_mismatch(&child_path(path, 2), &t, &e));
                 }
             }
-            subst.apply(&then_ty)
+            let total_eff = join_fn_eff(&join_fn_eff(&cond_eff, &then_eff, subst), &else_eff, subst);
+            (subst.apply(&then_ty), total_eff)
         }
 
         Node::Match { scrutinee, arms } => {
-            let scrut_ty = infer(ctx, scrutinee, subst, &child_path(path, 0), diags);
+            let (scrut_ty, scrut_eff) = infer(ctx, scrutinee, subst, &child_path(path, 0), diags);
             let result_meta = subst.fresh();
+            let mut arms_eff = FnEff::pure_();
             for (i, arm) in arms.iter().enumerate() {
-                infer_arm(ctx, arm, &scrut_ty, &result_meta, subst,
-                          &child_path(path, i + 1), diags);
+                let arm_eff = infer_arm(
+                    ctx, arm, &scrut_ty, &result_meta, subst,
+                    &child_path(path, i + 1), diags,
+                );
+                arms_eff = join_fn_eff(&arms_eff, &arm_eff, subst);
             }
-            subst.apply(&result_meta)
+            (subst.apply(&result_meta), join_fn_eff(&scrut_eff, &arms_eff, subst))
         }
 
         Node::Arm { pattern, body } => {
-            // Arms are only valid inside Match; direct inference here for completeness.
             let bindings = pattern_bindings(pattern);
             let ctx_body = bindings.into_iter().fold(ctx.to_vec(), |mut c, t| {
                 c.insert(0, t);
                 c
             });
-            infer(&ctx_body, body, subst, &child_path(path, 1), diags)
+            let (ty, eff) = infer(&ctx_body, body, subst, &child_path(path, 1), diags);
+            (ty, eff)
         }
 
         Node::Record { fields } => {
             let mut field_tys = BTreeMap::new();
+            let mut eff = FnEff::pure_();
             for (i, (name, val)) in fields.iter().enumerate() {
-                let ty = infer(ctx, val, subst, &child_path(path, i * 2 + 1), diags);
+                let (ty, feff) = infer(ctx, val, subst, &child_path(path, i * 2 + 1), diags);
                 field_tys.insert(name.clone(), ty);
+                eff = join_fn_eff(&eff, &feff, subst);
             }
-            Ty::Record(field_tys)
+            (Ty::Record(field_tys), eff)
         }
 
         Node::Proj { record, field } => {
-            let rec_ty = infer(ctx, record, subst, &child_path(path, 0), diags);
+            let (rec_ty, rec_eff) = infer(ctx, record, subst, &child_path(path, 0), diags);
             let resolved = subst.apply(&rec_ty);
-            match resolved {
+            let field_ty = match resolved {
                 Ty::Record(ref fields) => {
                     fields.get(field).cloned().unwrap_or_else(|| {
                         diags.push(Diagnostic::unresolved_type(
@@ -159,30 +175,33 @@ pub fn infer(
                     ));
                     Ty::Unknown
                 }
-            }
+            };
+            (field_ty, rec_eff)
         }
 
         Node::Ctor { name, args } => {
             match name.as_str() {
-                "True" | "False" if args.is_empty() => Ty::Bool,
+                "True" | "False" if args.is_empty() => (Ty::Bool, FnEff::pure_()),
                 _ => {
-                    // Unknown constructor: infer arg types for error recovery.
+                    let mut eff = FnEff::pure_();
                     for (i, arg) in args.iter().enumerate() {
-                        infer(ctx, arg, subst, &child_path(path, i + 1), diags);
+                        let (_, aeff) = infer(ctx, arg, subst, &child_path(path, i + 1), diags);
+                        eff = join_fn_eff(&eff, &aeff, subst);
                     }
-                    // No type information for unknown constructors in Phase 2.
                     diags.push(Diagnostic::unresolved_type(
                         path,
                         &format!("constructor '{}'", name),
                     ));
-                    Ty::Unknown
+                    (Ty::Unknown, eff)
                 }
             }
         }
 
         Node::Ann { expr, type_ } => {
-            let declared = type_from_node(type_, &[], subst, &child_path(path, 1), diags);
-            let inferred = infer(ctx, expr, subst, &child_path(path, 0), diags);
+            let declared = type_from_node(type_, &[], &[], subst, &child_path(path, 1), diags);
+            let (inferred, eval_eff) = infer(ctx, expr, subst, &child_path(path, 0), diags);
+
+            // Type check: declared vs inferred.
             if !declared.is_unknown() && !inferred.is_unknown()
                 && !unify(&declared, &inferred, subst)
             {
@@ -190,28 +209,31 @@ pub fn infer(
                 let i = subst.apply(&inferred);
                 diags.push(Diagnostic::type_mismatch(path, &d, &i));
             }
-            subst.apply(&declared)
+
+            // Effect check: if the annotation specifies a function type with an effect,
+            // verify that the inferred function's call-effect is within the declared set.
+            check_fn_effect_annotation(&declared, &inferred, subst, path, diags);
+
+            (subst.apply(&declared), eval_eff)
         }
 
         Node::Module { bindings } => {
-            // Module bindings should carry explicit signatures; warn for each
-            // that lacks an Ann wrapper.
             let n = bindings.len();
             let mut ctx_mod = ctx.to_vec();
-            // Insert fresh metas for all bindings (allows mutual references).
             let metas: Vec<Ty> = (0..n).map(|_| subst.fresh()).collect();
             for m in metas.iter().rev() {
                 ctx_mod.insert(0, m.clone());
             }
+            let mut total_eff = FnEff::pure_();
             for (i, binding) in bindings.iter().enumerate() {
                 if !matches!(binding, Node::Ann { .. }) {
                     diags.push(Diagnostic::module_missing_annotation(path, i));
                 }
-                let ty = infer(&ctx_mod, binding, subst, &child_path(path, i), diags);
+                let (ty, beff) = infer(&ctx_mod, binding, subst, &child_path(path, i), diags);
                 unify(&metas[i], &ty, subst);
+                total_eff = join_fn_eff(&total_eff, &beff, subst);
             }
-            // Module itself has no value type.
-            Ty::Unknown
+            (Ty::Unknown, total_eff)
         }
 
         Node::Hole { diag_id, payload } => {
@@ -220,22 +242,23 @@ pub fn infer(
                 _ => String::new(),
             };
             diags.push(Diagnostic::hole_diagnostic(path, diag_id, &msg));
-            Ty::Unknown
+            (Ty::Unknown, FnEff::pure_())
         }
 
-        // Patterns in expression position are AST errors.
-        Node::PatWild | Node::PatVar | Node::PatCtor { .. } | Node::PatInt { .. } => Ty::Unknown,
+        Node::PatWild | Node::PatVar | Node::PatCtor { .. } | Node::PatInt { .. } => {
+            (Ty::Unknown, FnEff::pure_())
+        }
 
-        // Type-level nodes in expression position: type checker ignores them.
         Node::FnTy { .. }
         | Node::TyVar { .. }
         | Node::Forall { .. }
         | Node::EffSet { .. }
-        | Node::EffVar { .. } => Ty::Unknown,
+        | Node::EffVar { .. } => (Ty::Unknown, FnEff::pure_()),
     }
 }
 
-/// Infer a function application, handling primitive operator overload resolution.
+// ── App inference ──────────────────────────────────────────────────────────────
+
 fn infer_app(
     ctx: &[Ty],
     fn_: &Node,
@@ -243,15 +266,9 @@ fn infer_app(
     subst: &mut Subst,
     path: &[usize],
     diags: &mut Vec<Diagnostic>,
-) -> Ty {
-    // Check if this is a partial application of a binary operator: (app (sym op) e)
-    // or full application: (app (app (sym op) e1) e2).
-    // We resolve operator overloads at the outermost application.
-    if let Node::App {
-        fn_: inner_fn,
-        arg: left_arg,
-    } = fn_
-    {
+) -> (Ty, FnEff) {
+    // Detect binary operator pattern: (app (app (sym op) e1) e2)
+    if let Node::App { fn_: inner_fn, arg: left_arg } = fn_ {
         if let Node::Sym { name } = inner_fn.as_ref() {
             if is_arith(name) || is_cmp(name) {
                 return infer_binary_op(ctx, name, left_arg, arg, subst, path, diags);
@@ -259,12 +276,12 @@ fn infer_app(
         }
     }
 
-    let fn_ty = infer(ctx, fn_, subst, &child_path(path, 0), diags);
-    let arg_ty = infer(ctx, arg, subst, &child_path(path, 1), diags);
+    let (fn_ty, fn_eff) = infer(ctx, fn_, subst, &child_path(path, 0), diags);
+    let (arg_ty, arg_eff) = infer(ctx, arg, subst, &child_path(path, 1), diags);
     let fn_resolved = subst.apply(&fn_ty);
 
-    match fn_resolved {
-        Ty::Fn(param_ty, ret_ty) => {
+    let (ret_ty, call_eff) = match fn_resolved {
+        Ty::Fn(param_ty, ret_ty, eff) => {
             if !unify(&param_ty, &arg_ty, subst) {
                 let p = subst.apply(&param_ty);
                 let a = subst.apply(&arg_ty);
@@ -272,29 +289,38 @@ fn infer_app(
                     diags.push(Diagnostic::type_mismatch(&child_path(path, 1), &p, &a));
                 }
             }
-            subst.apply(&ret_ty)
+            // eff is already applied (subst.apply resolves eff inside Fn).
+            (subst.apply(&ret_ty), eff)
         }
-        Ty::Unknown => Ty::Unknown,
+        Ty::Unknown => (Ty::Unknown, FnEff::pure_()),
         Ty::Meta(_) => {
-            // fn_ty is still a meta; constrain it.
             let ret_meta = subst.fresh();
-            let expected = Ty::Fn(Box::new(arg_ty.clone()), Box::new(ret_meta.clone()));
+            let eff_meta = subst.fresh_eff();
+            let expected = Ty::Fn(
+                Box::new(arg_ty.clone()),
+                Box::new(ret_meta.clone()),
+                eff_meta.clone(),
+            );
             unify(&fn_ty, &expected, subst);
-            subst.apply(&ret_meta)
+            // Keep eff_meta as FnEff::Meta — do NOT resolve eagerly.
+            // This lets the meta propagate until unified with a concrete type.
+            (subst.apply(&ret_meta), eff_meta)
         }
         other => {
             diags.push(Diagnostic::type_mismatch(
                 &child_path(path, 0),
-                &Ty::Fn(Box::new(arg_ty), Box::new(subst.fresh())),
+                &Ty::Fn(Box::new(arg_ty), Box::new(subst.fresh()), FnEff::pure_()),
                 &other,
             ));
-            Ty::Unknown
+            (Ty::Unknown, FnEff::pure_())
         }
-    }
+    };
+
+    let total_eff = join_fn_eff(&join_fn_eff(&fn_eff, &arg_eff, subst), &call_eff, subst);
+    (ret_ty, total_eff)
 }
 
-/// Infer a binary operator application `(app (app (sym op) e1) e2)`.
-/// Applies the no-coercion unification rule from ADR 0042.
+/// Infer a binary operator: `(app (app (sym op) e1) e2)`.
 fn infer_binary_op(
     ctx: &[Ty],
     op: &str,
@@ -303,11 +329,9 @@ fn infer_binary_op(
     subst: &mut Subst,
     path: &[usize],
     diags: &mut Vec<Diagnostic>,
-) -> Ty {
-    let t1 = infer(ctx, left, subst, &child_path(path, 0), diags);
-    let t2 = infer(ctx, right, subst, &child_path(path, 1), diags);
-    let _t1r = subst.apply(&t1);
-    let _t2r = subst.apply(&t2);
+) -> (Ty, FnEff) {
+    let (t1, eff1) = infer(ctx, left, subst, &child_path(path, 0), diags);
+    let (t2, eff2) = infer(ctx, right, subst, &child_path(path, 1), diags);
 
     if !unify(&t1, &t2, subst) {
         let t1f = subst.apply(&t1);
@@ -315,17 +339,21 @@ fn infer_binary_op(
         if !t1f.is_unknown() && !t2f.is_unknown() {
             diags.push(Diagnostic::operator_overload_failure(path, op, &t1f, &t2f));
         }
-        return Ty::Unknown;
+        return (Ty::Unknown, join_fn_eff(&eff1, &eff2, subst));
     }
 
-    if is_cmp(op) {
-        Ty::Bool
-    } else {
-        subst.apply(&t1)
-    }
+    // Arithmetic and comparison operators are pure; their operand eval-effects propagate.
+    let result_ty = if is_cmp(op) { Ty::Bool } else { subst.apply(&t1) };
+    (result_ty, join_fn_eff(&eff1, &eff2, subst))
 }
 
-/// Infer the type of a `rec` node.
+// ── Rec inference ──────────────────────────────────────────────────────────────
+
+/// Infer a `rec` node.
+///
+/// Multi-binding (mutual recursion): all bindings whose inferred type is `Fn`
+/// are augmented with `Div` in their effect.  Single-binding (self-recursion):
+/// no automatic Div (termination is assumed for self-recursive functions).
 fn infer_rec(
     ctx: &[Ty],
     bindings: &[Node],
@@ -333,29 +361,52 @@ fn infer_rec(
     subst: &mut Subst,
     path: &[usize],
     diags: &mut Vec<Diagnostic>,
-) -> Ty {
+) -> (Ty, FnEff) {
     let n = bindings.len();
-    // Assign fresh metas to all bindings. ctx_rec[0] = type of binding 0 = var 0.
-    let metas: Vec<Ty> = (0..n).map(|_| subst.fresh()).collect();
-    let ctx_rec = extend_many(ctx, &metas);
 
-    // Type-check each binding under the extended context.
+    // Pass 1: infer binding types with fresh metas as placeholders.
+    let metas: Vec<Ty> = (0..n).map(|_| subst.fresh()).collect();
+    let ctx_pass1 = extend_many(ctx, &metas);
+
+    let mut binding_types: Vec<Ty> = vec![Ty::Unknown; n];
     for (i, binding) in bindings.iter().enumerate() {
-        let binding_ty = infer(&ctx_rec, binding, subst, &child_path(path, i), diags);
-        if !unify(&metas[i], &binding_ty, subst) {
-            let m = subst.apply(&metas[i]);
-            let b = subst.apply(&binding_ty);
-            if !m.is_unknown() && !b.is_unknown() {
-                diags.push(Diagnostic::type_mismatch(&child_path(path, i), &m, &b));
-            }
-        }
+        let (ty, _eff) = infer(&ctx_pass1, binding, subst, &child_path(path, i), diags);
+        let resolved = subst.apply(&ty);
+        unify(&metas[i], &resolved, subst);
+        binding_types[i] = subst.apply(&metas[i]);
     }
 
-    // Type-check the body.
-    infer(&ctx_rec, body, subst, &child_path(path, n), diags)
+    // If multi-binding: augment all Fn types with Div (mutual recursion → may diverge).
+    let final_types: Vec<Ty> = if n > 1 {
+        binding_types.iter().map(augment_with_div).collect()
+    } else {
+        binding_types
+    };
+
+    // Infer body with the final binding types.
+    let ctx_final = extend_many(ctx, &final_types);
+    let (body_ty, body_eff) = infer(&ctx_final, body, subst, &child_path(path, n), diags);
+    (body_ty, body_eff)
 }
 
-/// Infer an arm inside a `match`, unifying its body type with `result_meta`.
+/// Add `Div` to the call-effect of a `Fn` type, recursively.
+/// Non-Fn types are returned unchanged.
+fn augment_with_div(ty: &Ty) -> Ty {
+    match ty {
+        Ty::Fn(a, b, FnEff::Concrete(eff)) => {
+            let new_eff = eff.join(&EffSet::of([EffAtom::Div]));
+            Ty::Fn(a.clone(), b.clone(), FnEff::Concrete(new_eff))
+        }
+        Ty::Fn(a, b, FnEff::Meta(_)) => {
+            // Effect meta → replace with Div (meta would have been unresolved).
+            Ty::Fn(a.clone(), b.clone(), FnEff::Concrete(EffSet::of([EffAtom::Div])))
+        }
+        other => other.clone(),
+    }
+}
+
+// ── Match arm inference ────────────────────────────────────────────────────────
+
 fn infer_arm(
     ctx: &[Ty],
     arm: &Node,
@@ -364,19 +415,17 @@ fn infer_arm(
     subst: &mut Subst,
     path: &[usize],
     diags: &mut Vec<Diagnostic>,
-) {
+) -> FnEff {
     let (pattern, body) = match arm {
         Node::Arm { pattern, body } => (pattern.as_ref(), body.as_ref()),
-        _ => return,
+        _ => return FnEff::pure_(),
     };
 
-    // Check pattern compatibility with scrutinee type.
     check_pattern(pattern, scrut_ty, subst, &child_path(path, 0), diags);
 
-    // Extend context with any pattern variable bindings.
     let bindings = pattern_bindings(pattern);
     let ctx_body = extend_many(ctx, &bindings);
-    let body_ty = infer(&ctx_body, body, subst, &child_path(path, 1), diags);
+    let (body_ty, body_eff) = infer(&ctx_body, body, subst, &child_path(path, 1), diags);
 
     if !unify(result_meta, &body_ty, subst) {
         let r = subst.apply(result_meta);
@@ -385,9 +434,9 @@ fn infer_arm(
             diags.push(Diagnostic::type_mismatch(path, &r, &b));
         }
     }
+    body_eff
 }
 
-/// Check that a pattern is compatible with the scrutinee type.
 fn check_pattern(
     pattern: &Node,
     scrut_ty: &Ty,
@@ -396,9 +445,8 @@ fn check_pattern(
     diags: &mut Vec<Diagnostic>,
 ) {
     match pattern {
-        Node::PatWild | Node::PatVar => {} // always OK
+        Node::PatWild | Node::PatVar => {}
         Node::PatInt { .. } => {
-            // pat-int requires an Int scrutinee.
             let resolved = subst.apply(scrut_ty);
             if !matches!(resolved, Ty::Int | Ty::Unknown) {
                 diags.push(Diagnostic::type_mismatch(path, &Ty::Int, &resolved));
@@ -407,155 +455,142 @@ fn check_pattern(
         Node::PatCtor { name, sub_patterns } => {
             match name.as_str() {
                 "True" | "False" if sub_patterns.is_empty() => {
-                    // Bool ctor pattern requires Bool scrutinee.
                     let resolved = subst.apply(scrut_ty);
                     if !matches!(resolved, Ty::Bool | Ty::Unknown) {
                         diags.push(Diagnostic::type_mismatch(path, &Ty::Bool, &resolved));
                     }
                 }
-                _ => {} // Unknown ctor patterns allowed (for error recovery).
+                _ => {}
             }
         }
         _ => {}
     }
 }
 
-/// Determine the types introduced by a pattern's binders.
-/// Returns types in the order they're added to context (innermost = index 0).
-/// For Phase 2, all pattern variables are assigned fresh metavariables.
 fn pattern_bindings(pattern: &Node) -> Vec<Ty> {
     match pattern {
-        Node::PatVar => vec![Ty::Unknown], // will be refined by surrounding inference
-        Node::PatCtor { sub_patterns, .. } => sub_patterns
-            .iter()
-            .flat_map(pattern_bindings)
-            .collect(),
+        Node::PatVar => vec![Ty::Unknown],
+        Node::PatCtor { sub_patterns, .. } => {
+            sub_patterns.iter().flat_map(pattern_bindings).collect()
+        }
         _ => vec![],
     }
 }
 
-/// Extend `ctx` by prepending one type (making it `var 0`).
+// ── Effect annotation checking ────────────────────────────────────────────────
+
+/// At an `ann` node, if the declared type is a `Fn`, verify the inferred
+/// function's call-effect is ⊆ the declared call-effect.
+fn check_fn_effect_annotation(
+    declared: &Ty,
+    inferred: &Ty,
+    subst: &mut Subst,
+    path: &[usize],
+    diags: &mut Vec<Diagnostic>,
+) {
+    let dec = subst.apply(declared);
+    let inf = subst.apply(inferred);
+    if let (Ty::Fn(_, _, dec_eff), Ty::Fn(_, _, inf_eff)) = (&dec, &inf) {
+        let dec_set = subst.resolve_eff(dec_eff);
+        let inf_set = subst.resolve_eff(inf_eff);
+        if !inf_set.is_subset_of(&dec_set) {
+            diags.push(Diagnostic::effect_violation(
+                path,
+                &dec_set.to_string(),
+                &inf_set.to_string(),
+            ));
+        }
+        // Recurse into return types in case they're also Fn.
+        if let (Ty::Fn(_, dec_ret, _), Ty::Fn(_, inf_ret, _)) = (&dec, &inf) {
+            check_fn_effect_annotation(dec_ret, inf_ret, subst, path, diags);
+        }
+    }
+}
+
+// ── Context helpers ────────────────────────────────────────────────────────────
+
 fn extend(ctx: &[Ty], ty: Ty) -> Vec<Ty> {
     let mut new = vec![ty];
     new.extend_from_slice(ctx);
     new
 }
 
-/// Extend `ctx` by prepending multiple types (first in slice = var 0).
 fn extend_many(ctx: &[Ty], tys: &[Ty]) -> Vec<Ty> {
     let mut new = tys.to_vec();
     new.extend_from_slice(ctx);
     new
 }
 
+// ── Tests ────────────────────────────────────────────────────────────────────
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn int_node(v: i64) -> Node {
-        Node::Int {
-            value: v.to_string(),
-        }
-    }
-
-    fn str_node(s: &str) -> Node {
-        Node::Str { value: s.into() }
-    }
-
-    fn sym(name: &str) -> Node {
-        Node::Sym { name: name.into() }
-    }
-
-    fn app(f: Node, a: Node) -> Node {
-        Node::App {
-            fn_: Box::new(f),
-            arg: Box::new(a),
-        }
-    }
-
-    fn var(i: u64) -> Node {
-        Node::Var { index: i }
-    }
-
-    fn lam(body: Node) -> Node {
-        Node::Lam {
-            body: Box::new(body),
-        }
-    }
-
-    fn let_(rhs: Node, body: Node) -> Node {
-        Node::Let {
-            rhs: Box::new(rhs),
-            body: Box::new(body),
-        }
-    }
-
+    fn int_node(v: i64) -> Node { Node::Int { value: v.to_string() } }
+    fn str_node(s: &str) -> Node { Node::Str { value: s.into() } }
+    fn sym(name: &str) -> Node { Node::Sym { name: name.into() } }
+    fn app(f: Node, a: Node) -> Node { Node::App { fn_: Box::new(f), arg: Box::new(a) } }
+    fn var(i: u64) -> Node { Node::Var { index: i } }
+    fn lam(body: Node) -> Node { Node::Lam { body: Box::new(body) } }
+    fn let_(rhs: Node, body: Node) -> Node { Node::Let { rhs: Box::new(rhs), body: Box::new(body) } }
     fn if_(c: Node, t: Node, e: Node) -> Node {
-        Node::If {
-            cond: Box::new(c),
-            then: Box::new(t),
-            else_: Box::new(e),
-        }
+        Node::If { cond: Box::new(c), then: Box::new(t), else_: Box::new(e) }
     }
-
     fn rec1(binding: Node, body: Node) -> Node {
-        Node::Rec {
-            bindings: vec![binding],
-            body: Box::new(body),
-        }
+        Node::Rec { bindings: vec![binding], body: Box::new(body) }
     }
 
-    fn run(node: &Node) -> (Ty, Vec<Diagnostic>) {
+    fn run(node: &Node) -> (Ty, EffSet, Vec<Diagnostic>) {
         let mut subst = Subst::default();
         let mut diags = Vec::new();
-        let ty = infer(&[], node, &mut subst, &[], &mut diags);
+        let (ty, eff_fn) = infer(&[], node, &mut subst, &[], &mut diags);
         let ty = subst.apply(&ty);
-        (ty, diags)
+        let eff = subst.resolve_eff(&eff_fn);
+        (ty, eff, diags)
     }
 
-    // --- return-zero ---
+    // ── Smoke-corpus type/effect checks ────────────────────────────────────────
+
     #[test]
     fn return_zero() {
-        let (ty, diags) = run(&int_node(0));
+        let (ty, eff, diags) = run(&int_node(0));
         assert_eq!(ty, Ty::Int);
+        assert_eq!(eff, EffSet::empty());
         assert!(diags.is_empty());
     }
 
-    // --- return-computed: let x = 5 in let y = 8 in @sub (@mul x y) 7 ---
     #[test]
     fn return_computed() {
-        // let x=5 in let y=8 in @sub (@mul x y) 7
-        // canonical: (let 5 (let 8 (app (app sub (app (app mul (var 1)) (var 0))) 7)))
         let ast = let_(
             int_node(5),
             let_(
                 int_node(8),
-                app(
-                    app(sym("sub"), app(app(sym("mul"), var(1)), var(0))),
-                    int_node(7),
-                ),
+                app(app(sym("sub"), app(app(sym("mul"), var(1)), var(0))), int_node(7)),
             ),
         );
-        let (ty, diags) = run(&ast);
+        let (ty, eff, diags) = run(&ast);
         assert_eq!(ty, Ty::Int);
+        assert_eq!(eff, EffSet::empty());
         assert!(diags.is_empty());
     }
 
-    // --- hello: let _ = @write 1 "hello" 13 in 0 ---
     #[test]
-    fn hello() {
+    fn hello_has_io_effect() {
+        // let _ = @write 1 "hello" 13 in 0
         let ast = let_(
             app(app(app(sym("write"), int_node(1)), str_node("hello")), int_node(13)),
             int_node(0),
         );
-        let (ty, diags) = run(&ast);
+        let (ty, eff, diags) = run(&ast);
         assert_eq!(ty, Ty::Int);
+        assert_eq!(eff, EffSet::of([EffAtom::IO]));
         assert!(diags.is_empty());
     }
 
-    // --- if-branch: let x = 5 in if @gt x 3 then 1 else 0 ---
     #[test]
-    fn if_branch() {
+    fn if_branch_is_pure() {
+        // let x = 5 in if @gt x 3 then 1 else 0
         let ast = let_(
             int_node(5),
             if_(
@@ -564,16 +599,15 @@ mod tests {
                 int_node(0),
             ),
         );
-        let (ty, diags) = run(&ast);
+        let (ty, eff, diags) = run(&ast);
         assert_eq!(ty, Ty::Int);
+        assert_eq!(eff, EffSet::empty());
         assert!(diags.is_empty());
     }
 
     #[test]
-    fn factorial() {
-        // rec binding 0 = fact lambda
-        // Inside lam: var 0 = n, var 1 = fact
-        // body: if (var 0) (@mul (var 0) ((var 1) (@sub (var 0) 1))) 1
+    fn factorial_is_pure() {
+        // rec {fact = lam n. if n then @mul n (fact (@sub n 1)) else 1} in fact 5
         let lam_body = if_(
             var(0),
             app(
@@ -583,19 +617,19 @@ mod tests {
             int_node(1),
         );
         let ast = rec1(lam(lam_body), app(var(0), int_node(5)));
-        let (ty, diags) = run(&ast);
+        let (ty, eff, diags) = run(&ast);
         assert_eq!(ty, Ty::Int);
+        assert_eq!(eff, EffSet::empty());
         assert!(diags.is_empty());
     }
 
-    // --- even-odd ---
     #[test]
-    fn even_odd() {
-        // rec { even=lam(if n then odd(sub n 1) else 1);
-        //       odd=lam(if n then even(sub n 1) else 0) } in even 4
-        // binding 0=even, binding 1=odd
+    fn even_odd_has_div_effect() {
+        // rec {even = lam n. if n then odd (sub n 1) else 1;
+        //      odd  = lam n. if n then even (sub n 1) else 0}
+        // in even 4
+        // binding 0 = even, binding 1 = odd
         // inside even's lam: var0=n, var1=even, var2=odd
-        // inside odd's lam:  var0=n, var1=even, var2=odd
         let even_body = if_(
             var(0),
             app(var(2), app(app(sym("sub"), var(0)), int_node(1))),
@@ -610,17 +644,111 @@ mod tests {
             bindings: vec![lam(even_body), lam(odd_body)],
             body: Box::new(app(var(0), int_node(4))),
         };
-        let (ty, diags) = run(&ast);
+        let (ty, eff, diags) = run(&ast);
         assert_eq!(ty, Ty::Int);
+        assert!(eff.atoms.contains(&EffAtom::Div), "expected Div in {:?}", eff);
         assert!(diags.is_empty());
     }
 
-    // --- exit-nonzero: @exit 7 ---
     #[test]
-    fn exit_nonzero() {
+    fn exit_nonzero_has_io_effect() {
         let ast = app(sym("exit"), int_node(7));
-        let (ty, diags) = run(&ast);
+        let (ty, eff, diags) = run(&ast);
         assert_eq!(ty, Ty::Int);
+        assert_eq!(eff, EffSet::of([EffAtom::IO]));
         assert!(diags.is_empty());
+    }
+
+    // ── Effect-violation detection ─────────────────────────────────────────────
+
+    #[test]
+    fn effect_violation_on_pure_annotation_with_io_body() {
+        // ann (lam n. let _ = @write 1 "x" 1 in n)
+        //     (fn-ty Int Int (eff-set))   ← declared pure
+        let fn_ty_node = Node::FnTy {
+            arg: Box::new(Node::Sym { name: "Int".into() }),
+            ret: Box::new(Node::Sym { name: "Int".into() }),
+            eff: Box::new(Node::EffSet { atoms: vec![] }), // pure
+        };
+        let write_call = app(
+            app(app(sym("write"), int_node(1)), str_node("x")),
+            int_node(1),
+        );
+        let body = let_(write_call, var(1)); // let _ = write(...) in n
+        let annotated = Node::Ann {
+            expr: Box::new(lam(body)),
+            type_: Box::new(fn_ty_node),
+        };
+        let (_, _, diags) = run(&annotated);
+        assert!(
+            diags.iter().any(|d| d.kind == "effect-violation"),
+            "expected effect-violation, got: {:?}",
+            diags.iter().map(|d| &d.kind).collect::<Vec<_>>()
+        );
+    }
+
+    // ── Effect polymorphism ────────────────────────────────────────────────────
+
+    #[test]
+    fn effect_poly_io_propagation() {
+        // apply :: ∀(a, e). (a → a / e) → a → a / e
+        // Body: lam f. lam x. f x
+        // Call: apply write_fn 42  where write_fn = lam n. let _ = @write 1 "x" 1 in n
+        // Expected result type: Int, expected eval-effect: {IO}
+
+        // apply :: ∀(a, e). (a → a / e) → (a → a / e) / {}
+        //
+        // In the curried representation, the OUTER arrow is pure (applying
+        // `apply` to its callback just creates a closure; no effect yet).
+        // The INNER arrow carries the callback's effect `e` (calling the
+        // returned function invokes the callback, which may be effectful).
+        //
+        // Canonical: forall 1 1 (fn-ty (fn-ty ty-var(0) ty-var(0) eff-var(0))
+        //                               (fn-ty ty-var(0) ty-var(0) eff-var(0))
+        //                               (eff-set))   ← outer is pure
+        let sig = Node::Forall {
+            ty_count: 1,
+            eff_count: 1,
+            body: Box::new(Node::FnTy {
+                arg: Box::new(Node::FnTy {
+                    arg: Box::new(Node::TyVar { index: 0 }),
+                    ret: Box::new(Node::TyVar { index: 0 }),
+                    eff: Box::new(Node::EffVar { index: 0 }),
+                }),
+                ret: Box::new(Node::FnTy {
+                    arg: Box::new(Node::TyVar { index: 0 }),
+                    ret: Box::new(Node::TyVar { index: 0 }),
+                    eff: Box::new(Node::EffVar { index: 0 }),
+                }),
+                eff: Box::new(Node::EffSet { atoms: vec![] }), // outer: pure
+            }),
+        };
+
+        // lam f. lam x. f x   — var 1 = f, var 0 = x inside inner lam
+        let apply_body = lam(lam(app(var(1), var(0))));
+        let apply = Node::Ann { expr: Box::new(apply_body), type_: Box::new(sig) };
+
+        // write_fn = lam n. let _ = @write 1 "x" 1 in n
+        // Inside lam: var 0 = n
+        // After let: var 0 = _ (result of write), var 1 = n
+        let write_call = app(
+            app(app(sym("write"), int_node(1)), str_node("x")),
+            int_node(1),
+        );
+        let write_fn = lam(let_(write_call, var(1)));
+
+        // apply write_fn 42
+        let test = app(app(apply, write_fn), int_node(42));
+        let (ty, eff, diags) = run(&test);
+        assert!(
+            diags.iter().all(|d| d.severity != "error"),
+            "unexpected errors: {:?}",
+            diags.iter().filter(|d| d.severity == "error").map(|d| &d.message).collect::<Vec<_>>()
+        );
+        assert!(
+            matches!(ty, Ty::Int | Ty::Unknown | Ty::Meta(_)),
+            "expected Int-compatible type, got {:?}", ty
+        );
+        assert!(eff.atoms.contains(&EffAtom::IO), "expected IO in effect, got {:?}", eff);
     }
 }
