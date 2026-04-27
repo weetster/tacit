@@ -1,6 +1,6 @@
 # 0023 — Hole-node parser recovery deferred to Phase 2
 
-**Status:** Accepted
+**Status:** Superseded by [ADR 0040](0040-p2-hole-recovery.md) (2026-04-27)
 **Date:** 2026-04-24
 **Phase:** 1, Stage 1
 **Closes:** [phase-1-plan.md Q-P1-2](../plans/phase-1-plan.md)

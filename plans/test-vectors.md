@@ -1,8 +1,8 @@
 # Canonical Format — Stage 2 Pressure-Test Vectors
 
-**Status:** Narrative authoritative; bytes split into [test-vectors/](test-vectors/) (2026-04-22)
+**Status:** Narrative authoritative; bytes split into [test-vectors/](test-vectors/) (2026-04-22). Phase 2 Stage 1 added V29–V33 (2026-04-27, ADRs 0034–0038).
 **Parent:** [canonical-text-format.md](canonical-text-format.md)
-**Purpose:** 29 vectors chosen to pressure-test the spec before Stage 2 exit. Each targets a specific rule, an anti-intuitive convention, or a suspected ambiguity. Several vectors surfaced spec gaps; those are flagged in their Notes and summarized in § 30. Remaining open items are listed in § 31.
+**Purpose:** 33 vectors chosen to pressure-test the spec. V1–V28 backed Stage 2 exit (Phase 0); V29–V33 back Phase 2 Stage 1 amendments. Each targets a specific rule, an anti-intuitive convention, or a suspected ambiguity. Several vectors surfaced spec gaps; those are flagged in their Notes and summarized in § 30. Remaining open items are listed in § 31.
 
 The machine-consumable bytes live in [test-vectors/](test-vectors/), one file per vector (or sub-vector), keyed by `NN-slug.{canonical,forbidden,reject}`. That directory's [README](test-vectors/README.md) documents the file-naming convention and the minimum tests an implementation must run. This doc remains the narrative reference for pressure-test descriptions, DeBruijn traces, and ADR cross-references.
 
@@ -513,23 +513,88 @@ Scrutinee `(var 0)` sits outside the arm, so no pat-var shift applies — it ref
 
 ---
 
-## Vector 29 — Type-expression in `ann` (blocked on subset ADR)
+## Vector 29 — Generic identity function (`forall` + `fn-ty` + `ty-var` + empty `eff-set`)
 
-**Pressure-tests:** § 11 open item — exact expression kinds permitted inside `ann`'s type position.
+**Pressure-tests:** [ADR 0034](../decisions/0034-p2-type-subset-ann.md) `fn-ty`, `ty-var`, `forall` tags; [ADR 0035](../decisions/0035-p2-effect-set-canonical.md) empty `eff-set` as the "pure" bottom. Closes the § 11 "Type syntax inside `ann`" open item.
 
-**Authoring intent (provisional):** `id :: A -> B` — a value annotated with a function type.
+**Authoring intent:** `id :: ∀a. a -> a` — the identity lambda annotated with a generic, pure function type.
 
-**Candidate canonical (not final; depends on ADR):**
+**Canonical:**
 ```
-(ann (var 0) (... function-type encoding ...))
+(ann (lam (var 0)) (forall 1 0 (fn-ty (ty-var 0) (ty-var 0) (eff-set))))
 ```
 
-**Notes — spec-blocked.** The encoding of function types is undecided. Candidates in play:
-- `(ctor Arrow (sym A) (sym B))` — reuse `ctor` with a dedicated constructor name.
-- `(ctor -> (sym A) (sym B))` — arrow as name symbol (requires widening the § 3 symbol regex, currently `[A-Za-z_][A-Za-z0-9_-]*`).
-- A new `fn-type` node kind — extends § 2, requires a tag-table addition.
+**Notes:** Encoding decomposition: `forall 1 0` introduces 1 type variable and 0 effect variables. Inside the body, `(ty-var 0)` is the sole type variable bound by this `forall`. The `fn-ty` carries arg, ret, and eff children — both arg and ret are `(ty-var 0)`; eff is `(eff-set)` (empty atom list, the pure bottom of the lattice per ADR 0035). The annotated value `(lam (var 0))` is independent of the type expression — `(var 0)` is a value-level DeBruijn index inside the `lam`, while `(ty-var 0)` is a type-level DeBruijn index inside the `forall`. Type-variable and value-variable index spaces are disjoint (ADR 0034 § DeBruijn detail).
 
-Picking between these is the type-expression subset ADR. It lands once Stage 4's corpus surfaces enough typed programs to anchor the choice; not required for Stage 2 canonical-format freeze if `ann`'s type position is left *structurally* open (any expression kind permitted, subset decision deferred). This vector is a placeholder reserving the slot; canonical bytes finalize after the ADR. V11 already covers record-type-in-`ann` under the structural-openness stance.
+Supersedes the originally-drafted V29 placeholder, which proposed three candidate function-type encodings (`(ctor Arrow …)`, `(ctor -> …)`, a new `fn-type` tag). ADR 0034 picked the new-tag option (renamed `fn-ty` for the 5-byte limit) and added the `forall` quantifier so generics could be expressed without an implicit-quantification convention.
+
+---
+
+## Vector 30 — Monomorphic IO-annotated function type (`fn-ty` with concrete operands and one effect atom)
+
+**Pressure-tests:** [ADR 0034](../decisions/0034-p2-type-subset-ann.md) `fn-ty` with `(sym ...)` operand types (the simplest type expression); [ADR 0035](../decisions/0035-p2-effect-set-canonical.md) singleton `eff-set`.
+
+**Authoring intent:** `f :: Int -> Int / IO` — a function annotated with concrete operand types and a single declared effect.
+
+**Canonical:**
+```
+(ann (lam (var 0)) (fn-ty (sym Int) (sym Int) (eff-set IO)))
+```
+
+**Notes:** No `forall` wraps this signature — there are no free type or effect variables. `(eff-set IO)` exercises the singleton-atom case of ADR 0035; sort-order and lattice rules are trivially satisfied. The `(sym Int)` shape (rather than e.g. `(ctor Int)` or a built-in tag) is what ADR 0034 specifies for base type names; the typechecker — not the canonical parser — decides which symbols denote types.
+
+Pairs with V29 (no effect, generic) and V31 (effect-polymorphic) to triangulate the three combinations of fixed/variable type and effect components in `fn-ty`.
+
+---
+
+## Vector 31 — Effect-polymorphic identity (`forall` with both type and effect bindings, `eff-var`)
+
+**Pressure-tests:** [ADR 0034](../decisions/0034-p2-type-subset-ann.md) `forall N M body` with M ≥ 1; [ADR 0036](../decisions/0036-p2-effect-polymorphism-syntax.md) `eff-var` and the disjoint type/effect variable index spaces.
+
+**Authoring intent:** `id :: ∀(a, e). a -> a / e` — an identity function that transparently propagates its caller's effects.
+
+**Canonical:**
+```
+(ann (lam (var 0)) (forall 1 1 (fn-ty (ty-var 0) (ty-var 0) (eff-var 0))))
+```
+
+**Notes:** `forall 1 1` introduces one type variable and one effect variable simultaneously. Inside the body, `(ty-var 0)` and `(eff-var 0)` both denote position-0 of their respective binding lists; the tag distinguishes them, so a canonicalizer that conflated their index spaces would still produce different bytes here than for V29 (which uses `(eff-set)` instead).
+
+ADR 0036 caps M ≤ 1 in Phase 2; this vector exercises that limit. M ≥ 2 would model row polymorphism, deferred to Tacit-Full. Pairs with V29/V30 to cover the polymorphism axis.
+
+---
+
+## Vector 32 — `pat-int` in a `match` arm
+
+**Pressure-tests:** [ADR 0037](../decisions/0037-p2-pat-int.md) integer-literal pattern; arm ordering (V19) preserved with a mixed `pat-int` / `pat-wild` arm list.
+
+**Authoring intent:** `match 5 with | 5 -> 1 | _ -> 0`
+
+**Canonical:**
+```
+(match (int 5) (arm (pat-int 5) (int 1)) (arm pat-wild (int 0)))
+```
+
+**Notes:** `pat-int` is arity 1 with a single decimal-int child following the same grammar as `(int N)` (negative integers permitted, `-0` normalizes to `0` per ADR 0010 I1). It introduces no binders — the arm body's DeBruijn scope is unchanged, exactly as for `pat-wild`. Arm order is preserved by the canonicalizer (per spec § 6, sibling rule to V17 and V19); a canonicalizer that sorted arms by hash would silently change which arm fires first.
+
+Codegen (Stage 4 of Phase 2) lowers this as `icmp eq scrutinee, 5`; the wildcard fall-through is the existing pattern-dispatch behavior. Unblocks smoke #7 (`match-int.tac`).
+
+---
+
+## Vector 33 — Stack-allocated writable buffer via `let` + `@buf-alloc`
+
+**Pressure-tests:** [ADR 0038](../decisions/0038-p2-writable-buffer.md) writable-buffer binding model. Notably uses **only existing** canonical tags (`let`, `app`, `sym`, `int`, `var`) — the design decision was to express buffer allocation through the established `@name` primitive surface ([ADR 0028](../decisions/0028-phase-1-libc-call-surface.md)) rather than introducing a new node kind.
+
+**Authoring intent:** `let buf = @buf-alloc 256 in @read 0 buf 256` — allocate a 256-byte stack buffer, then fill it from stdin.
+
+**Canonical:**
+```
+(let (app (sym buf-alloc) (int 256)) (app (app (app (sym read) (int 0)) (var 0)) (int 256)))
+```
+
+**Notes:** `(sym buf-alloc)` is the new STACK-ALLOC primitive added by ADR 0038 to the `@name` allowlist. `(var 0)` in the `let` body is the buffer handle; `read` is curried-applied with arguments fd=0, buf=`(var 0)`, count=256. Per ADR 0038, the buffer's lifetime is the `let` scope and the typechecker rejects any expression that would let the handle escape (e.g., capture in a closure or return as a value). The `Mut` augmentation of `read`'s effect when its second argument is a `Buf N` is also a typechecker concern — `libc-effects.toml` continues to record only `IO` for `read`, unchanged from ADR 0025.
+
+Round-trips through the **Phase 1** canonical parser unchanged: the canonical-format extension for V33 is purely a typechecker-level interpretation of an existing canonical shape. Unblocks smoke #8 (`echo.tac`).
 
 ---
 
@@ -552,9 +617,11 @@ With those seven closed, vectors 9, 10, 13, 14, 15, 24 are all pinned — the "c
 
 Vectors 1–8, 11, 12, 16, 17, 18, 19, 20, 21, 22, 23, 25, 26, 27, 28 pressure-test existing spec rules (ADRs 0005–0012) and should pass under any spec-conformant canonicalizer. They did not require new decisions.
 
-## 31. Remaining coverage for the ~30-vector set
+## 31. Coverage status
 
-Stage 2 exit criterion 2 asks for ~30 vectors. Vectors 1–29 are drafted above. Status of the § 22 (previously-planned) coverage list:
+### Phase 0 Stage 2 (frozen 2026-04-22 by [ADR 0013](../decisions/0013-canonical-text-format-frozen.md))
+
+Stage 2 exit criterion 2 asked for ~30 vectors. The § 22 (previously-planned) coverage list closed as follows:
 
 | Coverage item | Status | Vector(s) |
 |---------------|--------|-----------|
@@ -566,8 +633,24 @@ Stage 2 exit criterion 2 asks for ~30 vectors. Vectors 1–29 are drafted above.
 | `ctor` with mixed-type arguments | Drafted | V26 |
 | `rec` with single binding | Drafted | V27 |
 | `module` with real bindings | Drafted | V28 |
-| Type-expression subset | **Blocked on ADR** | V29 placeholder |
+| Type-expression subset | Deferred to Phase 2 | V29 placeholder reserved |
 
-Stage 2 exit remains blocked on **two independent implementations producing byte-identical canonical text across V1–V28** (V29 excluded until the type-subset ADR lands). This is the substantive exit work.
+Stage 2 exited on V1–V28 (V29 excluded pending the type-subset ADR). Phase 1 was subsequently frozen by [ADR 0033](../decisions/0033-phase-1-frozen.md).
 
-The file-per-vector split landed 2026-04-22 as [`test-vectors/`](test-vectors/) alongside this doc — 45 files (28 primary vectors, with V8/V10/V17/V19/V20/V24 expanding into sub-vector files; V29 omitted). Extensions are `.canonical` (must emit), `.forbidden` (must not emit), `.reject` (parser hard error). The directory README enumerates the minimum test set implementations run to demonstrate byte-equivalence.
+### Phase 2 Stage 1 additions (2026-04-27)
+
+Five vectors added alongside ADRs 0034–0038. Each pressure-tests a specific Phase 2 spec amendment:
+
+| Coverage item | Vector | ADR(s) |
+|---------------|--------|--------|
+| Generic function type with empty effect set | V29 | 0034, 0035 |
+| Concrete function type with singleton effect | V30 | 0034, 0035 |
+| Effect-polymorphic function (one type var + one effect var) | V31 | 0034, 0035, 0036 |
+| Integer literal pattern in `match` | V32 | 0037 |
+| Stack-allocated writable buffer (no new tags) | V33 | 0038 |
+
+V29–V32 require canonical-parser extensions for the new tags (`fn-ty`, `ty-var`, `forall`, `eff-set`, `eff-var`, `pat-int`); landing those parser extensions is Phase 2 Stage 2 work. V33 round-trips through the Phase 1 canonical parser today since it uses only existing tags.
+
+### Vector files
+
+The file-per-vector split landed 2026-04-22 as [`test-vectors/`](test-vectors/) alongside this doc. Phase 0 contributed 45 files (28 primary vectors, with V8/V10/V17/V19/V20/V24 expanding into sub-vector files); Phase 2 Stage 1 added 5 files (V29–V33), bringing the total to 50. Extensions are `.canonical` (must emit), `.forbidden` (must not emit), `.reject` (parser hard error). The directory README enumerates the minimum test set implementations run to demonstrate byte-equivalence.

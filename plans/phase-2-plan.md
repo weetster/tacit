@@ -1,6 +1,6 @@
 # Phase 2 Implementation Plan
 
-**Status:** Draft 2026-04-26
+**Status:** Draft 2026-04-26 · Stage 1 frozen 2026-04-27 ([ADR 0044](../decisions/0044-p2-stage-1-frozen.md))
 **Parent:** [tacit-plan.md](tacit-plan.md)
 **Predecessor:** [phase-1-plan.md](phase-1-plan.md) (frozen 2026-04-26 — [ADR 0033](../decisions/0033-phase-1-frozen.md))
 
@@ -97,6 +97,8 @@ stages each gated by an exit criterion. Stage 1 is sequencing-critical;
 Stages 2–4 may overlap once Stage 1 ADRs land.
 
 ### Stage 1: Spec ADRs — type/effect surface + Phase 1 carry-overs (~3–4 weeks)
+
+**Status: Frozen 2026-04-27 by [ADR 0044](../decisions/0044-p2-stage-1-frozen.md).** All ten Q-P2-N items below have Accepted ADRs (0034–0043); test vectors V29–V33 are committed under [`plans/test-vectors/`](test-vectors/).
 
 ADRs only. No production code. Stage 1 closes every open spec question
 that Stages 2–5 would otherwise have to bikeshed mid-implementation. Each

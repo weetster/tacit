@@ -212,7 +212,7 @@ This example is a canonical Stage 2 test vector candidate.
   tags ([ADR 0035](../decisions/0035-p2-effect-set-canonical.md), [ADR 0036](../decisions/0036-p2-effect-polymorphism-syntax.md)).
   Valid type positions: `sym`, `ty-var`, `record`, `fn-ty`, `app` (type application), `forall`, `eff-set`, `eff-var`.
   Test vector V29 committed.
-- **Exact set of hole diag-ids.** The § 8 table is initial. Phase 2 adds three new ids:
+- **Exact set of hole diag-ids.** The § 7 table is initial. Phase 2 adds three new ids:
   `type-parse-error`, `effect-parse-error`, `module-binding-error` ([ADR 0040](../decisions/0040-p2-hole-recovery.md)).
 - ~~**Test vector format and location.**~~ Resolved 2026-04-22. Bytes live in [`plans/test-vectors/`](test-vectors/); narrative in [`test-vectors.md`](test-vectors.md); file-naming convention and test-role semantics documented in [`test-vectors/README.md`](test-vectors/README.md).
 - **Module composition.** ADR 0004 reserves `module` but defers cross-module name resolution to Phase 1+. Canonical form for cross-module references is not in this spec.
