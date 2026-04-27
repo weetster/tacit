@@ -1,0 +1,1 @@
+(ann (lam (var 0)) (forall 1 0 (fn-ty (ty-var 0) (ty-var 0) (eff-set))))

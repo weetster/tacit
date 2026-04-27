@@ -1,0 +1,1 @@
+(match (int 5) (arm (pat-int 5) (int 1)) (arm pat-wild (int 0)))

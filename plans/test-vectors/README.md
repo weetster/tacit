@@ -51,7 +51,11 @@ Additional parse-and-normalize checks (spec requires specific emission for non-c
 
 ## Coverage
 
-29 vectors drafted in the narrative. 28 represented here; V29 (type-expression in `ann`) is blocked on the type-subset ADR and has no canonical-bytes commitment yet.
+33 vectors total. V29–V33 are Phase 2 Stage 1 additions; they require the
+canonical parser to be extended with Phase 2 tags (`fn-ty`, `ty-var`,
+`forall`, `eff-set`, `eff-var`, `pat-int`) before they pass the round-trip
+test. V33 uses only existing tags and passes the Phase 1 canonical parser
+today.
 
 ## Index
 
@@ -102,3 +106,8 @@ Additional parse-and-normalize checks (spec requires specific emission for non-c
 | `26-ctor-mixed-args.canonical` | V26 | spec § 2 |
 | `27-rec-single-binding.canonical` | V27 | 0011 |
 | `28-module-one-binding.canonical` | V28 | 0004, 0011 |
+| `29-ann-generic-id.canonical` | V29 | 0034, 0035 |
+| `30-ann-io-fn.canonical` | V30 | 0034, 0035 |
+| `31-ann-eff-poly.canonical` | V31 | 0034, 0035, 0036 |
+| `32-pat-int-match.canonical` | V32 | 0037 |
+| `33-buf-alloc-read.canonical` | V33 | 0038 |
