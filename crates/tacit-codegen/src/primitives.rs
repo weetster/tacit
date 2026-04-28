@@ -1,9 +1,13 @@
-//! Phase 1 `@name` primitive allowlist and classification.
+//! `@name` primitive allowlist and classification (ADR 0028, 0030, 0038, 0047).
 //!
-//! Three disjoint sets per ADR 0028 + ADR 0030:
+//! Categories per ADR 0028 + 0030 + 0038 + 0047:
 //! - LIBC: external libc call (`write`, `read`, `exit`).
 //! - ARITH: direct LLVM arithmetic instruction.
 //! - CMP: `icmp` + `zext i1 → i64`.
+//! - STACK-ALLOC: `@buf-alloc` (static) and `@buf-alloc-dyn` (runtime size).
+//! - MEM: inline byte-level buffer operations (ADR 0047).
+//! - PARSE: inline decimal integer parsing (ADR 0047).
+//! - FORMAT: inline decimal integer formatting (ADR 0047).
 //!
 //! Codegen pattern-matches an `App` left-spine whose head is `Sym(name)`,
 //! looks up `name` here, collects right-spine args, and emits accordingly.
@@ -16,8 +20,24 @@ pub enum PrimKind {
     Read,
     /// libc `exit(status: i32) -> !`
     Exit,
-    /// Stack-allocate a byte buffer of N bytes; returns pointer (ADR 0038).
+    /// Stack-allocate a byte buffer of N bytes (compile-time constant); returns pointer (ADR 0038).
     BufAlloc,
+    /// Stack-allocate a byte buffer of N bytes (runtime i64); returns pointer (ADR 0047).
+    BufAllocDyn,
+    /// Load a single byte from a buffer (ADR 0047): `buf off → i64`.
+    BufGet,
+    /// Store a single byte into a buffer (ADR 0047): `buf off byte → i64` (returns 0).
+    BufSet,
+    /// Copy a byte range between buffers (ADR 0047): `dst dst-off src src-off len → i64` (returns 0).
+    BufCopy,
+    /// Byte-for-byte equality of two buffer regions (ADR 0047): returns 0 or 1.
+    BufEq,
+    /// Find the first occurrence of a target byte (ADR 0047): returns index or off+len.
+    ScanByte,
+    /// Inline decimal integer parse (ADR 0047): `buf off len → i64`.
+    ParseI64,
+    /// Inline decimal integer format (ADR 0047): `buf off val → i64` (bytes written).
+    FmtI64,
     /// Binary `i64 → i64 → i64` arithmetic, lowering as a single LLVM op.
     Arith(ArithOp),
     /// Binary `i64 → i64 → i64` comparison: emits `icmp` + `zext`.
@@ -50,6 +70,14 @@ impl PrimKind {
             "read" => PrimKind::Read,
             "exit" => PrimKind::Exit,
             "buf-alloc" => PrimKind::BufAlloc,
+            "buf-alloc-dyn" => PrimKind::BufAllocDyn,
+            "buf-get" => PrimKind::BufGet,
+            "buf-set" => PrimKind::BufSet,
+            "buf-copy" => PrimKind::BufCopy,
+            "buf-eq" => PrimKind::BufEq,
+            "scan-byte" => PrimKind::ScanByte,
+            "parse-i64" => PrimKind::ParseI64,
+            "fmt-i64" => PrimKind::FmtI64,
             "add" => PrimKind::Arith(ArithOp::Add),
             "sub" => PrimKind::Arith(ArithOp::Sub),
             "mul" => PrimKind::Arith(ArithOp::Mul),
@@ -68,10 +96,12 @@ impl PrimKind {
     /// Required arity of the primitive's right-spine argument list.
     pub fn arity(self) -> usize {
         match self {
-            PrimKind::Write => 3,
-            PrimKind::Read => 3,
-            PrimKind::Exit => 1,
-            PrimKind::BufAlloc => 1,
+            PrimKind::Write | PrimKind::Read => 3,
+            PrimKind::Exit | PrimKind::BufAlloc | PrimKind::BufAllocDyn => 1,
+            PrimKind::BufGet => 2,
+            PrimKind::BufSet | PrimKind::ParseI64 | PrimKind::FmtI64 => 3,
+            PrimKind::ScanByte => 4,
+            PrimKind::BufCopy | PrimKind::BufEq => 5,
             PrimKind::Arith(_) | PrimKind::Cmp(_) => 2,
         }
     }
@@ -119,10 +149,33 @@ mod tests {
     }
 
     #[test]
+    fn p3_primitives_lookup() {
+        assert_eq!(
+            PrimKind::lookup("buf-alloc-dyn"),
+            Some(PrimKind::BufAllocDyn)
+        );
+        assert_eq!(PrimKind::lookup("buf-get"), Some(PrimKind::BufGet));
+        assert_eq!(PrimKind::lookup("buf-set"), Some(PrimKind::BufSet));
+        assert_eq!(PrimKind::lookup("buf-copy"), Some(PrimKind::BufCopy));
+        assert_eq!(PrimKind::lookup("buf-eq"), Some(PrimKind::BufEq));
+        assert_eq!(PrimKind::lookup("scan-byte"), Some(PrimKind::ScanByte));
+        assert_eq!(PrimKind::lookup("parse-i64"), Some(PrimKind::ParseI64));
+        assert_eq!(PrimKind::lookup("fmt-i64"), Some(PrimKind::FmtI64));
+    }
+
+    #[test]
     fn arities() {
         assert_eq!(PrimKind::Write.arity(), 3);
         assert_eq!(PrimKind::Read.arity(), 3);
         assert_eq!(PrimKind::Exit.arity(), 1);
+        assert_eq!(PrimKind::BufAllocDyn.arity(), 1);
+        assert_eq!(PrimKind::BufGet.arity(), 2);
+        assert_eq!(PrimKind::BufSet.arity(), 3);
+        assert_eq!(PrimKind::BufCopy.arity(), 5);
+        assert_eq!(PrimKind::BufEq.arity(), 5);
+        assert_eq!(PrimKind::ScanByte.arity(), 4);
+        assert_eq!(PrimKind::ParseI64.arity(), 3);
+        assert_eq!(PrimKind::FmtI64.arity(), 3);
         assert_eq!(PrimKind::Arith(ArithOp::Add).arity(), 2);
         assert_eq!(PrimKind::Cmp(CmpOp::Lt).arity(), 2);
     }

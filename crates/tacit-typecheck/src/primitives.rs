@@ -1,7 +1,8 @@
-//! Type and effect signatures for built-in @name primitives (ADR 0028, 0030, 0042).
+//! Type and effect signatures for built-in @name primitives (ADR 0028, 0030, 0042, 0047).
 //!
 //! Effect sets mirror `stdlib/libc-effects.toml` (ADR 0025, consumed in Stage 3).
 //! The canonical source for primitive effects is that TOML file; values here match it.
+//! Phase 3 additions (ADR 0047): PARSE, FORMAT, MEM categories, STACK-ALLOC extension.
 
 use crate::ty::{EffAtom, EffSet, FnEff, Ty};
 
@@ -18,8 +19,24 @@ pub fn prim_type(name: &str) -> Option<Ty> {
         "read" => fn3_mut_io(Ty::Int, Ty::Unknown, Ty::Int, Ty::Int),
         // LIBC: exit(code: Int) -> Int / IO
         "exit" => fn1_io(Ty::Int, Ty::Int),
-        // ALLOC: buf-alloc(size: Int) -> Buf / {Alloc} (ADR 0038)
+        // STACK-ALLOC: buf-alloc(size: Int) -> Buf / {Alloc} (ADR 0038)
         "buf-alloc" => fn1_alloc(Ty::Int, Ty::Buf),
+        // STACK-ALLOC: buf-alloc-dyn(size: Int) -> Buf / {Alloc} (ADR 0047)
+        "buf-alloc-dyn" => fn1_alloc(Ty::Int, Ty::Buf),
+        // MEM: buf-get(buf: Buf, off: Int) -> Int  (pure)
+        "buf-get" => fn2_pure(Ty::Buf, Ty::Int, Ty::Int),
+        // MEM: buf-set(buf: Buf, off: Int, byte: Int) -> Int  / {Mut}
+        "buf-set" => fn3_mut(Ty::Buf, Ty::Int, Ty::Int, Ty::Int),
+        // MEM: buf-copy(dst: Buf, dst-off: Int, src: Buf, src-off: Int, len: Int) -> Int / {Mut}
+        "buf-copy" => fn5_mut(Ty::Buf, Ty::Int, Ty::Buf, Ty::Int, Ty::Int, Ty::Int),
+        // MEM: buf-eq(a: Buf, a-off: Int, b: Buf, b-off: Int, len: Int) -> Int  (pure)
+        "buf-eq" => fn5_pure(Ty::Buf, Ty::Int, Ty::Buf, Ty::Int, Ty::Int, Ty::Int),
+        // MEM: scan-byte(buf: Buf, off: Int, len: Int, target: Int) -> Int  (pure)
+        "scan-byte" => fn4_pure(Ty::Buf, Ty::Int, Ty::Int, Ty::Int, Ty::Int),
+        // PARSE: parse-i64(buf: Buf, off: Int, len: Int) -> Int  (pure)
+        "parse-i64" => fn3_pure(Ty::Buf, Ty::Int, Ty::Int, Ty::Int),
+        // FORMAT: fmt-i64(buf: Buf, off: Int, val: Int) -> Int  / {Mut}
+        "fmt-i64" => fn3_mut(Ty::Buf, Ty::Int, Ty::Int, Ty::Int),
         // ARITH: Int → Int → Int (pure)
         "add" | "sub" | "mul" | "div" | "mod" => fn2_pure(Ty::Int, Ty::Int, Ty::Int),
         // CMP: Int → Int → Bool (pure, ADR 0042)
@@ -45,7 +62,12 @@ pub fn is_io_prim(name: &str) -> bool {
 
 /// True if `name` is an Alloc-producing primitive.
 pub fn is_alloc_prim(name: &str) -> bool {
-    matches!(name, "buf-alloc")
+    matches!(name, "buf-alloc" | "buf-alloc-dyn")
+}
+
+/// True if `name` is a Mut-producing primitive (ADR 0047).
+pub fn is_mut_prim(name: &str) -> bool {
+    matches!(name, "buf-set" | "buf-copy" | "fmt-i64")
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -56,6 +78,10 @@ fn io_eff() -> FnEff {
 
 fn alloc_eff() -> FnEff {
     FnEff::from_set(EffSet::of([EffAtom::Alloc]))
+}
+
+fn mut_eff() -> FnEff {
+    FnEff::from_set(EffSet::of([EffAtom::Mut]))
 }
 
 fn io_mut_eff() -> FnEff {
@@ -119,6 +145,91 @@ fn fn2_pure(a: Ty, b: Ty, r: Ty) -> Ty {
     Ty::Fn(
         Box::new(a),
         Box::new(Ty::Fn(Box::new(b), Box::new(r), FnEff::pure_())),
+        FnEff::pure_(),
+    )
+}
+
+/// Ternary pure function.
+fn fn3_pure(a: Ty, b: Ty, c: Ty, r: Ty) -> Ty {
+    Ty::Fn(
+        Box::new(a),
+        Box::new(Ty::Fn(
+            Box::new(b),
+            Box::new(Ty::Fn(Box::new(c), Box::new(r), FnEff::pure_())),
+            FnEff::pure_(),
+        )),
+        FnEff::pure_(),
+    )
+}
+
+/// Ternary function, {Mut} at the innermost (fully-applied) step.
+fn fn3_mut(a: Ty, b: Ty, c: Ty, r: Ty) -> Ty {
+    Ty::Fn(
+        Box::new(a),
+        Box::new(Ty::Fn(
+            Box::new(b),
+            Box::new(Ty::Fn(Box::new(c), Box::new(r), mut_eff())),
+            FnEff::pure_(),
+        )),
+        FnEff::pure_(),
+    )
+}
+
+/// Quaternary pure function.
+fn fn4_pure(a: Ty, b: Ty, c: Ty, d: Ty, r: Ty) -> Ty {
+    Ty::Fn(
+        Box::new(a),
+        Box::new(Ty::Fn(
+            Box::new(b),
+            Box::new(Ty::Fn(
+                Box::new(c),
+                Box::new(Ty::Fn(Box::new(d), Box::new(r), FnEff::pure_())),
+                FnEff::pure_(),
+            )),
+            FnEff::pure_(),
+        )),
+        FnEff::pure_(),
+    )
+}
+
+/// Quinary pure function.
+fn fn5_pure(a: Ty, b: Ty, c: Ty, d: Ty, e: Ty, r: Ty) -> Ty {
+    Ty::Fn(
+        Box::new(a),
+        Box::new(Ty::Fn(
+            Box::new(b),
+            Box::new(Ty::Fn(
+                Box::new(c),
+                Box::new(Ty::Fn(
+                    Box::new(d),
+                    Box::new(Ty::Fn(Box::new(e), Box::new(r), FnEff::pure_())),
+                    FnEff::pure_(),
+                )),
+                FnEff::pure_(),
+            )),
+            FnEff::pure_(),
+        )),
+        FnEff::pure_(),
+    )
+}
+
+/// Quinary function, {Mut} at the innermost (fully-applied) step.
+fn fn5_mut(a: Ty, b: Ty, c: Ty, d: Ty, e: Ty, r: Ty) -> Ty {
+    Ty::Fn(
+        Box::new(a),
+        Box::new(Ty::Fn(
+            Box::new(b),
+            Box::new(Ty::Fn(
+                Box::new(c),
+                Box::new(Ty::Fn(
+                    Box::new(d),
+                    Box::new(Ty::Fn(Box::new(e), Box::new(r), mut_eff())),
+                    FnEff::pure_(),
+                )),
+                FnEff::pure_(),
+            )),
+            FnEff::pure_(),
+        )),
         FnEff::pure_(),
     )
 }
@@ -196,5 +307,137 @@ mod tests {
     #[test]
     fn unknown_prim() {
         assert!(prim_type("frobnicate").is_none());
+    }
+
+    #[test]
+    fn buf_alloc_dyn_type() {
+        let t = prim_type("buf-alloc-dyn").unwrap();
+        match &t {
+            Ty::Fn(a, r, eff) => {
+                assert_eq!(a.as_ref(), &Ty::Int);
+                assert_eq!(r.as_ref(), &Ty::Buf);
+                assert_eq!(eff, &FnEff::from_set(EffSet::of([EffAtom::Alloc])));
+            }
+            _ => panic!("expected Fn"),
+        }
+    }
+
+    #[test]
+    fn buf_get_is_pure() {
+        let t = prim_type("buf-get").unwrap();
+        match &t {
+            Ty::Fn(a, mid, e1) => {
+                assert_eq!(a.as_ref(), &Ty::Buf);
+                assert_eq!(e1, &FnEff::pure_());
+                match mid.as_ref() {
+                    Ty::Fn(b, r, e2) => {
+                        assert_eq!(b.as_ref(), &Ty::Int);
+                        assert_eq!(r.as_ref(), &Ty::Int);
+                        assert_eq!(e2, &FnEff::pure_());
+                    }
+                    _ => panic!("expected inner Fn"),
+                }
+            }
+            _ => panic!("expected Fn"),
+        }
+    }
+
+    #[test]
+    fn buf_set_has_mut() {
+        let t = prim_type("buf-set").unwrap();
+        // buf-set :: Buf → Int → Int → Int / {Mut}
+        if let Ty::Fn(_, mid, _) = &t {
+            if let Ty::Fn(_, inner, _) = mid.as_ref() {
+                if let Ty::Fn(_, _, eff) = inner.as_ref() {
+                    assert_eq!(eff, &FnEff::from_set(EffSet::of([EffAtom::Mut])));
+                    return;
+                }
+            }
+        }
+        panic!("unexpected type shape for buf-set");
+    }
+
+    #[test]
+    fn parse_i64_is_pure() {
+        let t = prim_type("parse-i64").unwrap();
+        if let Ty::Fn(_, mid, _) = &t {
+            if let Ty::Fn(_, inner, _) = mid.as_ref() {
+                if let Ty::Fn(_, r, eff) = inner.as_ref() {
+                    assert_eq!(r.as_ref(), &Ty::Int);
+                    assert_eq!(eff, &FnEff::pure_());
+                    return;
+                }
+            }
+        }
+        panic!("unexpected type shape for parse-i64");
+    }
+
+    #[test]
+    fn fmt_i64_has_mut() {
+        let t = prim_type("fmt-i64").unwrap();
+        if let Ty::Fn(_, mid, _) = &t {
+            if let Ty::Fn(_, inner, _) = mid.as_ref() {
+                if let Ty::Fn(_, _, eff) = inner.as_ref() {
+                    assert_eq!(eff, &FnEff::from_set(EffSet::of([EffAtom::Mut])));
+                    return;
+                }
+            }
+        }
+        panic!("unexpected type shape for fmt-i64");
+    }
+
+    #[test]
+    fn scan_byte_is_pure() {
+        let t = prim_type("scan-byte").unwrap();
+        // scan-byte :: Buf → Int → Int → Int → Int (all pure)
+        assert!(prim_type("scan-byte").is_some());
+        // Verify it's a 4-arg function ending pure
+        fn innermost(t: &Ty) -> &FnEff {
+            match t {
+                Ty::Fn(_, b, eff) => {
+                    if matches!(b.as_ref(), Ty::Fn(_, _, _)) {
+                        innermost(b)
+                    } else {
+                        eff
+                    }
+                }
+                _ => panic!("not a Fn"),
+            }
+        }
+        assert_eq!(innermost(&t), &FnEff::pure_());
+    }
+
+    #[test]
+    fn buf_eq_and_buf_copy_arities() {
+        // buf-eq and buf-copy are 5-arg functions
+        fn depth(t: &Ty) -> usize {
+            match t {
+                Ty::Fn(_, b, _) => 1 + depth(b),
+                _ => 0,
+            }
+        }
+        assert_eq!(depth(&prim_type("buf-eq").unwrap()), 5);
+        assert_eq!(depth(&prim_type("buf-copy").unwrap()), 5);
+    }
+
+    #[test]
+    fn buf_copy_has_mut_at_innermost() {
+        let t = prim_type("buf-copy").unwrap();
+        fn innermost_eff(t: &Ty) -> FnEff {
+            match t {
+                Ty::Fn(_, b, eff) => {
+                    if matches!(b.as_ref(), Ty::Fn(_, _, _)) {
+                        innermost_eff(b)
+                    } else {
+                        eff.clone()
+                    }
+                }
+                _ => panic!("not a Fn"),
+            }
+        }
+        assert_eq!(
+            innermost_eff(&t),
+            FnEff::from_set(EffSet::of([EffAtom::Mut]))
+        );
     }
 }

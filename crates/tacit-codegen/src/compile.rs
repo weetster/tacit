@@ -52,7 +52,7 @@ use inkwell::targets::{
     CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine,
 };
 use inkwell::types::BasicMetadataTypeEnum;
-use inkwell::values::{BasicMetadataValueEnum, FunctionValue, IntValue, PointerValue};
+use inkwell::values::{BasicMetadataValueEnum, BasicValue, FunctionValue, IntValue, PointerValue};
 use inkwell::{AddressSpace, IntPredicate, OptimizationLevel};
 
 /// `LLVMCCallConv` from `llvm-sys`. Not exposed as a typed enum by inkwell
@@ -277,6 +277,7 @@ impl<'ctx> Compiler<'ctx> {
 
         // Special-case Let-of-BufAlloc (ADR 0038): `let buf = @buf-alloc N in ...`
         // emits an `alloca [N x i8]` at the function entry and binds it as `Ptr`.
+        // Also handles @buf-alloc-dyn (ADR 0047): `alloca i8, %n` for runtime size.
         if let Node::App { .. } = rhs {
             let (head, args) = unfold_app(rhs);
             if let Node::Sym { name } = head {
@@ -305,6 +306,18 @@ impl<'ctx> Compiler<'ctx> {
                         new_env.insert(0, Binding::Ptr(buf_ptr));
                         return self.compile_expr(body, &new_env, cur_fn);
                     }
+                }
+                if name == "buf-alloc-dyn" && args.len() == 1 {
+                    // Runtime-sized stack allocation: alloca i8, %n (ADR 0047).
+                    let size_val = self.compile_expr(args[0], env, cur_fn)?;
+                    let i8_t = self.context.i8_type();
+                    let buf_ptr = self
+                        .builder
+                        .build_array_alloca(i8_t, size_val, "buf_dyn")
+                        .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+                    let mut new_env = env.to_vec();
+                    new_env.insert(0, Binding::Ptr(buf_ptr));
+                    return self.compile_expr(body, &new_env, cur_fn);
                 }
             }
         }
@@ -459,6 +472,16 @@ impl<'ctx> Compiler<'ctx> {
             PrimKind::BufAlloc => Err(CodegenError::Unsupported(
                 "@buf-alloc must appear as the direct RHS of a `let` binding",
             )),
+            PrimKind::BufAllocDyn => Err(CodegenError::Unsupported(
+                "@buf-alloc-dyn must appear as the direct RHS of a `let` binding",
+            )),
+            PrimKind::BufGet => self.emit_buf_get(args, env, cur_fn),
+            PrimKind::BufSet => self.emit_buf_set(args, env, cur_fn),
+            PrimKind::BufCopy => self.emit_buf_copy(args, env, cur_fn),
+            PrimKind::BufEq => self.emit_buf_eq(args, env, cur_fn),
+            PrimKind::ScanByte => self.emit_scan_byte(args, env, cur_fn),
+            PrimKind::ParseI64 => self.emit_parse_i64(args, env, cur_fn),
+            PrimKind::FmtI64 => self.emit_fmt_i64(args, env, cur_fn),
         }
     }
 
@@ -706,6 +729,836 @@ impl<'ctx> Compiler<'ctx> {
                 "buffer argument must be a string literal or @buf-alloc binding",
             )),
         }
+    }
+
+    // ── Phase 3 primitive helpers (ADR 0047) ────────────────────────────────────
+
+    /// Resolve a buffer argument to a `PointerValue` (must be a `Var` → `Binding::Ptr`).
+    fn compile_ptr_arg<'a>(
+        &self,
+        node: &Node,
+        env: &'a [Binding<'ctx>],
+    ) -> Result<PointerValue<'ctx>> {
+        match node {
+            Node::Var { index } => {
+                let binding = lookup_var(env, *index)?;
+                match binding {
+                    Binding::Ptr(ptr) => Ok(*ptr),
+                    _ => Err(CodegenError::Unsupported(
+                        "buffer argument must be a @buf-alloc / @buf-alloc-dyn binding",
+                    )),
+                }
+            }
+            _ => Err(CodegenError::Unsupported(
+                "buffer argument must be a variable referencing a buffer binding",
+            )),
+        }
+    }
+
+    /// GEP to `buf_ptr[off]` (element type `i8`).
+    fn ptr_at(
+        &mut self,
+        buf_ptr: PointerValue<'ctx>,
+        off: IntValue<'ctx>,
+        name: &str,
+    ) -> Result<PointerValue<'ctx>> {
+        let i8_t = self.context.i8_type();
+        unsafe { self.builder.build_gep(i8_t, buf_ptr, &[off], name) }
+            .map_err(|e| CodegenError::Llvm(e.to_string()))
+    }
+
+    /// Load the byte at `buf_ptr[off]` and zero-extend to `i64`.
+    fn load_byte(
+        &mut self,
+        buf_ptr: PointerValue<'ctx>,
+        off: IntValue<'ctx>,
+        name: &str,
+    ) -> Result<IntValue<'ctx>> {
+        let i8_t = self.context.i8_type();
+        let i64_t = self.context.i64_type();
+        let ptr = self.ptr_at(buf_ptr, off, name)?;
+        let b = self
+            .builder
+            .build_load(i8_t, ptr, name)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_int_z_extend(b.into_int_value(), i64_t, name)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))
+    }
+
+    /// Store the low byte of `byte_val` at `buf_ptr[off]`.
+    fn store_byte(
+        &mut self,
+        buf_ptr: PointerValue<'ctx>,
+        off: IntValue<'ctx>,
+        byte_val: IntValue<'ctx>,
+    ) -> Result<()> {
+        let i8_t = self.context.i8_type();
+        let trunc = self
+            .builder
+            .build_int_truncate(byte_val, i8_t, "byte_trunc")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let ptr = self.ptr_at(buf_ptr, off, "store_ptr")?;
+        self.builder
+            .build_store(ptr, trunc)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Declare (or retrieve) the `llvm.memcpy.p0.p0.i64` intrinsic (ADR 0047).
+    fn llvm_memcpy(&self) -> FunctionValue<'ctx> {
+        let name = "llvm.memcpy.p0.p0.i64";
+        if let Some(f) = self.module.get_function(name) {
+            return f;
+        }
+        let ptr_t = self.context.ptr_type(AddressSpace::default());
+        let i64_t = self.context.i64_type();
+        let i1_t = self.context.bool_type();
+        let void_t = self.context.void_type();
+        let fn_ty = void_t.fn_type(
+            &[
+                BasicMetadataTypeEnum::PointerType(ptr_t),
+                BasicMetadataTypeEnum::PointerType(ptr_t),
+                BasicMetadataTypeEnum::IntType(i64_t),
+                BasicMetadataTypeEnum::IntType(i1_t),
+            ],
+            false,
+        );
+        self.module.add_function(name, fn_ty, None)
+    }
+
+    // ── Phase 3 emit functions (ADR 0047) ────────────────────────────────────────
+
+    /// `@buf-get buf off` → load `buf[off]` as `i64`.
+    fn emit_buf_get(
+        &mut self,
+        args: &[&Node],
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<IntValue<'ctx>> {
+        let buf = self.compile_ptr_arg(args[0], env)?;
+        let off = self.compile_expr(args[1], env, cur_fn)?;
+        self.load_byte(buf, off, "bg")
+    }
+
+    /// `@buf-set buf off byte` → store `byte` at `buf[off]`; return 0.
+    fn emit_buf_set(
+        &mut self,
+        args: &[&Node],
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<IntValue<'ctx>> {
+        let buf = self.compile_ptr_arg(args[0], env)?;
+        let off = self.compile_expr(args[1], env, cur_fn)?;
+        let byte = self.compile_expr(args[2], env, cur_fn)?;
+        self.store_byte(buf, off, byte)?;
+        Ok(self.context.i64_type().const_zero())
+    }
+
+    /// `@buf-copy dst dst-off src src-off len` → `llvm.memcpy`; return 0.
+    fn emit_buf_copy(
+        &mut self,
+        args: &[&Node],
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<IntValue<'ctx>> {
+        let dst = self.compile_ptr_arg(args[0], env)?;
+        let dst_off = self.compile_expr(args[1], env, cur_fn)?;
+        let src = self.compile_ptr_arg(args[2], env)?;
+        let src_off = self.compile_expr(args[3], env, cur_fn)?;
+        let len = self.compile_expr(args[4], env, cur_fn)?;
+
+        let dst_ptr = self.ptr_at(dst, dst_off, "cp_dst")?;
+        let src_ptr = self.ptr_at(src, src_off, "cp_src")?;
+        let false_val = self.context.bool_type().const_int(0, false);
+
+        let memcpy = self.llvm_memcpy();
+        self.builder
+            .build_call(
+                memcpy,
+                &[
+                    BasicMetadataValueEnum::PointerValue(dst_ptr),
+                    BasicMetadataValueEnum::PointerValue(src_ptr),
+                    BasicMetadataValueEnum::IntValue(len),
+                    BasicMetadataValueEnum::IntValue(false_val),
+                ],
+                "memcpy",
+            )
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        Ok(self.context.i64_type().const_zero())
+    }
+
+    /// `@buf-eq a a-off b b-off len` → inline byte-compare loop; returns 0 or 1.
+    ///
+    /// Empty range (len = 0) returns 1 (vacuously equal).
+    fn emit_buf_eq(
+        &mut self,
+        args: &[&Node],
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<IntValue<'ctx>> {
+        let a = self.compile_ptr_arg(args[0], env)?;
+        let a_off = self.compile_expr(args[1], env, cur_fn)?;
+        let b = self.compile_ptr_arg(args[2], env)?;
+        let b_off = self.compile_expr(args[3], env, cur_fn)?;
+        let len = self.compile_expr(args[4], env, cur_fn)?;
+
+        let i64_t = self.context.i64_type();
+        let i8_t = self.context.i8_type();
+        let zero64 = i64_t.const_zero();
+        let one64 = i64_t.const_int(1, false);
+
+        // Base pointers: a_ptr = a[a_off], b_ptr = b[b_off]
+        let a_base = self.ptr_at(a, a_off, "beq_a")?;
+        let b_base = self.ptr_at(b, b_off, "beq_b")?;
+
+        let entry_bb = self.builder.get_insert_block().unwrap();
+        let hdr_bb = self.context.append_basic_block(cur_fn, "beq_hdr");
+        let check_bb = self.context.append_basic_block(cur_fn, "beq_chk");
+        let cont_bb = self.context.append_basic_block(cur_fn, "beq_cont");
+        let eq_bb = self.context.append_basic_block(cur_fn, "beq_eq");
+        let ne_bb = self.context.append_basic_block(cur_fn, "beq_ne");
+        let merge_bb = self.context.append_basic_block(cur_fn, "beq_merge");
+
+        self.builder
+            .build_unconditional_branch(hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        // loop header: i = phi(0, i+1)
+        self.builder.position_at_end(hdr_bb);
+        let i_phi = self
+            .builder
+            .build_phi(i64_t, "beq_i")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let i_val = i_phi.as_basic_value().into_int_value();
+        let done = self
+            .builder
+            .build_int_compare(IntPredicate::SGE, i_val, len, "beq_done")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(done, eq_bb, check_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        // load and compare a[i] vs b[i]
+        self.builder.position_at_end(check_bb);
+        let pa = unsafe {
+            self.builder
+                .build_gep(i8_t, a_base, &[i_val], "pa")
+                .map_err(|e| CodegenError::Llvm(e.to_string()))?
+        };
+        let pb = unsafe {
+            self.builder
+                .build_gep(i8_t, b_base, &[i_val], "pb")
+                .map_err(|e| CodegenError::Llvm(e.to_string()))?
+        };
+        let ba = self
+            .builder
+            .build_load(i8_t, pa, "ba")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?
+            .into_int_value();
+        let bb = self
+            .builder
+            .build_load(i8_t, pb, "bb")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?
+            .into_int_value();
+        let bytes_eq = self
+            .builder
+            .build_int_compare(IntPredicate::EQ, ba, bb, "bytes_eq")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(bytes_eq, cont_bb, ne_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        // continue: i++
+        self.builder.position_at_end(cont_bb);
+        let i_next = self
+            .builder
+            .build_int_add(i_val, one64, "beq_inext")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_unconditional_branch(hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        // add phi incoming edges now that i_next is defined
+        i_phi.add_incoming(&[
+            (&zero64 as &dyn BasicValue<'ctx>, entry_bb),
+            (&i_next as &dyn BasicValue<'ctx>, cont_bb),
+        ]);
+
+        // equal exit
+        self.builder.position_at_end(eq_bb);
+        self.builder
+            .build_unconditional_branch(merge_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        // not-equal exit
+        self.builder.position_at_end(ne_bb);
+        self.builder
+            .build_unconditional_branch(merge_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(merge_bb);
+        let result_phi = self
+            .builder
+            .build_phi(i64_t, "beq_res")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        result_phi.add_incoming(&[
+            (&one64 as &dyn BasicValue<'ctx>, eq_bb),
+            (&zero64 as &dyn BasicValue<'ctx>, ne_bb),
+        ]);
+        Ok(result_phi.as_basic_value().into_int_value())
+    }
+
+    /// `@scan-byte buf off len target` → find first `target` byte; returns index or off+len.
+    fn emit_scan_byte(
+        &mut self,
+        args: &[&Node],
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<IntValue<'ctx>> {
+        let buf = self.compile_ptr_arg(args[0], env)?;
+        let off = self.compile_expr(args[1], env, cur_fn)?;
+        let len = self.compile_expr(args[2], env, cur_fn)?;
+        let target = self.compile_expr(args[3], env, cur_fn)?;
+
+        let i64_t = self.context.i64_type();
+        let i8_t = self.context.i8_type();
+        let one64 = i64_t.const_int(1, false);
+
+        let end = self
+            .builder
+            .build_int_add(off, len, "sb_end")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        let entry_bb = self.builder.get_insert_block().unwrap();
+        let hdr_bb = self.context.append_basic_block(cur_fn, "sb_hdr");
+        let check_bb = self.context.append_basic_block(cur_fn, "sb_chk");
+        let cont_bb = self.context.append_basic_block(cur_fn, "sb_cont");
+        let exit_bb = self.context.append_basic_block(cur_fn, "sb_exit");
+
+        self.builder
+            .build_unconditional_branch(hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        // loop header: i = phi(off, i+1)
+        self.builder.position_at_end(hdr_bb);
+        let i_phi = self
+            .builder
+            .build_phi(i64_t, "sb_i")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let i_val = i_phi.as_basic_value().into_int_value();
+        let past_end = self
+            .builder
+            .build_int_compare(IntPredicate::SGE, i_val, end, "sb_past")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(past_end, exit_bb, check_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        // load byte and compare
+        self.builder.position_at_end(check_bb);
+        let ptr_i = unsafe {
+            self.builder
+                .build_gep(i8_t, buf, &[i_val], "sb_ptr")
+                .map_err(|e| CodegenError::Llvm(e.to_string()))?
+        };
+        let byte = self
+            .builder
+            .build_load(i8_t, ptr_i, "sb_b")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?
+            .into_int_value();
+        let byte64 = self
+            .builder
+            .build_int_z_extend(byte, i64_t, "sb_b64")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let found = self
+            .builder
+            .build_int_compare(IntPredicate::EQ, byte64, target, "sb_found")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        // branch: found → exit with current i; not found → continue
+        self.builder
+            .build_conditional_branch(found, exit_bb, cont_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        // continue: i++
+        self.builder.position_at_end(cont_bb);
+        let i_next = self
+            .builder
+            .build_int_add(i_val, one64, "sb_inext")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_unconditional_branch(hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        i_phi.add_incoming(&[
+            (&off as &dyn BasicValue<'ctx>, entry_bb),
+            (&i_next as &dyn BasicValue<'ctx>, cont_bb),
+        ]);
+
+        // exit: result = phi(end from hdr, i from check)
+        self.builder.position_at_end(exit_bb);
+        let res_phi = self
+            .builder
+            .build_phi(i64_t, "sb_res")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        res_phi.add_incoming(&[
+            (&end as &dyn BasicValue<'ctx>, hdr_bb),
+            (&i_val as &dyn BasicValue<'ctx>, check_bb),
+        ]);
+        Ok(res_phi.as_basic_value().into_int_value())
+    }
+
+    /// `@parse-i64 buf off len` → parse decimal integer (with optional '-'); overflow is UB.
+    ///
+    /// Stops at first non-digit. Empty range or no leading digit returns 0.
+    fn emit_parse_i64(
+        &mut self,
+        args: &[&Node],
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<IntValue<'ctx>> {
+        let buf = self.compile_ptr_arg(args[0], env)?;
+        let off = self.compile_expr(args[1], env, cur_fn)?;
+        let len = self.compile_expr(args[2], env, cur_fn)?;
+
+        let i64_t = self.context.i64_type();
+        let i8_t = self.context.i8_type();
+        let zero64 = i64_t.const_zero();
+        let one64 = i64_t.const_int(1, false);
+        let ten64 = i64_t.const_int(10, false);
+        let minus_ascii = i64_t.const_int(45, false); // '-'
+        let zero_ascii = i64_t.const_int(48, false); // '0'
+        let nine_ascii = i64_t.const_int(57, false); // '9'
+
+        let end = self
+            .builder
+            .build_int_add(off, len, "pi_end")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        // If len == 0, return 0 immediately.
+        let is_empty = self
+            .builder
+            .build_int_compare(IntPredicate::SLE, len, zero64, "pi_empty")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        let empty_bb = self.context.append_basic_block(cur_fn, "pi_empty_bb");
+        let sign_bb = self.context.append_basic_block(cur_fn, "pi_sign");
+        let hdr_bb = self.context.append_basic_block(cur_fn, "pi_hdr");
+        let digit_bb = self.context.append_basic_block(cur_fn, "pi_digit");
+        let acc_bb = self.context.append_basic_block(cur_fn, "pi_acc");
+        let finish_bb = self.context.append_basic_block(cur_fn, "pi_finish");
+        let ret_bb = self.context.append_basic_block(cur_fn, "pi_ret");
+
+        self.builder
+            .build_conditional_branch(is_empty, empty_bb, sign_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        // empty path
+        self.builder.position_at_end(empty_bb);
+        self.builder
+            .build_unconditional_branch(ret_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        // check for leading '-'
+        self.builder.position_at_end(sign_bb);
+        let first_ptr = unsafe {
+            self.builder
+                .build_gep(i8_t, buf, &[off], "pi_fptr")
+                .map_err(|e| CodegenError::Llvm(e.to_string()))?
+        };
+        let first_b = self
+            .builder
+            .build_load(i8_t, first_ptr, "pi_fb")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?
+            .into_int_value();
+        let first64 = self
+            .builder
+            .build_int_z_extend(first_b, i64_t, "pi_f64")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let is_neg = self
+            .builder
+            .build_int_compare(IntPredicate::EQ, first64, minus_ascii, "pi_neg")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let start = self
+            .builder
+            .build_select(
+                is_neg,
+                self.builder
+                    .build_int_add(off, one64, "pi_s1")
+                    .map_err(|e| CodegenError::Llvm(e.to_string()))?,
+                off,
+                "pi_start",
+            )
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?
+            .into_int_value();
+        self.builder
+            .build_unconditional_branch(hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        // loop header: i = phi(start, i+1); acc = phi(0, new_acc)
+        self.builder.position_at_end(hdr_bb);
+        let i_phi = self
+            .builder
+            .build_phi(i64_t, "pi_i")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let acc_phi = self
+            .builder
+            .build_phi(i64_t, "pi_acc")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let i_val = i_phi.as_basic_value().into_int_value();
+        let acc_val = acc_phi.as_basic_value().into_int_value();
+        let done = self
+            .builder
+            .build_int_compare(IntPredicate::SGE, i_val, end, "pi_done")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(done, finish_bb, digit_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        // check digit
+        self.builder.position_at_end(digit_bb);
+        let ptr_i = unsafe {
+            self.builder
+                .build_gep(i8_t, buf, &[i_val], "pi_ptr")
+                .map_err(|e| CodegenError::Llvm(e.to_string()))?
+        };
+        let b = self
+            .builder
+            .build_load(i8_t, ptr_i, "pi_b")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?
+            .into_int_value();
+        let b64 = self
+            .builder
+            .build_int_z_extend(b, i64_t, "pi_b64")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let d_lo = self
+            .builder
+            .build_int_compare(IntPredicate::SGE, b64, zero_ascii, "pi_dlo")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let d_hi = self
+            .builder
+            .build_int_compare(IntPredicate::SLE, b64, nine_ascii, "pi_dhi")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let valid = self
+            .builder
+            .build_and(d_lo, d_hi, "pi_valid")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(valid, acc_bb, finish_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        // accumulate: new_acc = acc * 10 + (b64 - '0')
+        self.builder.position_at_end(acc_bb);
+        let digit = self
+            .builder
+            .build_int_sub(b64, zero_ascii, "pi_d")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let acc_times_10 = self
+            .builder
+            .build_int_nsw_mul(acc_val, ten64, "pi_a10")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let new_acc = self
+            .builder
+            .build_int_nsw_add(acc_times_10, digit, "pi_nacc")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let i_next = self
+            .builder
+            .build_int_add(i_val, one64, "pi_inext")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_unconditional_branch(hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        i_phi.add_incoming(&[
+            (&start as &dyn BasicValue<'ctx>, sign_bb),
+            (&i_next as &dyn BasicValue<'ctx>, acc_bb),
+        ]);
+        acc_phi.add_incoming(&[
+            (&zero64 as &dyn BasicValue<'ctx>, sign_bb),
+            (&new_acc as &dyn BasicValue<'ctx>, acc_bb),
+        ]);
+
+        // finish: raw = acc from loop header (both paths from hdr and digit_bb share the same phi)
+        self.builder.position_at_end(finish_bb);
+        let raw_phi = self
+            .builder
+            .build_phi(i64_t, "pi_raw")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        raw_phi.add_incoming(&[
+            (&acc_val as &dyn BasicValue<'ctx>, hdr_bb),
+            (&acc_val as &dyn BasicValue<'ctx>, digit_bb),
+        ]);
+        let raw = raw_phi.as_basic_value().into_int_value();
+        let neg_raw = self
+            .builder
+            .build_int_neg(raw, "pi_negraw")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let result = self
+            .builder
+            .build_select(is_neg, neg_raw, raw, "pi_res")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?
+            .into_int_value();
+        self.builder
+            .build_unconditional_branch(ret_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        // return: phi(0 from empty, result from finish)
+        self.builder.position_at_end(ret_bb);
+        let final_phi = self
+            .builder
+            .build_phi(i64_t, "pi_final")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        final_phi.add_incoming(&[
+            (&zero64 as &dyn BasicValue<'ctx>, empty_bb),
+            (&result as &dyn BasicValue<'ctx>, finish_bb),
+        ]);
+        Ok(final_phi.as_basic_value().into_int_value())
+    }
+
+    /// `@fmt-i64 buf off val` → write decimal representation of `val` to `buf[off..]`;
+    /// returns the number of bytes written. Handles 0 as a special case.
+    fn emit_fmt_i64(
+        &mut self,
+        args: &[&Node],
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<IntValue<'ctx>> {
+        let buf = self.compile_ptr_arg(args[0], env)?;
+        let off = self.compile_expr(args[1], env, cur_fn)?;
+        let val = self.compile_expr(args[2], env, cur_fn)?;
+
+        let i64_t = self.context.i64_type();
+        let i8_t = self.context.i8_type();
+        let zero64 = i64_t.const_zero();
+        let one64 = i64_t.const_int(1, false);
+        let ten64 = i64_t.const_int(10, false);
+        let zero_ascii = i64_t.const_int(48, false); // '0'
+        let minus_ascii = i64_t.const_int(45, false); // '-'
+
+        let is_neg = self
+            .builder
+            .build_int_compare(IntPredicate::SLT, val, zero64, "fi_neg")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let neg_val = self
+            .builder
+            .build_int_neg(val, "fi_negval")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let abs_val = self
+            .builder
+            .build_select(is_neg, neg_val, val, "fi_abs")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?
+            .into_int_value();
+
+        let is_zero = self
+            .builder
+            .build_int_compare(IntPredicate::EQ, abs_val, zero64, "fi_iszero")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        let zero_bb = self.context.append_basic_block(cur_fn, "fi_zero");
+        let nonzero_bb = self.context.append_basic_block(cur_fn, "fi_nonzero");
+        let sign_bb = self.context.append_basic_block(cur_fn, "fi_sign");
+        let count_hdr_bb = self.context.append_basic_block(cur_fn, "fi_cnt_hdr");
+        let count_body_bb = self.context.append_basic_block(cur_fn, "fi_cnt_body");
+        let write_hdr_bb = self.context.append_basic_block(cur_fn, "fi_wr_hdr");
+        let write_body_bb = self.context.append_basic_block(cur_fn, "fi_wr_body");
+        let ret_bb = self.context.append_basic_block(cur_fn, "fi_ret");
+
+        self.builder
+            .build_conditional_branch(is_zero, zero_bb, nonzero_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        // --- zero case: write '0', return 1 ---
+        self.builder.position_at_end(zero_bb);
+        let zero_char_byte = i8_t.const_int(48, false);
+        let zero_ptr = unsafe {
+            self.builder
+                .build_gep(i8_t, buf, &[off], "fi_z_ptr")
+                .map_err(|e| CodegenError::Llvm(e.to_string()))?
+        };
+        self.builder
+            .build_store(zero_ptr, zero_char_byte)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_unconditional_branch(ret_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        // --- non-zero: pass 1 = count digits ---
+        self.builder.position_at_end(nonzero_bb);
+        self.builder
+            .build_unconditional_branch(count_hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        // count_hdr: n = phi(0, n+1); v = phi(abs_val, v/10)
+        self.builder.position_at_end(count_hdr_bb);
+        let n_phi = self
+            .builder
+            .build_phi(i64_t, "fi_n")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let v_phi = self
+            .builder
+            .build_phi(i64_t, "fi_v")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let n_val = n_phi.as_basic_value().into_int_value();
+        let v_val = v_phi.as_basic_value().into_int_value();
+        let v_done = self
+            .builder
+            .build_int_compare(IntPredicate::SLE, v_val, zero64, "fi_vdone")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(v_done, sign_bb, count_body_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(count_body_bb);
+        let n_next = self
+            .builder
+            .build_int_add(n_val, one64, "fi_nnext")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let v_next = self
+            .builder
+            .build_int_signed_div(v_val, ten64, "fi_vnext")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_unconditional_branch(count_hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        n_phi.add_incoming(&[
+            (&zero64 as &dyn BasicValue<'ctx>, nonzero_bb),
+            (&n_next as &dyn BasicValue<'ctx>, count_body_bb),
+        ]);
+        v_phi.add_incoming(&[
+            (&abs_val as &dyn BasicValue<'ctx>, nonzero_bb),
+            (&v_next as &dyn BasicValue<'ctx>, count_body_bb),
+        ]);
+
+        // sign_bb: write '-' if negative, compute sign_len and total
+        self.builder.position_at_end(sign_bb);
+        let sign_len = self
+            .builder
+            .build_select(is_neg, one64, zero64, "fi_slen")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?
+            .into_int_value();
+        let minus_trunc = i8_t.const_int(45, false);
+        let sign_ptr = unsafe {
+            self.builder
+                .build_gep(i8_t, buf, &[off], "fi_sptr")
+                .map_err(|e| CodegenError::Llvm(e.to_string()))?
+        };
+        // Conditionally store '-': we always store but only at sign_ptr if neg
+        // Simpler: just build_select the store address is always off, but store '-'
+        // only if neg. Use: if is_neg { store '-' at off }
+        // Build a conditional store via select: store select(is_neg, '-', buf[off])
+        // We'll just store minus_trunc if is_neg using a conditional branch:
+        let write_sign_bb = self.context.append_basic_block(cur_fn, "fi_wsign");
+        let after_sign_bb = self.context.append_basic_block(cur_fn, "fi_asign");
+        self.builder
+            .build_conditional_branch(is_neg, write_sign_bb, after_sign_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(write_sign_bb);
+        self.builder
+            .build_store(sign_ptr, minus_trunc)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_unconditional_branch(after_sign_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(after_sign_bb);
+        // total = sign_len + n_val; last digit position = off + total - 1
+        let total = self
+            .builder
+            .build_int_add(sign_len, n_val, "fi_total")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let last_pos = self
+            .builder
+            .build_int_sub(
+                self.builder
+                    .build_int_add(off, total, "fi_end")
+                    .map_err(|e| CodegenError::Llvm(e.to_string()))?,
+                one64,
+                "fi_last",
+            )
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder
+            .build_unconditional_branch(write_hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        // pass 2: write digits right-to-left
+        // write_hdr: pos = phi(last_pos, pos-1); u = phi(abs_val, u/10)
+        self.builder.position_at_end(write_hdr_bb);
+        let pos_phi = self
+            .builder
+            .build_phi(i64_t, "fi_pos")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let u_phi = self
+            .builder
+            .build_phi(i64_t, "fi_u")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let pos_val = pos_phi.as_basic_value().into_int_value();
+        let u_val = u_phi.as_basic_value().into_int_value();
+        let u_done = self
+            .builder
+            .build_int_compare(IntPredicate::SLE, u_val, zero64, "fi_udone")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(u_done, ret_bb, write_body_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(write_body_bb);
+        let digit = self
+            .builder
+            .build_int_signed_rem(u_val, ten64, "fi_dgt")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let digit_char = self
+            .builder
+            .build_int_add(digit, zero_ascii, "fi_dchar")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let digit_trunc = self
+            .builder
+            .build_int_truncate(digit_char, i8_t, "fi_dtrunc")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let dptr = unsafe {
+            self.builder
+                .build_gep(i8_t, buf, &[pos_val], "fi_dptr")
+                .map_err(|e| CodegenError::Llvm(e.to_string()))?
+        };
+        self.builder
+            .build_store(dptr, digit_trunc)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let pos_prev = self
+            .builder
+            .build_int_sub(pos_val, one64, "fi_pprev")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let u_next = self
+            .builder
+            .build_int_signed_div(u_val, ten64, "fi_unext")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_unconditional_branch(write_hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        pos_phi.add_incoming(&[
+            (&last_pos as &dyn BasicValue<'ctx>, after_sign_bb),
+            (&pos_prev as &dyn BasicValue<'ctx>, write_body_bb),
+        ]);
+        u_phi.add_incoming(&[
+            (&abs_val as &dyn BasicValue<'ctx>, after_sign_bb),
+            (&u_next as &dyn BasicValue<'ctx>, write_body_bb),
+        ]);
+
+        // ret_bb: result = phi(1 from zero_bb, total from write_hdr_bb)
+        self.builder.position_at_end(ret_bb);
+        let ret_phi = self
+            .builder
+            .build_phi(i64_t, "fi_ret")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        ret_phi.add_incoming(&[
+            (&one64 as &dyn BasicValue<'ctx>, zero_bb),
+            (&total as &dyn BasicValue<'ctx>, write_hdr_bb),
+        ]);
+        // suppress unused warning on these constants
+        let _ = minus_ascii;
+        Ok(ret_phi.as_basic_value().into_int_value())
     }
 
     /// Hoist a `Lam` body to a top-level function `i64 -> i64`.

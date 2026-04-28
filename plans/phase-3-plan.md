@@ -243,6 +243,13 @@ the architecture doc at
 [`docs/compiler-architecture.md`](../docs/compiler-architecture.md) gains
 a Phase 3 codegen-additions table; clippy clean.
 
+**Stage 2 landed (2026-04-28):** All eight primitives implemented in
+`tacit-codegen` and `tacit-typecheck`; 14 conformance tests pass in
+`crates/tacit-codegen/tests/p3_primitives.rs`; 14 source programs under
+`examples/smoke/p3-*.tac`; `docs/compiler-architecture.md` Phase 3 table
+added; clippy clean; `libc-effects.toml` unchanged (no new OS-boundary
+symbols per ADR 0025/0047).
+
 ### Stage 3: Phase 2 carry-over programs (~3–5 days)
 
 Closes the deferral from [ADR 0046](../decisions/0046-p2-stage-5-frozen.md)

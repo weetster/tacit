@@ -293,12 +293,32 @@ LLVM backend. These additions are covered by smoke programs #7 and #8.
 |---------------------------|-----------------------------------------------------------------------|
 | `PatInt { value }`        | Integer-literal pattern arm: `icmp eq scrutinee, N` (ADR 0037).     |
 | `Module { bindings }`     | Top-level bindings lowered identically to `Rec`; no `in` body.       |
-| `@buf-alloc N`            | `alloca i8, N` — stack buffer (ADR 0038).                            |
+| `@buf-alloc N`            | `alloca [N x i8]` — stack buffer (ADR 0038).                         |
 | `@read fd buf len`        | `read(fd, buf*, len)` libc call; returns `i64` bytes read.           |
 | `Ann { expr, type_ }`     | Transparent: the type annotation is consumed by the typechecker and  |
 |                           | stripped before codegen; only `expr` is lowered.                     |
 
-Out of scope for Phase 1–2 (per the relevant ADRs):
+## Phase 3 codegen additions
+
+Phase 3 Stage 2 added eight new `@name` primitives across four categories
+(ADR 0047). All emit inline IR — no new external linkage except the
+`llvm.memcpy.p0.p0.i64` intrinsic for `@buf-copy`.
+
+| Category     | Primitive         | Arity | Effect     | Lowering                                        |
+|--------------|-------------------|-------|------------|-------------------------------------------------|
+| `STACK-ALLOC`| `@buf-alloc-dyn n`| 1     | `{Alloc}`  | `alloca i8, %n` (runtime size); let-RHS only.   |
+| `MEM`        | `@buf-get buf off`| 2     | `{}`       | `gep i8, buf, off` + `load i8` + `zext i64`.   |
+| `MEM`        | `@buf-set buf off byte` | 3 | `{Mut}`  | `trunc i8` + `gep i8, buf, off` + `store i8`. Returns 0. |
+| `MEM`        | `@buf-copy dst doff src soff len` | 5 | `{Mut}` | `gep` both ptrs, call `llvm.memcpy.p0.p0.i64`. Returns 0. |
+| `MEM`        | `@buf-eq a aoff b boff len` | 5 | `{}`   | Inline byte-compare loop; returns 0 or 1.       |
+| `MEM`        | `@scan-byte buf off len target` | 4 | `{}` | Inline memchr-style loop; returns index or off+len. |
+| `PARSE`      | `@parse-i64 buf off len` | 3 | `{}`    | Inline digit loop with optional leading `-`.    |
+| `FORMAT`     | `@fmt-i64 buf off val` | 3 | `{Mut}`   | Digit-count pass + right-to-left write pass. Returns bytes written. |
+
+Conformance tests for all eight primitives: `crates/tacit-codegen/tests/p3_primitives.rs`
+(positive + boundary case per primitive). Source programs under `examples/smoke/p3-*.tac`.
+
+Out of scope for Phase 1–3 (per the relevant ADRs):
 
 - Open lambdas / first-class function values (ADR 0026).
 - Records, projection, ctors as first-class values.
@@ -322,3 +342,5 @@ Out of scope for Phase 1–2 (per the relevant ADRs):
 - [ADR 0038](../decisions/0038-p2-writable-buffer.md) — writable-buffer binding model.
 - [ADR 0041](../decisions/0041-p2-structured-error-format.md) — structured error format.
 - [ADR 0046](../decisions/0046-p2-stage-5-frozen.md) — Phase 2 freeze.
+- [ADR 0047](../decisions/0047-p3-stdlib-expansion-surface.md) — Phase 3 `@name` surface expansion (PARSE/FORMAT/MEM + `@buf-alloc-dyn`).
+- [phase-3-plan.md](../plans/phase-3-plan.md) — Phase 3 plan + stage gates.
