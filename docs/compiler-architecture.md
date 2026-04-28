@@ -1,7 +1,7 @@
 # Compiler Architecture
 
-**Status:** Phase 1 complete. Stages 1–5 frozen; see
-[ADR 0032](../decisions/0032-stage-4-frozen.md) for Stage 4 freeze details.
+**Status:** Phase 2 complete. All five stages frozen; see
+[ADR 0046](../decisions/0046-p2-stage-5-frozen.md) for Phase 2 freeze details.
 LLVM 19 pinned via `inkwell` 0.9's `llvm19-1` feature.
 
 ## Crate layout
@@ -10,20 +10,42 @@ LLVM 19 pinned via `inkwell` 0.9's `llvm19-1` feature.
 crates/
 ├── tacit-canonical/   — AST, lexer, parser, emitter, BLAKE3 hasher
 ├── tacit-views/       — authoring view (round-trip) + inspection view (display-only)
+├── tacit-typecheck/   — Phase 2 structural type + effect checker (no LLVM dep)
 ├── tacit-codegen/     — Phase 1 LLVM IR emitter
-└── tacit-cli/         — `tacit` binary: compile and view subcommands
+└── tacit-cli/         — `tacit` binary: compile, check, and view subcommands
 ```
 
 Dependency graph (arrows point from dependent to dependency):
 
 ```
-tacit-cli ──► tacit-views ──► tacit-canonical
+tacit-cli ──► tacit-views      ──► tacit-canonical
     │
-    └────────► tacit-codegen ──► tacit-canonical
+    ├────────► tacit-typecheck  ──► tacit-canonical
+    │
+    └────────► tacit-codegen   ──► tacit-canonical
 ```
 
-No edges between `tacit-codegen` and `tacit-views`. `tacit-cli` is the only
-crate that depends on both.
+No edges between `tacit-codegen` and `tacit-views` or `tacit-typecheck`.
+`tacit-cli` is the only crate that depends on all three.
+
+## `tacit-typecheck` layers
+
+`tacit-typecheck` has no LLVM dependency and builds on any machine:
+
+| Module         | Purpose                                                                        |
+|----------------|--------------------------------------------------------------------------------|
+| `ty`           | `Ty`, `EffSet`, `FnEff`, `Subst` — type and effect representation + unification. |
+| `infer`        | Bidirectional inference pass; walks the AST and populates the substitution.    |
+| `type_from_node` | Converts type-level AST nodes (`FnTy`, `TyVar`, `Forall`, `EffSet`, `EffVar`) to `Ty`. |
+| `primitives`   | Builtin type and effect signatures for `@write`, `@read`, `@exit`, `@buf-alloc`, arithmetic. |
+| `error`        | `Diagnostic` / `DiagOutput` — JSON-serialisable error format per ADR 0041.    |
+| `sidecar`      | `.tac.sidecar.toml` type expectation loading and comparison (per ADR 0043).   |
+
+Public entry point: `infer_module(node) -> Result<TypedModule, Vec<Diagnostic>>`.
+
+Effect signatures for `@write`, `@read`, `@exit` are loaded from
+[`stdlib/libc-effects.toml`](../stdlib/libc-effects.toml) at inference time
+(schema frozen by [ADR 0025](../decisions/0025-phase-1-libc-surface.md)).
 
 ## `tacit-codegen` layers
 
@@ -52,7 +74,8 @@ cargo build -p tacit-codegen --features llvm15-0
 ```
 
 `tacit-cli` mirrors this pattern — building without an LLVM feature produces
-a binary that supports `tacit view` but reports an error for `tacit compile`.
+a binary that supports `tacit view` and `tacit check` but reports an error
+for `tacit compile`.
 
 ## LLVM dependency
 
@@ -122,6 +145,11 @@ foo.tac  (authoring view bytes on disk)
     ▼
 (Node, SidecarNode)
     │ Node
+    │  tacit_typecheck::infer_module(&node)
+    │  (no LLVM dep; type/effect errors → JSON on stderr, exit 1)
+    ▼
+TypedModule  (or exit 1 on error)
+    │ Node
     │  tacit_codegen::compile_to_object / compile_to_ir_string
     │  (LLVM-gated; analysis::check_no_holes runs first)
     ▼
@@ -132,6 +160,7 @@ inkwell::Module
 foo.o  (temp file)
     │
     │  system linker (cc / clang / gcc)
+    │  (failure → error message on stderr, exit 2)
     ▼
 foo  (native executable)
 ```
@@ -142,6 +171,32 @@ display metadata only and is not needed by codegen.
 `--emit-llvm-ir` taps the pipeline just before object emission and prints
 the textual `.ll` representation to stdout. Textual IR is an output only;
 it is never read back in (ADR 0031).
+
+**Exit codes:**
+- `0` — success.
+- `1` — type or effect errors (typechecker aborts before codegen).
+- `2` — codegen or linker failure.
+
+## `tacit check` pipeline
+
+```
+foo.tac  (authoring view bytes on disk)
+    │
+    │  tacit_views::authoring::parse_authoring(&src)
+    ▼
+(Node, SidecarNode)
+    │ Node
+    │  tacit_typecheck::infer_module(&node)
+    ▼
+TypedModule  — success (exit 0)
+    or Vec<Diagnostic>  — errors (exit 1)
+
+--format text  →  human-readable diagnostics on stderr
+--format json  →  JSON DiagOutput envelope on stdout
+```
+
+`tacit check` has no LLVM dependency. It works in builds without any
+LLVM feature flag.
 
 ## `tacit view` pipeline
 
@@ -166,9 +221,17 @@ foo.tac  (authoring view bytes on disk)
     │
     └── --as inspection ─────────────────────────────────────────┐
         tacit_views::emit_inspection(node, sidecar, flags)       │
-        flags: InspectFlags { debruijn, hashes }                 ▼
+        flags: InspectFlags { debruijn, hashes, types, effects } ▼
                                                   inspection text on stdout
 ```
+
+Inspection flags:
+- `--debruijn` (L1): appends `# x ≡ var N` annotations to variable references.
+- `--hashes` (L2): prepends 4-byte BLAKE3 badges to each node.
+- `--types` (Phase 2): renders type annotations (`FnTy`, `TyVar`, `Forall`) in
+  human-readable form (e.g., `α0 -> Bool / {IO}`) instead of compact canonical.
+- `--effects` (Phase 2): renders effect sets with spaces (`{IO, Mut}`) and
+  effect variables as `ε0`.
 
 ### How the sidecar flows through `tacit view`
 
@@ -189,9 +252,9 @@ appends trailing `# x ≡ var N` annotations, and `--hashes`
 (`InspectFlags.hashes`) prepends 4-byte BLAKE3 badges.
 
 An external `.tacd` sidecar file (comments, additional metadata) is not loaded
-by `tacit view` in Phase 1. Comment rendering in the inspection view is
+by `tacit view` in Phase 2. Comment rendering in the inspection view is
 possible when a sidecar is supplied programmatically (e.g., from a future
-`tacit view --sidecar foo.tacd`); Phase 1 does not expose that flag.
+`tacit view --sidecar foo.tacd`); Phase 2 does not expose that flag.
 
 ## `tacit-cli` feature flags
 
@@ -203,9 +266,9 @@ llvm19-1 = ["tacit-codegen/llvm19-1", "llvm"]   # pinned; CI default
 ```
 
 Building with a version feature enables the local `llvm` aggregate, which
-gates the `compile_with_llvm` function in `main.rs`. Without any LLVM
-feature, `tacit view` works fully; `tacit compile` exits with an error
-explaining how to rebuild.
+gates the `compile_with_llvm_node` function in `main.rs`. Without any LLVM
+feature, `tacit view` and `tacit check` work fully; `tacit compile` exits
+with an error explaining how to rebuild.
 
 ## Phase 1 codegen subset
 
@@ -221,22 +284,41 @@ explaining how to rebuild.
 | `Rec`                 | Forward-declare every member, define each body, then lower rec body (ADR 0027). |
 | `Match`               | Chain of `icmp eq` arms; trailing `pat-wild` is the merge fallthrough.    |
 
-Out of scope for Phase 1 (per the relevant ADRs):
+## Phase 2 codegen additions
+
+Phase 2 extended the lowered AST surface (Stage 4) while keeping the same
+LLVM backend. These additions are covered by smoke programs #7 and #8.
+
+| AST kind / pattern        | Lowering                                                              |
+|---------------------------|-----------------------------------------------------------------------|
+| `PatInt { value }`        | Integer-literal pattern arm: `icmp eq scrutinee, N` (ADR 0037).     |
+| `Module { bindings }`     | Top-level bindings lowered identically to `Rec`; no `in` body.       |
+| `@buf-alloc N`            | `alloca i8, N` — stack buffer (ADR 0038).                            |
+| `@read fd buf len`        | `read(fd, buf*, len)` libc call; returns `i64` bytes read.           |
+| `Ann { expr, type_ }`     | Transparent: the type annotation is consumed by the typechecker and  |
+|                           | stripped before codegen; only `expr` is lowered.                     |
+
+Out of scope for Phase 1–2 (per the relevant ADRs):
 
 - Open lambdas / first-class function values (ADR 0026).
-- Hole-node recovery (ADR 0023).
-- `Module` top-level (deferred per phase-1-plan.md Stage 2 exclusions).
 - Records, projection, ctors as first-class values.
-- `pat-int` patterns (canonical extension required for smoke #7).
-- Writable-buffer binding model (required for smoke #8).
+- Effect handlers, user-defined effects (Phase 7).
 
 ## See also
 
-- [phase-1-plan.md](../plans/phase-1-plan.md) — phase plan + stage gates.
+- [phase-2-plan.md](../plans/phase-2-plan.md) — Phase 2 plan + stage gates.
+- [phase-1-plan.md](../plans/phase-1-plan.md) — Phase 1 plan (frozen).
 - [ADR 0024](../decisions/0024-llvm-bindings-inkwell.md) — inkwell choice.
-- [ADR 0025](../decisions/0025-phase-1-libc-surface.md) — libc surface.
+- [ADR 0025](../decisions/0025-phase-1-libc-surface.md) — libc surface + libc-effects.toml.
 - [ADR 0026](../decisions/0026-phase-1-closed-lambdas.md) — closed lambdas.
 - [ADR 0027](../decisions/0027-phase-1-rec-lowering.md) — rec lowering.
 - [ADR 0028](../decisions/0028-phase-1-libc-call-surface.md) — `@name` surface.
 - [ADR 0030](../decisions/0030-phase-1-arith-primitives.md) — arith/cmp intrinsics.
 - [ADR 0031](../decisions/0031-llvm-distribution-and-self-hosting.md) — distribution + self-hosting.
+- [ADR 0034](../decisions/0034-p2-type-subset-ann.md) — type subset for `ann`.
+- [ADR 0035](../decisions/0035-p2-effect-set-canonical.md) — effect-set canonical syntax + lattice.
+- [ADR 0036](../decisions/0036-p2-effect-polymorphism-syntax.md) — effect polymorphism surface.
+- [ADR 0037](../decisions/0037-p2-pat-int.md) — `pat-int` canonical extension.
+- [ADR 0038](../decisions/0038-p2-writable-buffer.md) — writable-buffer binding model.
+- [ADR 0041](../decisions/0041-p2-structured-error-format.md) — structured error format.
+- [ADR 0046](../decisions/0046-p2-stage-5-frozen.md) — Phase 2 freeze.

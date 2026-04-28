@@ -14,6 +14,7 @@ path = "src/main.rs"
 tacit-canonical = { path = "../tacit-canonical" }
 tacit-views = { path = "../tacit-views" }
 tacit-codegen = { path = "../tacit-codegen" }
+tacit-typecheck = { path = "../tacit-typecheck" }
 clap = { version = "4", features = ["derive"] }
 tempfile = "3"
 

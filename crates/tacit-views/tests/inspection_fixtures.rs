@@ -13,12 +13,14 @@ fn l0() -> InspectFlags {
     InspectFlags {
         debruijn: false,
         hashes: false,
+        ..Default::default()
     }
 }
 fn l1() -> InspectFlags {
     InspectFlags {
         debruijn: true,
         hashes: false,
+        ..Default::default()
     }
 }
 fn sidecar_from_json(json: &str) -> SidecarNode {

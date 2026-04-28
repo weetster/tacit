@@ -13,6 +13,10 @@ use crate::sidecar::SidecarNode;
 pub struct InspectFlags {
     pub debruijn: bool,
     pub hashes: bool,
+    /// (inspection) Render type annotations in human-readable form (Phase 2).
+    pub types: bool,
+    /// (inspection) Render effect annotations verbosely (Phase 2).
+    pub effects: bool,
 }
 
 /// Render `node` to inspection-view text at the top level (indent 0).
@@ -148,34 +152,70 @@ impl<'f> Ctx<'f> {
                 let (text, _vars) = self.render_pattern_node(node, name, sub_patterns, sc);
                 Rendered::leaf(text)
             }
-            // Phase 2 type-level nodes: render as compact canonical text for now.
-            // Full --types/--effects rendering is Stage 5 work (ADR 0015).
+            // Phase 2 type-level nodes.
+            // --types / --effects flags (ADR 0015) render these verbosely.
             Node::PatInt { value } => Rendered::leaf(value.clone()),
-            Node::FnTy { arg, ret, eff } => Rendered::leaf(format!(
-                "({} -> {} / {})",
-                self.render_compact(arg),
-                self.render_compact(ret),
-                self.render_compact(eff)
-            )),
-            Node::TyVar { index } => Rendered::leaf(format!("ty-var({})", index)),
+            Node::FnTy { arg, ret, eff } => {
+                if self.flags.types {
+                    let arg_s = format_type_node_nice(arg);
+                    let ret_s = format_type_node_nice(ret);
+                    let eff_s = format_eff_node_nice(eff, self.flags.effects);
+                    let needs_parens =
+                        matches!(arg.as_ref(), Node::FnTy { .. } | Node::Forall { .. });
+                    let text = if needs_parens {
+                        format!("({}) -> {}{}", arg_s, ret_s, eff_s)
+                    } else {
+                        format!("{} -> {}{}", arg_s, ret_s, eff_s)
+                    };
+                    Rendered::leaf(text)
+                } else {
+                    Rendered::leaf(format!(
+                        "({} -> {} / {})",
+                        self.render_compact(arg),
+                        self.render_compact(ret),
+                        self.render_compact(eff)
+                    ))
+                }
+            }
+            Node::TyVar { index } => {
+                if self.flags.types {
+                    Rendered::leaf(format!("\u{03b1}{}", index))
+                } else {
+                    Rendered::leaf(format!("ty-var({})", index))
+                }
+            }
             Node::Forall {
                 ty_count,
                 eff_count,
                 body,
-            } => Rendered::leaf(format!(
-                "forall({},{},{})",
-                ty_count,
-                eff_count,
-                self.render_compact(body)
-            )),
+            } => {
+                if self.flags.types {
+                    Rendered::leaf(format_forall_nice(*ty_count, *eff_count, body))
+                } else {
+                    Rendered::leaf(format!(
+                        "forall({},{},{})",
+                        ty_count,
+                        eff_count,
+                        self.render_compact(body)
+                    ))
+                }
+            }
             Node::EffSet { atoms } => {
                 if atoms.is_empty() {
                     Rendered::leaf("{}".to_string())
+                } else if self.flags.effects {
+                    Rendered::leaf(format!("{{{}}}", atoms.join(", ")))
                 } else {
                     Rendered::leaf(format!("{{{}}}", atoms.join(",")))
                 }
             }
-            Node::EffVar { index } => Rendered::leaf(format!("eff-var({})", index)),
+            Node::EffVar { index } => {
+                if self.flags.effects {
+                    Rendered::leaf(format!("\u{03b5}{}", index))
+                } else {
+                    Rendered::leaf(format!("eff-var({})", index))
+                }
+            }
         };
 
         if let Some(c) = comment {
@@ -1093,6 +1133,67 @@ impl<'f> Ctx<'f> {
             result
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2 type/effect verbose rendering helpers (--types / --effects).
+// ---------------------------------------------------------------------------
+
+/// Render a type-level AST node as a human-readable string.
+/// Used when `InspectFlags::types` is set.
+fn format_type_node_nice(node: &Node) -> String {
+    use tacit_canonical::emit::emit;
+    match node {
+        Node::Sym { name } => name.clone(),
+        Node::TyVar { index } => format!("\u{03b1}{}", index),
+        Node::FnTy { arg, ret, eff } => {
+            let arg_s = format_type_node_nice(arg);
+            let ret_s = format_type_node_nice(ret);
+            let eff_s = format_eff_node_nice(eff, true);
+            let needs_parens = matches!(arg.as_ref(), Node::FnTy { .. } | Node::Forall { .. });
+            if needs_parens {
+                format!("({}) -> {}{}", arg_s, ret_s, eff_s)
+            } else {
+                format!("{} -> {}{}", arg_s, ret_s, eff_s)
+            }
+        }
+        Node::Forall {
+            ty_count,
+            eff_count,
+            body,
+        } => format_forall_nice(*ty_count, *eff_count, body),
+        Node::EffSet { atoms } => {
+            if atoms.is_empty() {
+                "{}".to_string()
+            } else {
+                format!("{{{}}}", atoms.join(", "))
+            }
+        }
+        Node::EffVar { index } => format!("\u{03b5}{}", index),
+        other => String::from_utf8_lossy(&emit(other)).into_owned(),
+    }
+}
+
+/// Render an effect node as a `/ <eff>` suffix string.
+/// Returns an empty string for a pure (empty) effect set when `verbose` is true.
+fn format_eff_node_nice(node: &Node, verbose: bool) -> String {
+    use tacit_canonical::emit::emit;
+    if !verbose {
+        return String::from_utf8_lossy(&emit(node)).into_owned();
+    }
+    match node {
+        Node::EffSet { atoms } if atoms.is_empty() => String::new(),
+        Node::EffSet { atoms } => format!(" / {{{}}}", atoms.join(", ")),
+        Node::EffVar { index } => format!(" / \u{03b5}{}", index),
+        other => format!(" / {}", String::from_utf8_lossy(&emit(other))),
+    }
+}
+
+fn format_forall_nice(ty_count: u32, eff_count: u32, body: &Node) -> String {
+    let mut vars: Vec<String> = (0..ty_count).map(|i| format!("\u{03b1}{}", i)).collect();
+    vars.extend((0..eff_count).map(|i| format!("\u{03b5}{}", i)));
+    let body_s = format_type_node_nice(body);
+    format!("\u{2200}[{}]. {}", vars.join(", "), body_s)
 }
 
 // ---------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 # Phase 2 Implementation Plan
 
-**Status:** Draft 2026-04-26 · Stage 1 frozen 2026-04-27 ([ADR 0044](../decisions/0044-p2-stage-1-frozen.md)) · Stages 2–4 complete 2026-04-28 ([ADR 0045](../decisions/0045-p2-stage-4-frozen.md))
+**Status:** Draft 2026-04-26 · Stage 1 frozen 2026-04-27 ([ADR 0044](../decisions/0044-p2-stage-1-frozen.md)) · Stages 2–4 complete 2026-04-28 ([ADR 0045](../decisions/0045-p2-stage-4-frozen.md)) · Stage 5 complete 2026-04-28 ([ADR 0046](../decisions/0046-p2-stage-5-frozen.md)) · **Phase 2 frozen.**
 **Parent:** [tacit-plan.md](tacit-plan.md)
 **Predecessor:** [phase-1-plan.md](phase-1-plan.md) (frozen 2026-04-26 — [ADR 0033](../decisions/0033-phase-1-frozen.md))
 
@@ -267,6 +267,8 @@ fixture demonstrates `Hole` flowing through to a structured-JSON
 diagnostic without a hard fail.
 
 ### Stage 5: `tacit-cli` wiring + view annotations + architecture doc + freeze (~1–2 weeks)
+
+**Status: Complete 2026-04-28. Frozen by [ADR 0046](../decisions/0046-p2-stage-5-frozen.md).** `tacit check` works without LLVM; `tacit compile` runs typecheck ahead of codegen (exit 1 for type/effect errors, exit 2 for codegen/linker failures); `--types` and `--effects` flags wired in inspection view; architecture doc updated with Phase 2 crate graph, pipelines, and codegen-subset table; clippy clean.
 
 Threads the typechecker into the CLI and updates the load-bearing
 architecture doc. Depends on Stages 2–4.

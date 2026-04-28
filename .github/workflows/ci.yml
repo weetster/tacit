@@ -64,11 +64,13 @@ jobs:
       - name: Build tacit CLI
         run: cargo build --features tacit-cli/llvm19-1 --bin tacit
 
-      - name: Smoke-test tacit CLI (compile + view)
+      - name: Smoke-test tacit CLI (compile + check + view)
         run: |
           ./target/debug/tacit compile examples/smoke/hello.tac -o /tmp/tacit-hello
           output=$(/tmp/tacit-hello)
           test "$output" = "hello, world"
+          ./target/debug/tacit check examples/smoke/echo.tac
+          ./target/debug/tacit check examples/smoke/hello.tac --format json
           ./target/debug/tacit view examples/smoke/hello.tac --as authoring > /dev/null
           ./target/debug/tacit view examples/smoke/hello.tac --as inspection > /dev/null
 
