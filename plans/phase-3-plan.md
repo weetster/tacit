@@ -122,8 +122,9 @@ has an Accepted ADR.
 Open questions, numbered to extend the parent-plan / phase-1-plan /
 phase-2-plan `Q-PN-N` scheme:
 
-- **Q-P3-1 — Stdlib expansion surface for corpus coverage.** Which
-  primitive `@name` symbols (extending the
+- **Q-P3-1 — Stdlib expansion surface for corpus coverage.**
+  *Resolved by [ADR 0047](../decisions/0047-p3-stdlib-expansion-surface.md).*
+  Which primitive `@name` symbols (extending the
   [ADR 0028](../decisions/0028-phase-1-libc-call-surface.md) allowlist)
   and which `libc-effects.toml` entries (extending
   [ADR 0025](../decisions/0025-phase-1-libc-surface.md)) Phase 3 needs to
@@ -131,62 +132,75 @@ phase-2-plan `Q-PN-N` scheme:
   collectively require; the working hypothesis is integer parse / format,
   string slicing, dynamic buffer growth, and stdin slurp, but the ADR
   enumerates the actual list and pins effect signatures.
-- **Q-P3-2 — Tacit-Lite reference-solution idiom rules.** The Tacit-Lite
-  analogue of [ADR 0019](../decisions/0019-corpus-idiom-rules.md). Pins
+- **Q-P3-2 — Tacit-Lite reference-solution idiom rules.**
+  *Resolved by [ADR 0048](../decisions/0048-p3-tacit-idiom-rules.md).*
+  The Tacit-Lite analogue of
+  [ADR 0019](../decisions/0019-corpus-idiom-rules.md). Pins
   the canonical style for hand-authored Tacit references: use of `rec`,
   closure-vs-named-fn defaults, primitive-vs-loop conventions,
   generics-vs-monomorphic defaults, and the relationship between
   authoring-view source and sidecar metadata. Settles whether references
   ship as `reference.tac` + `.tacd` sidecar in each task directory or as
   a single combined artifact.
-- **Q-P3-3 — `examples/phase-3/` layout and discipline.** Confirms a
-  separate directory for the Phase 2 carry-over programs (sorting, data
-  structure, file I/O) and the relationship between that directory and
-  `corpus/tasks/<id>/reference.tac`. Closes the contamination question:
-  `examples/phase-3/` is hand-authored and may seed primer prose;
-  corpus references are hand-authored but are **not** primer material
-  for the open set (the entire open set is fair primer material per
-  ADR 0019, but using a specific task verbatim defeats the eval — pin
-  the boundary explicitly).
-- **Q-P3-4 — Primer scope and structure.** Target token count (within the
-  parent plan's 10–17K window), section list, length budget per section,
-  authoring-view fluency target (Sonnet must reach the >70% gate;
-  Haiku-class is a stretch). Settles the primer's filename and location
+- **Q-P3-3 — `examples/phase-3/` layout and discipline.**
+  *Resolved by [ADR 0049](../decisions/0049-p3-examples-layout-contamination.md).*
+  Confirms a separate directory for the Phase 2 carry-over programs
+  (sorting, data structure, file I/O) and the relationship between that
+  directory and `corpus/tasks/<id>/reference.tac`. Closes the
+  contamination question: `examples/phase-3/` is hand-authored and may
+  seed primer prose; corpus references are hand-authored but are **not**
+  primer material for the open set (the entire open set is fair primer
+  material per ADR 0019, but using a specific task verbatim defeats the
+  eval — pin the boundary explicitly).
+- **Q-P3-4 — Primer scope and structure.**
+  *Resolved by [ADR 0050](../decisions/0050-p3-primer-scope.md).*
+  Target token count (within the parent plan's 10–17K window), section
+  list, length budget per section, authoring-view fluency target (Sonnet
+  must reach the >70% gate; Haiku-class is a stretch). Settles the
+  primer's filename and location
   (likely `plans/primer/tacit-lite-primer.md` or a sibling tree).
-- **Q-P3-5 — Tacit-Lite token-count rule.** What counts as a "Tacit-Lite
-  token" for the Phase 3 30%-reduction gate. Authoring-view text under
-  tiktoken `o200k_base` per [ADR 0001](../decisions/0001-target-tokenizer.md)
-  is the obvious answer; the ADR commits the obvious answer or, if a
-  different rule is needed, justifies and freezes it. Aligns with the
-  ADR 0021 full / stdlib-dominated / non-stdlib-dominated split.
-- **Q-P3-6 — Eval-harness model invocation contract.** Which model
-  identifiers count as "Sonnet" / "Haiku" for the baseline gate (vendor +
-  exact version), sampling parameters (temperature, max tokens, retry
-  budget), context construction (primer + task statement only — no test
-  cases, no `reference.py`), and how the harness records run metadata
-  for reproducibility (model id, sampling params, seed if available,
-  primer hash, harness git sha).
-- **Q-P3-7 — Maintenance/edit/repair sub-track scope.** Closes the
-  "open" deferral in [tacit-plan.md § Phase 3](tacit-plan.md). Defines
-  task count (target ~10–15), task shape (slightly larger programs than
-  the corpus, edit / repair / refactor prompts), grading rubric (compile
+- **Q-P3-5 — Tacit-Lite token-count rule.**
+  *Resolved by [ADR 0051](../decisions/0051-p3-tacit-token-rule.md).*
+  What counts as a "Tacit-Lite token" for the Phase 3 30%-reduction
+  gate. Authoring-view text under tiktoken `o200k_base` per
+  [ADR 0001](../decisions/0001-target-tokenizer.md) is the obvious
+  answer; the ADR commits the obvious answer or, if a different rule
+  is needed, justifies and freezes it. Aligns with the ADR 0021 full /
+  stdlib-dominated / non-stdlib-dominated split.
+- **Q-P3-6 — Eval-harness model invocation contract.**
+  *Resolved by [ADR 0052](../decisions/0052-p3-eval-model-contract.md).*
+  Which model identifiers count as "Sonnet" / "Haiku" for the baseline
+  gate (vendor + exact version), sampling parameters (temperature,
+  max tokens, retry budget), context construction (primer + task
+  statement only — no test cases, no `reference.py`), and how the
+  harness records run metadata for reproducibility (model id, sampling
+  params, seed if available, primer hash, harness git sha).
+- **Q-P3-7 — Maintenance/edit/repair sub-track scope.**
+  *Resolved by [ADR 0053](../decisions/0053-p3-maintenance-subtrack.md).*
+  Closes the "open" deferral in
+  [tacit-plan.md § Phase 3](tacit-plan.md). Defines task count
+  (target ~10–15), task shape (slightly larger programs than the
+  corpus, edit / repair / refactor prompts), grading rubric (compile
   success, behavior preservation, token cost of the edit), and whether
   the sub-track is part of the Phase 3 go/no-go gate (parent plan says
   "reported alongside but not part of the go/no-go decision" — this ADR
   ratifies that).
-- **Q-P3-8 — Cross-family sub-track scope.** Closes the second "open"
-  deferral. Pins the model families covered (one Claude, one GPT, one
-  strong open-weight; specific model ids), primer-portability rules
-  (one shared primer vs. per-family variants), the metric set
-  (compile success, test pass, end-to-end token cost, repair success
-  after deliberate error injection, authoring-view round-trip stability),
-  and the materially-regression threshold that re-opens the primer
-  design vs. a Phase 3 fail.
-- **Q-P3-9 — Phase 3 metrics JSON schema.** A single JSON schema for the
-  per-run metrics file emitted by the harness: per-task pass/fail,
-  per-task token counts (primer / generation / Python baseline), aggregate
-  pass rate, aggregate token deltas, model and harness metadata. Reuses
-  the [ADR 0041](../decisions/0041-p2-structured-error-format.md)
+- **Q-P3-8 — Cross-family sub-track scope.**
+  *Resolved by [ADR 0054](../decisions/0054-p3-cross-family.md).*
+  Closes the second "open" deferral. Pins the model families covered
+  (one Claude, one GPT, one strong open-weight; specific model ids),
+  primer-portability rules (one shared primer vs. per-family variants),
+  the metric set (compile success, test pass, end-to-end token cost,
+  repair success after deliberate error injection, authoring-view
+  round-trip stability), and the materially-regression threshold that
+  re-opens the primer design vs. a Phase 3 fail.
+- **Q-P3-9 — Phase 3 metrics JSON schema.**
+  *Resolved by [ADR 0055](../decisions/0055-p3-metrics-schema.md).*
+  A single JSON schema for the per-run metrics file emitted by the
+  harness: per-task pass/fail, per-task token counts (primer / generation
+  / Python baseline), aggregate pass rate, aggregate token deltas,
+  model and harness metadata. Reuses the
+  [ADR 0041](../decisions/0041-p2-structured-error-format.md)
   diagnostic envelope for failed-compile cases so the Phase 2 typecheck
   output flows through unchanged.
 
@@ -195,6 +209,17 @@ stdlib amendments from Q-P3-1 ship with conformance test vectors landed
 under [`plans/test-vectors/`](test-vectors/) (or note in the ADR if no
 new canonical syntax is required). A **Stage 1 freeze ADR** closes the
 stage, mirroring [ADR 0044](../decisions/0044-p2-stage-1-frozen.md).
+
+**Stage 1 ADR landed (2026-04-28):** Q-P3-1 → [ADR 0047](../decisions/0047-p3-stdlib-expansion-surface.md);
+Q-P3-2 → [ADR 0048](../decisions/0048-p3-tacit-idiom-rules.md);
+Q-P3-3 → [ADR 0049](../decisions/0049-p3-examples-layout-contamination.md);
+Q-P3-4 → [ADR 0050](../decisions/0050-p3-primer-scope.md);
+Q-P3-5 → [ADR 0051](../decisions/0051-p3-tacit-token-rule.md);
+Q-P3-6 → [ADR 0052](../decisions/0052-p3-eval-model-contract.md);
+Q-P3-7 → [ADR 0053](../decisions/0053-p3-maintenance-subtrack.md);
+Q-P3-8 → [ADR 0054](../decisions/0054-p3-cross-family.md);
+Q-P3-9 → [ADR 0055](../decisions/0055-p3-metrics-schema.md). Stage 1
+frozen by [ADR 0056](../decisions/0056-p3-stage-1-frozen.md).
 
 ### Stage 2: Stdlib expansion implementation (~1 week)
 
