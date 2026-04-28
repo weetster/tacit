@@ -313,11 +313,7 @@ fn build_form(tag: &str, args: &[SItem]) -> Result<Node, ParseError> {
             check_arity(tag, args, 1)?;
             let text = bare_int(&args[0], "pat-int literal")?;
             Ok(Node::PatInt {
-                value: if text == "-0" {
-                    "0".to_string()
-                } else {
-                    text
-                },
+                value: if text == "-0" { "0".to_string() } else { text },
             })
         }
         "fn-ty" => {

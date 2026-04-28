@@ -46,17 +46,35 @@ pub fn type_from_node(
             Ty::Fn(Box::new(arg_ty), Box::new(ret_ty), fn_eff)
         }
 
-        Node::Forall { ty_count, eff_count, body } => {
+        Node::Forall {
+            ty_count,
+            eff_count,
+            body,
+        } => {
             // Instantiate: each ty-var → fresh type meta, each eff-var → fresh eff meta.
             let ty_metas: Vec<Ty> = (0..*ty_count).map(|_| subst.fresh()).collect();
             let eff_metas: Vec<FnEff> = (0..*eff_count).map(|_| subst.fresh_eff()).collect();
-            type_from_node(body, &ty_metas, &eff_metas, subst, &child_path(path, 2), diags)
+            type_from_node(
+                body,
+                &ty_metas,
+                &eff_metas,
+                subst,
+                &child_path(path, 2),
+                diags,
+            )
         }
 
         Node::Record { fields } => {
             let mut field_tys = BTreeMap::new();
             for (i, (name, val)) in fields.iter().enumerate() {
-                let ty = type_from_node(val, ty_vars, eff_vars, subst, &child_path(path, i * 2 + 1), diags);
+                let ty = type_from_node(
+                    val,
+                    ty_vars,
+                    eff_vars,
+                    subst,
+                    &child_path(path, i * 2 + 1),
+                    diags,
+                );
                 field_tys.insert(name.clone(), ty);
             }
             Ty::Record(field_tys)
@@ -128,14 +146,25 @@ pub fn parse_eff_atoms(atoms: &[String], path: &[usize], diags: &mut Vec<Diagnos
     let mut set = EffSet::empty();
     for atom in atoms {
         match atom.as_str() {
-            "Alloc" => { set.atoms.insert(EffAtom::Alloc); }
-            "Div" => { set.atoms.insert(EffAtom::Div); }
-            "IO" => { set.atoms.insert(EffAtom::IO); }
-            "Mut" => { set.atoms.insert(EffAtom::Mut); }
+            "Alloc" => {
+                set.atoms.insert(EffAtom::Alloc);
+            }
+            "Div" => {
+                set.atoms.insert(EffAtom::Div);
+            }
+            "IO" => {
+                set.atoms.insert(EffAtom::IO);
+            }
+            "Mut" => {
+                set.atoms.insert(EffAtom::Mut);
+            }
             other => {
                 diags.push(Diagnostic::unresolved_type(
                     path,
-                    &format!("unknown effect atom '{}'; valid atoms are Alloc, Div, IO, Mut", other),
+                    &format!(
+                        "unknown effect atom '{}'; valid atoms are Alloc, Div, IO, Mut",
+                        other
+                    ),
                 ));
             }
         }
@@ -201,7 +230,10 @@ mod tests {
             eff: Box::new(Node::EffSet { atoms: vec![] }),
         };
         let (ty, diags) = run_type(&node);
-        assert_eq!(ty, Ty::Fn(Box::new(Ty::Int), Box::new(Ty::Bool), FnEff::pure_()));
+        assert_eq!(
+            ty,
+            Ty::Fn(Box::new(Ty::Int), Box::new(Ty::Bool), FnEff::pure_())
+        );
         assert!(diags.is_empty());
     }
 
@@ -211,7 +243,9 @@ mod tests {
         let node = Node::FnTy {
             arg: Box::new(sym("Int")),
             ret: Box::new(sym("Int")),
-            eff: Box::new(Node::EffSet { atoms: vec!["IO".to_string()] }),
+            eff: Box::new(Node::EffSet {
+                atoms: vec!["IO".to_string()],
+            }),
         };
         let (ty, diags) = run_type(&node);
         assert_eq!(

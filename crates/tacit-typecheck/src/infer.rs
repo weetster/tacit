@@ -25,8 +25,8 @@ use tacit_canonical::ast::Node;
 
 use crate::error::Diagnostic;
 use crate::primitives::{is_arith, is_cmp, prim_type};
-use crate::type_from_node::{child_path, type_from_node};
 use crate::ty::{join_fn_eff, unify, EffAtom, EffSet, FnEff, Subst, Ty};
+use crate::type_from_node::{child_path, type_from_node};
 
 /// Infer the type and eval-effect of a node given a variable context.
 ///
@@ -78,9 +78,7 @@ pub fn infer(
             (lam_ty, FnEff::pure_())
         }
 
-        Node::App { fn_, arg } => {
-            infer_app(ctx, fn_, arg, subst, path, diags)
-        }
+        Node::App { fn_, arg } => infer_app(ctx, fn_, arg, subst, path, diags),
 
         Node::Let { rhs, body } => {
             let (rhs_ty, rhs_eff) = infer(ctx, rhs, subst, &child_path(path, 0), diags);
@@ -89,9 +87,7 @@ pub fn infer(
             (body_ty, join_fn_eff(&rhs_eff, &body_eff, subst))
         }
 
-        Node::Rec { bindings, body } => {
-            infer_rec(ctx, bindings, body, subst, path, diags)
-        }
+        Node::Rec { bindings, body } => infer_rec(ctx, bindings, body, subst, path, diags),
 
         Node::If { cond, then, else_ } => {
             let (cond_ty, cond_eff) = infer(ctx, cond, subst, &child_path(path, 0), diags);
@@ -99,7 +95,10 @@ pub fn infer(
             let (else_ty, else_eff) = infer(ctx, else_, subst, &child_path(path, 2), diags);
 
             let cond_resolved = subst.apply(&cond_ty);
-            if !matches!(cond_resolved, Ty::Int | Ty::Bool | Ty::Unknown | Ty::Meta(_)) {
+            if !matches!(
+                cond_resolved,
+                Ty::Int | Ty::Bool | Ty::Unknown | Ty::Meta(_)
+            ) {
                 diags.push(Diagnostic::type_mismatch(
                     &child_path(path, 0),
                     &Ty::Bool,
@@ -114,7 +113,8 @@ pub fn infer(
                     diags.push(Diagnostic::type_mismatch(&child_path(path, 2), &t, &e));
                 }
             }
-            let total_eff = join_fn_eff(&join_fn_eff(&cond_eff, &then_eff, subst), &else_eff, subst);
+            let total_eff =
+                join_fn_eff(&join_fn_eff(&cond_eff, &then_eff, subst), &else_eff, subst);
             (subst.apply(&then_ty), total_eff)
         }
 
@@ -124,12 +124,20 @@ pub fn infer(
             let mut arms_eff = FnEff::pure_();
             for (i, arm) in arms.iter().enumerate() {
                 let arm_eff = infer_arm(
-                    ctx, arm, &scrut_ty, &result_meta, subst,
-                    &child_path(path, i + 1), diags,
+                    ctx,
+                    arm,
+                    &scrut_ty,
+                    &result_meta,
+                    subst,
+                    &child_path(path, i + 1),
+                    diags,
                 );
                 arms_eff = join_fn_eff(&arms_eff, &arm_eff, subst);
             }
-            (subst.apply(&result_meta), join_fn_eff(&scrut_eff, &arms_eff, subst))
+            (
+                subst.apply(&result_meta),
+                join_fn_eff(&scrut_eff, &arms_eff, subst),
+            )
         }
 
         Node::Arm { pattern, body } => {
@@ -157,15 +165,13 @@ pub fn infer(
             let (rec_ty, rec_eff) = infer(ctx, record, subst, &child_path(path, 0), diags);
             let resolved = subst.apply(&rec_ty);
             let field_ty = match resolved {
-                Ty::Record(ref fields) => {
-                    fields.get(field).cloned().unwrap_or_else(|| {
-                        diags.push(Diagnostic::unresolved_type(
-                            path,
-                            &format!("field '{}' not found in record type", field),
-                        ));
-                        Ty::Unknown
-                    })
-                }
+                Ty::Record(ref fields) => fields.get(field).cloned().unwrap_or_else(|| {
+                    diags.push(Diagnostic::unresolved_type(
+                        path,
+                        &format!("field '{}' not found in record type", field),
+                    ));
+                    Ty::Unknown
+                }),
                 Ty::Unknown => Ty::Unknown,
                 other => {
                     diags.push(Diagnostic::type_mismatch(
@@ -179,30 +185,29 @@ pub fn infer(
             (field_ty, rec_eff)
         }
 
-        Node::Ctor { name, args } => {
-            match name.as_str() {
-                "True" | "False" if args.is_empty() => (Ty::Bool, FnEff::pure_()),
-                _ => {
-                    let mut eff = FnEff::pure_();
-                    for (i, arg) in args.iter().enumerate() {
-                        let (_, aeff) = infer(ctx, arg, subst, &child_path(path, i + 1), diags);
-                        eff = join_fn_eff(&eff, &aeff, subst);
-                    }
-                    diags.push(Diagnostic::unresolved_type(
-                        path,
-                        &format!("constructor '{}'", name),
-                    ));
-                    (Ty::Unknown, eff)
+        Node::Ctor { name, args } => match name.as_str() {
+            "True" | "False" if args.is_empty() => (Ty::Bool, FnEff::pure_()),
+            _ => {
+                let mut eff = FnEff::pure_();
+                for (i, arg) in args.iter().enumerate() {
+                    let (_, aeff) = infer(ctx, arg, subst, &child_path(path, i + 1), diags);
+                    eff = join_fn_eff(&eff, &aeff, subst);
                 }
+                diags.push(Diagnostic::unresolved_type(
+                    path,
+                    &format!("constructor '{}'", name),
+                ));
+                (Ty::Unknown, eff)
             }
-        }
+        },
 
         Node::Ann { expr, type_ } => {
             let declared = type_from_node(type_, &[], &[], subst, &child_path(path, 1), diags);
             let (inferred, eval_eff) = infer(ctx, expr, subst, &child_path(path, 0), diags);
 
             // Type check: declared vs inferred.
-            if !declared.is_unknown() && !inferred.is_unknown()
+            if !declared.is_unknown()
+                && !inferred.is_unknown()
                 && !unify(&declared, &inferred, subst)
             {
                 let d = subst.apply(&declared);
@@ -268,7 +273,11 @@ fn infer_app(
     diags: &mut Vec<Diagnostic>,
 ) -> (Ty, FnEff) {
     // Detect binary operator pattern: (app (app (sym op) e1) e2)
-    if let Node::App { fn_: inner_fn, arg: left_arg } = fn_ {
+    if let Node::App {
+        fn_: inner_fn,
+        arg: left_arg,
+    } = fn_
+    {
         if let Node::Sym { name } = inner_fn.as_ref() {
             if is_arith(name) || is_cmp(name) {
                 return infer_binary_op(ctx, name, left_arg, arg, subst, path, diags);
@@ -343,7 +352,11 @@ fn infer_binary_op(
     }
 
     // Arithmetic and comparison operators are pure; their operand eval-effects propagate.
-    let result_ty = if is_cmp(op) { Ty::Bool } else { subst.apply(&t1) };
+    let result_ty = if is_cmp(op) {
+        Ty::Bool
+    } else {
+        subst.apply(&t1)
+    };
     (result_ty, join_fn_eff(&eff1, &eff2, subst))
 }
 
@@ -399,7 +412,11 @@ fn augment_with_div(ty: &Ty) -> Ty {
         }
         Ty::Fn(a, b, FnEff::Meta(_)) => {
             // Effect meta → replace with Div (meta would have been unresolved).
-            Ty::Fn(a.clone(), b.clone(), FnEff::Concrete(EffSet::of([EffAtom::Div])))
+            Ty::Fn(
+                a.clone(),
+                b.clone(),
+                FnEff::Concrete(EffSet::of([EffAtom::Div])),
+            )
         }
         other => other.clone(),
     }
@@ -452,17 +469,15 @@ fn check_pattern(
                 diags.push(Diagnostic::type_mismatch(path, &Ty::Int, &resolved));
             }
         }
-        Node::PatCtor { name, sub_patterns } => {
-            match name.as_str() {
-                "True" | "False" if sub_patterns.is_empty() => {
-                    let resolved = subst.apply(scrut_ty);
-                    if !matches!(resolved, Ty::Bool | Ty::Unknown) {
-                        diags.push(Diagnostic::type_mismatch(path, &Ty::Bool, &resolved));
-                    }
+        Node::PatCtor { name, sub_patterns } => match name.as_str() {
+            "True" | "False" if sub_patterns.is_empty() => {
+                let resolved = subst.apply(scrut_ty);
+                if !matches!(resolved, Ty::Bool | Ty::Unknown) {
+                    diags.push(Diagnostic::type_mismatch(path, &Ty::Bool, &resolved));
                 }
-                _ => {}
             }
-        }
+            _ => {}
+        },
         _ => {}
     }
 }
@@ -527,18 +542,49 @@ fn extend_many(ctx: &[Ty], tys: &[Ty]) -> Vec<Ty> {
 mod tests {
     use super::*;
 
-    fn int_node(v: i64) -> Node { Node::Int { value: v.to_string() } }
-    fn str_node(s: &str) -> Node { Node::Str { value: s.into() } }
-    fn sym(name: &str) -> Node { Node::Sym { name: name.into() } }
-    fn app(f: Node, a: Node) -> Node { Node::App { fn_: Box::new(f), arg: Box::new(a) } }
-    fn var(i: u64) -> Node { Node::Var { index: i } }
-    fn lam(body: Node) -> Node { Node::Lam { body: Box::new(body) } }
-    fn let_(rhs: Node, body: Node) -> Node { Node::Let { rhs: Box::new(rhs), body: Box::new(body) } }
+    fn int_node(v: i64) -> Node {
+        Node::Int {
+            value: v.to_string(),
+        }
+    }
+    fn str_node(s: &str) -> Node {
+        Node::Str { value: s.into() }
+    }
+    fn sym(name: &str) -> Node {
+        Node::Sym { name: name.into() }
+    }
+    fn app(f: Node, a: Node) -> Node {
+        Node::App {
+            fn_: Box::new(f),
+            arg: Box::new(a),
+        }
+    }
+    fn var(i: u64) -> Node {
+        Node::Var { index: i }
+    }
+    fn lam(body: Node) -> Node {
+        Node::Lam {
+            body: Box::new(body),
+        }
+    }
+    fn let_(rhs: Node, body: Node) -> Node {
+        Node::Let {
+            rhs: Box::new(rhs),
+            body: Box::new(body),
+        }
+    }
     fn if_(c: Node, t: Node, e: Node) -> Node {
-        Node::If { cond: Box::new(c), then: Box::new(t), else_: Box::new(e) }
+        Node::If {
+            cond: Box::new(c),
+            then: Box::new(t),
+            else_: Box::new(e),
+        }
     }
     fn rec1(binding: Node, body: Node) -> Node {
-        Node::Rec { bindings: vec![binding], body: Box::new(body) }
+        Node::Rec {
+            bindings: vec![binding],
+            body: Box::new(body),
+        }
     }
 
     fn run(node: &Node) -> (Ty, EffSet, Vec<Diagnostic>) {
@@ -566,7 +612,10 @@ mod tests {
             int_node(5),
             let_(
                 int_node(8),
-                app(app(sym("sub"), app(app(sym("mul"), var(1)), var(0))), int_node(7)),
+                app(
+                    app(sym("sub"), app(app(sym("mul"), var(1)), var(0))),
+                    int_node(7),
+                ),
             ),
         );
         let (ty, eff, diags) = run(&ast);
@@ -579,7 +628,10 @@ mod tests {
     fn hello_has_io_effect() {
         // let _ = @write 1 "hello" 13 in 0
         let ast = let_(
-            app(app(app(sym("write"), int_node(1)), str_node("hello")), int_node(13)),
+            app(
+                app(app(sym("write"), int_node(1)), str_node("hello")),
+                int_node(13),
+            ),
             int_node(0),
         );
         let (ty, eff, diags) = run(&ast);
@@ -646,7 +698,11 @@ mod tests {
         };
         let (ty, eff, diags) = run(&ast);
         assert_eq!(ty, Ty::Int);
-        assert!(eff.atoms.contains(&EffAtom::Div), "expected Div in {:?}", eff);
+        assert!(
+            eff.atoms.contains(&EffAtom::Div),
+            "expected Div in {:?}",
+            eff
+        );
         assert!(diags.is_empty());
     }
 
@@ -726,7 +782,10 @@ mod tests {
 
         // lam f. lam x. f x   — var 1 = f, var 0 = x inside inner lam
         let apply_body = lam(lam(app(var(1), var(0))));
-        let apply = Node::Ann { expr: Box::new(apply_body), type_: Box::new(sig) };
+        let apply = Node::Ann {
+            expr: Box::new(apply_body),
+            type_: Box::new(sig),
+        };
 
         // write_fn = lam n. let _ = @write 1 "x" 1 in n
         // Inside lam: var 0 = n
@@ -743,12 +802,21 @@ mod tests {
         assert!(
             diags.iter().all(|d| d.severity != "error"),
             "unexpected errors: {:?}",
-            diags.iter().filter(|d| d.severity == "error").map(|d| &d.message).collect::<Vec<_>>()
+            diags
+                .iter()
+                .filter(|d| d.severity == "error")
+                .map(|d| &d.message)
+                .collect::<Vec<_>>()
         );
         assert!(
             matches!(ty, Ty::Int | Ty::Unknown | Ty::Meta(_)),
-            "expected Int-compatible type, got {:?}", ty
+            "expected Int-compatible type, got {:?}",
+            ty
         );
-        assert!(eff.atoms.contains(&EffAtom::IO), "expected IO in effect, got {:?}", eff);
+        assert!(
+            eff.atoms.contains(&EffAtom::IO),
+            "expected IO in effect, got {:?}",
+            eff
+        );
     }
 }

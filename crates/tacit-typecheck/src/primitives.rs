@@ -12,12 +12,14 @@ use crate::ty::{EffAtom, EffSet, FnEff, Ty};
 /// are pure closures; IO is produced only when all args are supplied.
 pub fn prim_type(name: &str) -> Option<Ty> {
     Some(match name {
-        // LIBC: write(fd: Int, buf: Str, len: Int) -> Int / IO
-        "write" => fn3_io(Ty::Int, Ty::Str, Ty::Int, Ty::Int),
-        // LIBC: read(fd: Int, buf: Str, len: Int) -> Int / IO
-        "read" => fn3_io(Ty::Int, Ty::Str, Ty::Int, Ty::Int),
+        // LIBC: write(fd: Int, buf: Buf|Str, len: Int) -> Int / IO
+        "write" => fn3_io(Ty::Int, Ty::Unknown, Ty::Int, Ty::Int),
+        // LIBC: read(fd: Int, buf: Buf, len: Int) -> Int / {IO, Mut}
+        "read" => fn3_mut_io(Ty::Int, Ty::Unknown, Ty::Int, Ty::Int),
         // LIBC: exit(code: Int) -> Int / IO
         "exit" => fn1_io(Ty::Int, Ty::Int),
+        // ALLOC: buf-alloc(size: Int) -> Buf / {Alloc} (ADR 0038)
+        "buf-alloc" => fn1_alloc(Ty::Int, Ty::Buf),
         // ARITH: Int → Int → Int (pure)
         "add" | "sub" | "mul" | "div" | "mod" => fn2_pure(Ty::Int, Ty::Int, Ty::Int),
         // CMP: Int → Int → Bool (pure, ADR 0042)
@@ -41,15 +43,33 @@ pub fn is_io_prim(name: &str) -> bool {
     matches!(name, "write" | "read" | "exit")
 }
 
+/// True if `name` is an Alloc-producing primitive.
+pub fn is_alloc_prim(name: &str) -> bool {
+    matches!(name, "buf-alloc")
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 fn io_eff() -> FnEff {
     FnEff::from_set(EffSet::of([EffAtom::IO]))
 }
 
+fn alloc_eff() -> FnEff {
+    FnEff::from_set(EffSet::of([EffAtom::Alloc]))
+}
+
+fn io_mut_eff() -> FnEff {
+    FnEff::from_set(EffSet::of([EffAtom::IO, EffAtom::Mut]))
+}
+
 /// Unary function with IO on the single application.
 fn fn1_io(a: Ty, r: Ty) -> Ty {
     Ty::Fn(Box::new(a), Box::new(r), io_eff())
+}
+
+/// Unary function with Alloc on the single application.
+fn fn1_alloc(a: Ty, r: Ty) -> Ty {
+    Ty::Fn(Box::new(a), Box::new(r), alloc_eff())
 }
 
 /// Binary function, all pure; IO at the innermost application.
@@ -58,6 +78,19 @@ fn fn2_io(a: Ty, b: Ty, r: Ty) -> Ty {
     Ty::Fn(
         Box::new(a),
         Box::new(Ty::Fn(Box::new(b), Box::new(r), io_eff())),
+        FnEff::pure_(),
+    )
+}
+
+/// Ternary function, {IO, Mut} at the innermost (fully-applied) step.
+fn fn3_mut_io(a: Ty, b: Ty, c: Ty, r: Ty) -> Ty {
+    Ty::Fn(
+        Box::new(a),
+        Box::new(Ty::Fn(
+            Box::new(b),
+            Box::new(Ty::Fn(Box::new(c), Box::new(r), io_mut_eff())),
+            FnEff::pure_(),
+        )),
         FnEff::pure_(),
     )
 }
@@ -99,14 +132,14 @@ mod tests {
     #[test]
     fn write_type_has_io_at_innermost() {
         let t = prim_type("write").unwrap();
-        // write :: Int → (Str → (Int → Int / IO) / {}) / {}
+        // write :: Int → (Unknown → (Int → Int / IO) / {}) / {}
         match &t {
             Ty::Fn(a, mid, outer_eff) => {
                 assert_eq!(a.as_ref(), &Ty::Int);
                 assert_eq!(outer_eff, &FnEff::pure_());
                 match mid.as_ref() {
                     Ty::Fn(b, inner, mid_eff) => {
-                        assert_eq!(b.as_ref(), &Ty::Str);
+                        assert_eq!(b.as_ref(), &Ty::Unknown);
                         assert_eq!(mid_eff, &FnEff::pure_());
                         match inner.as_ref() {
                             Ty::Fn(c, r, inner_eff) => {

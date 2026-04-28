@@ -8,6 +8,13 @@ use std::fmt;
 use tacit_canonical::ast::Node;
 
 use crate::authoring::lex::{lex, LexError, Token};
+
+/// A hole diagnostic emitted during recoverable parse errors.
+#[derive(Debug, Clone)]
+pub struct HoleDiag {
+    pub diag_id: String,
+    pub message: String,
+}
 use crate::sidecar::SidecarNode;
 
 #[derive(Debug, Clone)]
@@ -44,8 +51,13 @@ pub fn parse_authoring(input: &[u8]) -> Result<(Node, SidecarNode), ParseError> 
         tokens,
         pos: 0,
         stack: Vec::new(),
+        holes: Vec::new(),
     };
-    let (node, sidecar) = p.parse_expr()?;
+    let (node, sidecar) = if matches!(p.peek(), Some(Token::Module)) {
+        p.parse_module()?
+    } else {
+        p.parse_expr()?
+    };
     if p.pos != p.tokens.len() {
         return err(format!("trailing tokens after position {}", p.pos));
     }
@@ -57,6 +69,8 @@ struct Parser {
     pos: usize,
     /// Binding stack: names in scope, innermost last.
     stack: Vec<String>,
+    /// Holes emitted during recovery; callers may inspect these.
+    pub holes: Vec<HoleDiag>,
 }
 
 impl Parser {
@@ -125,6 +139,46 @@ impl Parser {
         }
     }
 
+    /// Skip forward to (but not consuming) the next `;`, `}`, or EOF.
+    /// Used for error recovery per ADR 0040.
+    fn advance_to_sync(&mut self) {
+        let mut depth = 0i32;
+        loop {
+            match self.peek() {
+                Some(Token::LBrace) | Some(Token::LParen) => {
+                    depth += 1;
+                    self.advance();
+                }
+                Some(Token::RBrace) | Some(Token::RParen) if depth > 0 => {
+                    depth -= 1;
+                    self.advance();
+                }
+                Some(Token::RBrace) | Some(Token::Semicolon) if depth == 0 => return,
+                None => return,
+                _ => {
+                    self.advance();
+                }
+            }
+        }
+    }
+
+    /// Emit a `Hole` node at the current position and advance to the next sync point.
+    /// Used in place of hard parse errors where recovery is possible (ADR 0040).
+    fn recover_expr(&mut self, diag_id: &str, msg: &str) -> (Node, SidecarNode) {
+        self.holes.push(HoleDiag {
+            diag_id: diag_id.to_string(),
+            message: msg.to_string(),
+        });
+        self.advance_to_sync();
+        let hole = Node::Hole {
+            diag_id: diag_id.to_string(),
+            payload: Box::new(Node::Str {
+                value: msg.to_string(),
+            }),
+        };
+        (hole, SidecarNode::default())
+    }
+
     fn consume_ident(&mut self, what: &str) -> Result<String, ParseError> {
         match self.peek().cloned() {
             Some(Token::Ident(name)) => {
@@ -166,11 +220,6 @@ impl Parser {
         )
     }
 
-    /// True if next token can start an atomic pattern.
-    fn can_start_pattern_atom(&self) -> bool {
-        matches!(self.peek(), Some(Token::Ident(_) | Token::Underscore))
-    }
-
     // -------------------------------------------------------------------------
     // Expression parsing
     // -------------------------------------------------------------------------
@@ -182,8 +231,130 @@ impl Parser {
             Some(Token::Rec) => self.parse_rec(),
             Some(Token::If) => self.parse_if(),
             Some(Token::Match) => self.parse_match(),
+            // `module` is only valid at the top level (dispatched from parse_authoring).
+            // Appearing in expression position is a parse error; recover with a Hole.
+            Some(Token::Module) => {
+                let msg = "unexpected 'module' keyword in expression position";
+                Ok(self.recover_expr("module-binding-error", msg))
+            }
             _ => self.parse_app_expr(),
         }
+    }
+
+    fn parse_module(&mut self) -> Result<(Node, SidecarNode), ParseError> {
+        self.consume(&Token::Module, "'module'")?;
+        self.consume(&Token::LBrace, "'{'")?;
+
+        // Empty module.
+        if matches!(self.peek(), Some(Token::RBrace)) {
+            self.advance();
+            let sc = SidecarNode {
+                binders: Some(vec![]),
+                children: Some(vec![]),
+                ..Default::default()
+            };
+            return Ok((Node::Module { bindings: vec![] }, sc));
+        }
+
+        // First pass: collect names, skip bodies (same two-pass pattern as parse_rec).
+        let save_pos = self.pos;
+        let mut names: Vec<String> = Vec::new();
+        loop {
+            match self.consume_ident("binding name") {
+                Ok(name) => names.push(name),
+                Err(_) => {
+                    // Malformed binding name: skip to next `;`/`}` and stop collecting.
+                    self.advance_to_sync();
+                    break;
+                }
+            }
+            if matches!(self.peek(), Some(Token::Colon)) {
+                self.advance();
+                self.skip_to_eq()?;
+            }
+            if !matches!(self.peek(), Some(Token::Eq)) {
+                return err("expected '=' in module binding");
+            }
+            self.advance();
+            self.skip_to_delimiter()?;
+            if matches!(self.peek(), Some(Token::Semicolon)) {
+                self.advance();
+                if matches!(self.peek(), Some(Token::RBrace)) {
+                    break; // trailing semicolon
+                }
+            } else {
+                break;
+            }
+        }
+        self.consume(&Token::RBrace, "'}' after last module binding")?;
+
+        // Restore and push all names simultaneously (same convention as parse_rec).
+        self.pos = save_pos;
+        for name in names.iter().rev() {
+            self.stack.push(name.clone());
+        }
+
+        // Second pass: parse binding expressions with all names in scope.
+        let mut binding_nodes: Vec<Node> = Vec::new();
+        let mut binding_scs: Vec<Option<SidecarNode>> = Vec::new();
+        let n = names.len();
+
+        for i in 0..n {
+            let _name = self.consume_ident("binding name")?;
+            let type_ann: Option<(Node, SidecarNode)> = if matches!(self.peek(), Some(Token::Colon))
+            {
+                self.advance();
+                Some(self.parse_expr()?)
+            } else {
+                None
+            };
+            self.consume(&Token::Eq, "'='")?;
+            let (expr, expr_sc) = self.parse_expr()?;
+
+            let (final_node, binding_sc) = if let Some((t_node, t_sc)) = type_ann {
+                let ann_sc = SidecarNode {
+                    children: Some(vec![Some(expr_sc), Some(t_sc)]),
+                    ..Default::default()
+                };
+                (
+                    Node::Ann {
+                        expr: Box::new(expr),
+                        type_: Box::new(t_node),
+                    },
+                    ann_sc,
+                )
+            } else {
+                (expr, expr_sc)
+            };
+            binding_nodes.push(final_node);
+            binding_scs.push(Some(binding_sc));
+
+            if i + 1 < n {
+                self.consume(&Token::Semicolon, "';'")?;
+            }
+        }
+
+        // Allow optional trailing semicolon.
+        if matches!(self.peek(), Some(Token::Semicolon)) {
+            self.advance();
+        }
+        self.consume(&Token::RBrace, "'}'")?;
+
+        for _ in 0..n {
+            self.stack.pop();
+        }
+
+        let sc = SidecarNode {
+            binders: Some(names),
+            children: Some(binding_scs),
+            ..Default::default()
+        };
+        Ok((
+            Node::Module {
+                bindings: binding_nodes,
+            },
+            sc,
+        ))
     }
 
     fn parse_lambda(&mut self) -> Result<(Node, SidecarNode), ParseError> {
@@ -600,8 +771,17 @@ impl Parser {
                 let (node, sc) = self.parse_record()?;
                 Ok((node, sc, false))
             }
-            Some(t) => err(format!("expected expression, got {:?}", t)),
-            None => err("expected expression, got end of input"),
+            Some(t) => {
+                let msg = format!("expected expression, got {:?}", t);
+                self.advance();
+                let (n, s) = self.recover_expr("unexpected-token", &msg);
+                Ok((n, s, false))
+            }
+            None => {
+                let (n, s) =
+                    self.recover_expr("expected-expr", "expected expression, got end of input");
+                Ok((n, s, false))
+            }
         }
     }
 
@@ -683,12 +863,26 @@ impl Parser {
     // Pattern parsing
     // -------------------------------------------------------------------------
 
+    /// True if next token can start an atomic pattern (including integer literals).
+    fn can_start_pattern_atom(&self) -> bool {
+        matches!(
+            self.peek(),
+            Some(Token::Ident(_) | Token::Underscore | Token::Int(_))
+        )
+    }
+
     /// Parse a full pattern. Returns (node, sidecar, pat_var_names_in_textual_order).
     fn parse_pattern(&mut self) -> Result<(Node, SidecarNode, Vec<String>), ParseError> {
         match self.peek().cloned() {
             Some(Token::Underscore) => {
                 self.advance();
                 Ok((Node::PatWild, SidecarNode::default(), vec![]))
+            }
+            Some(Token::Int(s)) => {
+                // Integer literal in pattern position → pat-int (ADR 0037).
+                self.advance();
+                let value = if s == "-0" { "0".to_string() } else { s };
+                Ok((Node::PatInt { value }, SidecarNode::default(), vec![]))
             }
             Some(Token::Ident(name)) if name.chars().next().is_some_and(|c| c.is_uppercase()) => {
                 self.advance();
@@ -729,8 +923,17 @@ impl Parser {
                 };
                 Ok((Node::PatVar, sc, vec![name]))
             }
-            Some(t) => err(format!("expected pattern, got {:?}", t)),
-            None => err("expected pattern, got end of input"),
+            Some(t) => {
+                // Unknown token in pattern position — recover with a Hole (ADR 0040).
+                let msg = format!("expected pattern, got {:?}", t);
+                let (hole, sc) = self.recover_expr("expected-pattern", &msg);
+                Ok((hole, sc, vec![]))
+            }
+            None => {
+                let (hole, sc) =
+                    self.recover_expr("expected-pattern", "expected pattern, got end of input");
+                Ok((hole, sc, vec![]))
+            }
         }
     }
 
@@ -741,8 +944,13 @@ impl Parser {
                 self.advance();
                 Ok((Node::PatWild, SidecarNode::default(), vec![]))
             }
+            Some(Token::Int(s)) => {
+                // Integer literal in atomic pattern position → pat-int (ADR 0037).
+                self.advance();
+                let value = if s == "-0" { "0".to_string() } else { s };
+                Ok((Node::PatInt { value }, SidecarNode::default(), vec![]))
+            }
             Some(Token::Ident(name)) if name.chars().next().is_some_and(|c| c.is_uppercase()) => {
-                // Nullary ctor in pattern atom position.
                 self.advance();
                 let sc = SidecarNode {
                     children: Some(vec![None]),
@@ -765,8 +973,19 @@ impl Parser {
                 };
                 Ok((Node::PatVar, sc, vec![name]))
             }
-            Some(t) => err(format!("expected pattern atom, got {:?}", t)),
-            None => err("expected pattern atom, got end of input"),
+            Some(t) => {
+                let msg = format!("expected pattern atom, got {:?}", t);
+                self.advance();
+                let (n, s) = self.recover_expr("unexpected-token", &msg);
+                Ok((n, s, vec![]))
+            }
+            None => {
+                let (n, s) = self.recover_expr(
+                    "expected-pattern-atom",
+                    "expected pattern atom, got end of input",
+                );
+                Ok((n, s, vec![]))
+            }
         }
     }
 }

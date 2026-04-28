@@ -16,6 +16,8 @@ pub enum PrimKind {
     Read,
     /// libc `exit(status: i32) -> !`
     Exit,
+    /// Stack-allocate a byte buffer of N bytes; returns pointer (ADR 0038).
+    BufAlloc,
     /// Binary `i64 → i64 → i64` arithmetic, lowering as a single LLVM op.
     Arith(ArithOp),
     /// Binary `i64 → i64 → i64` comparison: emits `icmp` + `zext`.
@@ -47,6 +49,7 @@ impl PrimKind {
             "write" => PrimKind::Write,
             "read" => PrimKind::Read,
             "exit" => PrimKind::Exit,
+            "buf-alloc" => PrimKind::BufAlloc,
             "add" => PrimKind::Arith(ArithOp::Add),
             "sub" => PrimKind::Arith(ArithOp::Sub),
             "mul" => PrimKind::Arith(ArithOp::Mul),
@@ -68,6 +71,7 @@ impl PrimKind {
             PrimKind::Write => 3,
             PrimKind::Read => 3,
             PrimKind::Exit => 1,
+            PrimKind::BufAlloc => 1,
             PrimKind::Arith(_) | PrimKind::Cmp(_) => 2,
         }
     }

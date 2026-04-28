@@ -31,21 +31,29 @@ pub struct EffSet {
 }
 
 impl EffSet {
-    pub fn empty() -> Self { Self::default() }
+    pub fn empty() -> Self {
+        Self::default()
+    }
 
     pub fn of(atoms: impl IntoIterator<Item = EffAtom>) -> Self {
-        Self { atoms: atoms.into_iter().collect() }
+        Self {
+            atoms: atoms.into_iter().collect(),
+        }
     }
 
     pub fn join(&self, other: &Self) -> Self {
-        Self { atoms: self.atoms.union(&other.atoms).cloned().collect() }
+        Self {
+            atoms: self.atoms.union(&other.atoms).cloned().collect(),
+        }
     }
 
     pub fn is_subset_of(&self, other: &Self) -> bool {
         self.atoms.is_subset(&other.atoms)
     }
 
-    pub fn is_pure(&self) -> bool { self.atoms.is_empty() }
+    pub fn is_pure(&self) -> bool {
+        self.atoms.is_empty()
+    }
 }
 
 impl std::fmt::Display for EffSet {
@@ -73,8 +81,12 @@ pub enum FnEff {
 }
 
 impl FnEff {
-    pub fn pure_() -> Self { Self::Concrete(EffSet::empty()) }
-    pub fn from_set(set: EffSet) -> Self { Self::Concrete(set) }
+    pub fn pure_() -> Self {
+        Self::Concrete(EffSet::empty())
+    }
+    pub fn from_set(set: EffSet) -> Self {
+        Self::Concrete(set)
+    }
 }
 
 impl std::fmt::Display for FnEff {
@@ -114,6 +126,8 @@ pub enum Ty {
     Int,
     Bool,
     Str,
+    /// Writable buffer handle (ADR 0038).
+    Buf,
     /// Function type `arg → ret / eff`.
     Fn(Box<Ty>, Box<Ty>, FnEff),
     Record(BTreeMap<String, Ty>),
@@ -125,11 +139,13 @@ pub enum Ty {
 }
 
 impl Ty {
-    pub fn is_unknown(&self) -> bool { matches!(self, Ty::Unknown) }
+    pub fn is_unknown(&self) -> bool {
+        matches!(self, Ty::Unknown)
+    }
 
     pub fn is_ground(&self, subst: &Subst) -> bool {
         match subst.apply(self) {
-            Ty::Int | Ty::Bool | Ty::Str | Ty::Unknown => true,
+            Ty::Int | Ty::Bool | Ty::Str | Ty::Buf | Ty::Unknown => true,
             Ty::Fn(a, b, _) => a.is_ground(subst) && b.is_ground(subst),
             Ty::Record(fields) => fields.values().all(|v| v.is_ground(subst)),
             Ty::App(f, a) => f.is_ground(subst) && a.is_ground(subst),
@@ -144,6 +160,7 @@ impl std::fmt::Display for Ty {
             Ty::Int => write!(f, "Int"),
             Ty::Bool => write!(f, "Bool"),
             Ty::Str => write!(f, "Str"),
+            Ty::Buf => write!(f, "Buf"),
             Ty::Fn(a, b, eff) => {
                 let parens = matches!(a.as_ref(), Ty::Fn(_, _, _));
                 if parens {
@@ -155,7 +172,9 @@ impl std::fmt::Display for Ty {
             Ty::Record(fields) => {
                 write!(f, "{{")?;
                 for (i, (k, v)) in fields.iter().enumerate() {
-                    if i > 0 { write!(f, ", ")?; }
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
                     write!(f, "{}: {}", k, v)?;
                 }
                 write!(f, "}}")
@@ -210,9 +229,12 @@ impl Subst {
                 Box::new(self.apply(b)),
                 self.apply_eff(eff),
             ),
-            Ty::Record(fields) => {
-                Ty::Record(fields.iter().map(|(k, v)| (k.clone(), self.apply(v))).collect())
-            }
+            Ty::Record(fields) => Ty::Record(
+                fields
+                    .iter()
+                    .map(|(k, v)| (k.clone(), self.apply(v)))
+                    .collect(),
+            ),
             Ty::App(fun, arg) => Ty::App(Box::new(self.apply(fun)), Box::new(self.apply(arg))),
             other => other.clone(),
         }
@@ -270,13 +292,23 @@ pub fn unify(t1: &Ty, t2: &Ty, subst: &mut Subst) -> bool {
 
     match (&t1, &t2) {
         (Ty::Unknown, _) | (_, Ty::Unknown) => true,
-        (Ty::Int, Ty::Int) | (Ty::Bool, Ty::Bool) | (Ty::Str, Ty::Str) => true,
+        (Ty::Int, Ty::Int) | (Ty::Bool, Ty::Bool) | (Ty::Str, Ty::Str) | (Ty::Buf, Ty::Buf) => true,
         (Ty::Meta(id1), Ty::Meta(id2)) if id1 == id2 => true,
         (Ty::Meta(id), other) => {
-            if occurs(*id, other, subst) { false } else { subst.bind(*id, other.clone()); true }
+            if occurs(*id, other, subst) {
+                false
+            } else {
+                subst.bind(*id, other.clone());
+                true
+            }
         }
         (other, Ty::Meta(id)) => {
-            if occurs(*id, other, subst) { false } else { subst.bind(*id, other.clone()); true }
+            if occurs(*id, other, subst) {
+                false
+            } else {
+                subst.bind(*id, other.clone());
+                true
+            }
         }
         (Ty::Fn(a1, b1, e1), Ty::Fn(a2, b2, e2)) => {
             let (a1, b1, e1) = (a1.clone(), b1.clone(), e1.clone());
@@ -286,11 +318,17 @@ pub fn unify(t1: &Ty, t2: &Ty, subst: &mut Subst) -> bool {
             ok
         }
         (Ty::Record(f1), Ty::Record(f2)) => {
-            if f1.len() != f2.len() { return false; }
-            let pairs: Vec<_> = f1.iter().zip(f2.iter())
+            if f1.len() != f2.len() {
+                return false;
+            }
+            let pairs: Vec<_> = f1
+                .iter()
+                .zip(f2.iter())
                 .map(|((k1, v1), (k2, v2))| (k1.clone(), v1.clone(), k2.clone(), v2.clone()))
                 .collect();
-            pairs.iter().all(|(k1, v1, k2, v2)| k1 == k2 && unify(v1, v2, subst))
+            pairs
+                .iter()
+                .all(|(k1, v1, k2, v2)| k1 == k2 && unify(v1, v2, subst))
         }
         (Ty::App(f1, a1), Ty::App(f2, a2)) => {
             let (f1, a1, f2, a2) = (f1.clone(), a1.clone(), f2.clone(), a2.clone());

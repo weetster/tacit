@@ -13,7 +13,7 @@
 //!         (all holes render as `_` and parse back as expected-expr holes).
 //!   12, 19a, 19b, 26 — open terms (free variable at top level); the authoring
 //!         view can only represent closed, well-scoped programs.
-//!   28 — module; authoring syntax for top-level module is deferred to Phase 2.
+//!   29–31 — Phase 2 type nodes; authoring syntax is Stage 5 work.
 
 use std::fs;
 use std::path::PathBuf;
@@ -49,17 +49,11 @@ const SKIP: &[&str] = &[
     "19a-match-wild-first.canonical",
     "19b-match-zero-first.canonical",
     "26-ctor-mixed-args.canonical",
-    // Module syntax deferred to Phase 2.
-    "28-module-one-binding.canonical",
     // Phase 2 type nodes (fn-ty, forall, eff-set, ty-var, eff-var): authoring syntax
     // is Stage 5 work; no round-trip until then.
     "29-ann-generic-id.canonical",
     "30-ann-io-fn.canonical",
     "31-ann-eff-poly.canonical",
-    // pat-int: authoring pattern parser does not yet handle integer literal patterns.
-    "32-pat-int-match.canonical",
-    // buf-alloc / read: buf-alloc is not yet a known authoring-view symbol.
-    "33-buf-alloc-read.canonical",
 ];
 
 #[test]
@@ -386,5 +380,47 @@ fn parse_rec_typed_binding() {
     check_parse(
         "rec {x:@Int = 1} in x",
         "(rec (ann (int 1) (sym Int)) (var 0))",
+    );
+}
+
+#[test]
+fn parse_module_one_binding() {
+    check_parse("module {f = lambda x. x}", "(module (lam (var 0)))");
+}
+
+#[test]
+fn parse_module_two_bindings() {
+    check_parse("module {a = 1; b = 2}", "(module (int 1) (int 2))");
+}
+
+#[test]
+fn parse_pat_int_match() {
+    check_parse(
+        "match 5 with | 5 => 1 | _ => 0",
+        "(match (int 5) (arm (pat-int 5) (int 1)) (arm pat-wild (int 0)))",
+    );
+}
+
+#[test]
+fn parse_buf_alloc_sym() {
+    // `@buf-alloc` should lex as At + Ident("buf-alloc") (ADR 0038).
+    check_parse(
+        "let buf = @buf-alloc 256 in @read 0 buf 256",
+        "(let (app (sym buf-alloc) (int 256)) (app (app (app (sym read) (int 0)) (var 0)) (int 256)))",
+    );
+}
+
+#[test]
+fn parse_hole_recovery_unknown_token() {
+    // An unexpected token in expression position should produce a Hole node, not a hard error.
+    let result = parse_authoring("lambda x. => x".as_bytes());
+    assert!(result.is_ok(), "expected Ok with Hole, got {:?}", result);
+    let (node, _sc) = result.unwrap();
+    // The body should be an App(Hole, Var(0)).
+    let canonical = String::from_utf8(tacit_canonical::emit(&node)).unwrap();
+    assert!(
+        canonical.contains("hole"),
+        "expected hole in canonical: {}",
+        canonical
     );
 }

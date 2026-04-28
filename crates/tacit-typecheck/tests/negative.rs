@@ -11,23 +11,35 @@ use tacit_typecheck::ty::Subst;
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 fn int(v: i64) -> Node {
-    Node::Int { value: v.to_string() }
+    Node::Int {
+        value: v.to_string(),
+    }
 }
 
 fn str_node(s: &str) -> Node {
-    Node::Str { value: s.to_string() }
+    Node::Str {
+        value: s.to_string(),
+    }
 }
 
 fn sym(name: &str) -> Node {
-    Node::Sym { name: name.to_string() }
+    Node::Sym {
+        name: name.to_string(),
+    }
 }
 
 fn app(f: Node, a: Node) -> Node {
-    Node::App { fn_: Box::new(f), arg: Box::new(a) }
+    Node::App {
+        fn_: Box::new(f),
+        arg: Box::new(a),
+    }
 }
 
 fn ann(expr: Node, type_: Node) -> Node {
-    Node::Ann { expr: Box::new(expr), type_: Box::new(type_) }
+    Node::Ann {
+        expr: Box::new(expr),
+        type_: Box::new(type_),
+    }
 }
 
 fn has_error(diags: &[tacit_typecheck::Diagnostic], kind: &str) -> bool {
@@ -62,7 +74,7 @@ fn neg_type_mismatch() {
 fn neg_operator_overload_failure() {
     // (@add (@eq 1 2) 5) — first operand is Bool, second is Int
     let cond = app(app(sym("eq"), int(1)), int(2)); // Bool
-    let ast = app(app(sym("add"), cond), int(5));   // add Bool Int → mismatch
+    let ast = app(app(sym("add"), cond), int(5)); // add Bool Int → mismatch
     let result = infer_module(&ast);
     let diags = result.unwrap_err();
     expect_error(&diags, "operator-overload-failure");
@@ -126,14 +138,19 @@ fn neg_unresolved_type() {
 #[test]
 fn neg_module_missing_annotation() {
     // (module [42]) — one unannotated binding
-    let ast = Node::Module { bindings: vec![int(42)] };
+    let ast = Node::Module {
+        bindings: vec![int(42)],
+    };
     let mut subst = Subst::default();
     let mut diags = Vec::new();
     tacit_typecheck::infer::infer(&[], &ast, &mut subst, &[], &mut diags);
     assert!(
         diags.iter().any(|d| d.kind == "module-missing-annotation"),
         "expected module-missing-annotation warning, got: {:?}",
-        diags.iter().map(|d| (&d.kind, &d.severity)).collect::<Vec<_>>()
+        diags
+            .iter()
+            .map(|d| (&d.kind, &d.severity))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -150,6 +167,31 @@ fn neg_hole_diagnostic() {
     let result = infer_module(&ast);
     let diags = result.unwrap_err();
     expect_error(&diags, "parse-error");
+}
+
+/// Parser recovery (ADR 0040): malformed authoring text produces a Hole node
+/// rather than a hard parse error; the Hole flows through typecheck as an error.
+#[test]
+fn neg_parser_recovery_hole_flows_through_typecheck() {
+    // `lambda x. => x` — FatArrow in expression position triggers recover_expr.
+    // The parser should succeed (no ParseError), producing a Hole in the body.
+    let src = b"lambda x. => x";
+    let (ast, _sidecar) =
+        tacit_views::authoring::parse_authoring(src).expect("parser should recover, not hard-fail");
+    // The AST should contain a hole somewhere (the body).
+    let canonical = String::from_utf8(tacit_canonical::emit(&ast)).unwrap();
+    assert!(
+        canonical.contains("hole"),
+        "expected hole in AST, got: {}",
+        canonical
+    );
+    // Typechecking the holed program should yield a Hole-related diagnostic.
+    let result = infer_module(&ast);
+    let diags = result.unwrap_err();
+    assert!(
+        !diags.is_empty(),
+        "expected at least one diagnostic from hole"
+    );
 }
 
 // ── sidecar type mismatch ──────────────────────────────────────────────────────
@@ -187,21 +229,24 @@ fn neg_effect_violation_pure_annotation_on_io_body() {
     // ann (lam n. let _ = @write 1 "x" 1 in n)
     //     (fn-ty Int Int (eff-set))   ← declared pure
     let fn_ty_node = Node::FnTy {
-        arg: Box::new(Node::Sym { name: "Int".to_string() }),
-        ret: Box::new(Node::Sym { name: "Int".to_string() }),
+        arg: Box::new(Node::Sym {
+            name: "Int".to_string(),
+        }),
+        ret: Box::new(Node::Sym {
+            name: "Int".to_string(),
+        }),
         eff: Box::new(Node::EffSet { atoms: vec![] }),
     };
-    let write_call = app(
-        app(app(sym("write"), int(1)), str_node("x")),
-        int(1),
-    );
+    let write_call = app(app(app(sym("write"), int(1)), str_node("x")), int(1));
     // lam n. let _ = write(...) in n   (var 1 = n after let shifts context)
     let body = Node::Let {
         rhs: Box::new(write_call),
         body: Box::new(Node::Var { index: 1 }),
     };
     let annotated = Node::Ann {
-        expr: Box::new(Node::Lam { body: Box::new(body) }),
+        expr: Box::new(Node::Lam {
+            body: Box::new(body),
+        }),
         type_: Box::new(fn_ty_node),
     };
 
@@ -244,8 +289,12 @@ fn neg_unbound_effect_variable() {
     use tacit_canonical::ast::Node;
 
     let fn_ty_node = Node::FnTy {
-        arg: Box::new(Node::Sym { name: "Int".to_string() }),
-        ret: Box::new(Node::Sym { name: "Int".to_string() }),
+        arg: Box::new(Node::Sym {
+            name: "Int".to_string(),
+        }),
+        ret: Box::new(Node::Sym {
+            name: "Int".to_string(),
+        }),
         eff: Box::new(Node::EffVar { index: 0 }),
     };
     let annotated = ann(int(0), fn_ty_node);

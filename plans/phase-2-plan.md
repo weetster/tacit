@@ -1,6 +1,6 @@
 # Phase 2 Implementation Plan
 
-**Status:** Draft 2026-04-26 · Stage 1 frozen 2026-04-27 ([ADR 0044](../decisions/0044-p2-stage-1-frozen.md))
+**Status:** Draft 2026-04-26 · Stage 1 frozen 2026-04-27 ([ADR 0044](../decisions/0044-p2-stage-1-frozen.md)) · Stages 2–4 complete 2026-04-28 ([ADR 0045](../decisions/0045-p2-stage-4-frozen.md))
 **Parent:** [tacit-plan.md](tacit-plan.md)
 **Predecessor:** [phase-1-plan.md](phase-1-plan.md) (frozen 2026-04-26 — [ADR 0033](../decisions/0033-phase-1-frozen.md))
 
@@ -238,6 +238,8 @@ on a body that contains `@write` produces the expected effect-error
 JSON.
 
 ### Stage 4: Hole recovery + `module` authoring + Phase 1 carry-overs (~2–3 weeks)
+
+**Status: Complete 2026-04-28. Frozen by [ADR 0045](../decisions/0045-p2-stage-4-frozen.md).** Nine-program smoke corpus passes; module round-trip and pat-int round-trip pass; hole recovery flows through to typecheck diagnostics without hard-fail; clippy clean.
 
 Closes the four Phase 1 deferrals as concrete features. Depends on
 Stage 1 ADRs Q-P2-4, -5, -6, -7. Independent of Stage 3 except where

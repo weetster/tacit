@@ -104,6 +104,9 @@ enum Binding<'ctx> {
     /// A top-level function reference. Only callable at `App` head;
     /// reading the binding outside head position is `FirstClassFunction`.
     Function(FunctionValue<'ctx>),
+    /// A stack-allocated byte buffer (from `@buf-alloc N`). Only valid as
+    /// a buffer argument to `@read` / `@write`; not a first-class value (ADR 0038).
+    Ptr(PointerValue<'ctx>),
 }
 
 impl<'ctx> Compiler<'ctx> {
@@ -213,6 +216,9 @@ impl<'ctx> Compiler<'ctx> {
                 match entry {
                     Binding::Value(v) => Ok(*v),
                     Binding::Function(_) => Err(CodegenError::FirstClassFunction),
+                    Binding::Ptr(_) => Err(CodegenError::Unsupported(
+                        "buffer pointer used in integer-value position",
+                    )),
                 }
             }
             Node::Let { rhs, body } => self.compile_let(rhs, body, env, cur_fn),
@@ -233,17 +239,16 @@ impl<'ctx> Compiler<'ctx> {
             Node::Hole { diag_id, .. } => Err(CodegenError::Hole {
                 diag_id: diag_id.clone(),
             }),
-            Node::PatWild
-            | Node::PatVar
-            | Node::PatCtor { .. }
-            | Node::PatInt { .. } => {
+            Node::PatWild | Node::PatVar | Node::PatCtor { .. } | Node::PatInt { .. } => {
                 Err(CodegenError::Unsupported("pattern outside match arm"))
             }
             Node::FnTy { .. }
             | Node::TyVar { .. }
             | Node::Forall { .. }
             | Node::EffSet { .. }
-            | Node::EffVar { .. } => Err(CodegenError::Unsupported("type expression in value position")),
+            | Node::EffVar { .. } => Err(CodegenError::Unsupported(
+                "type expression in value position",
+            )),
         }
     }
 
@@ -268,6 +273,40 @@ impl<'ctx> Compiler<'ctx> {
             let mut new_env = env.to_vec();
             new_env.insert(0, Binding::Function(fn_val));
             return self.compile_expr(body, &new_env, cur_fn);
+        }
+
+        // Special-case Let-of-BufAlloc (ADR 0038): `let buf = @buf-alloc N in ...`
+        // emits an `alloca [N x i8]` at the function entry and binds it as `Ptr`.
+        if let Node::App { .. } = rhs {
+            let (head, args) = unfold_app(rhs);
+            if let Node::Sym { name } = head {
+                if name == "buf-alloc" && args.len() == 1 {
+                    if let Node::Int { value } = args[0] {
+                        let size: u64 = value.parse().map_err(|_| {
+                            CodegenError::Llvm(format!("bad buf-alloc size: {}", value))
+                        })?;
+                        let i8_t = self.context.i8_type();
+                        let arr_ty = i8_t.array_type(size as u32);
+                        let alloca = self
+                            .builder
+                            .build_alloca(arr_ty, "buf")
+                            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+                        let zero = self.context.i32_type().const_zero();
+                        let buf_ptr = unsafe {
+                            self.builder.build_in_bounds_gep(
+                                arr_ty,
+                                alloca,
+                                &[zero, zero],
+                                "buf_ptr",
+                            )
+                        }
+                        .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+                        let mut new_env = env.to_vec();
+                        new_env.insert(0, Binding::Ptr(buf_ptr));
+                        return self.compile_expr(body, &new_env, cur_fn);
+                    }
+                }
+            }
         }
 
         let v = self.compile_expr(rhs, env, cur_fn)?;
@@ -361,7 +400,7 @@ impl<'ctx> Compiler<'ctx> {
                         let arg_val = self.compile_expr(args[0], env, cur_fn)?;
                         self.call_function(*fn_val, arg_val)
                     }
-                    Binding::Value(_) => Err(CodegenError::AppNonFunction),
+                    Binding::Value(_) | Binding::Ptr(_) => Err(CodegenError::AppNonFunction),
                 }
             }
             _ => Err(CodegenError::AppNonFunction),
@@ -417,6 +456,9 @@ impl<'ctx> Compiler<'ctx> {
             PrimKind::Write => self.emit_write(args, env, cur_fn),
             PrimKind::Read => self.emit_read(args, env, cur_fn),
             PrimKind::Exit => self.emit_exit(args, env, cur_fn),
+            PrimKind::BufAlloc => Err(CodegenError::Unsupported(
+                "@buf-alloc must appear as the direct RHS of a `let` binding",
+            )),
         }
     }
 
@@ -619,22 +661,15 @@ impl<'ctx> Compiler<'ctx> {
     }
 
     /// Lower a buffer argument for `@write` / `@read`.
-    /// `@write` takes a string-literal middle arg in Phase 1 (smoke #3); this
-    /// is lowered to a private `i8` array global, returned as a pointer.
-    /// `@read` needs a writable buffer; smoke #8's `echo.tac` allocates one
-    /// via a `let` whose rhs is a `(str "...")` of N spaces, which lowers to
-    /// the same global path. This is a Phase 1 simplification — `@read` into
-    /// a *literal* global is well-defined-but-pointless, but lets the smoke
-    /// program build without introducing a stack-buffer construct that would
-    /// also belong to a future ADR. The smoke program for echo uses a stack-
-    /// allocated array allocated up front via the `BUF` form below.
+    /// Accepts either a string literal (→ private global) or a `Var` resolving
+    /// to a `Binding::Ptr` (→ stack buffer from `@buf-alloc`, ADR 0038).
     fn compile_buffer_arg(
         &mut self,
         node: &Node,
         hint: &str,
         constant: bool,
         env: &[Binding<'ctx>],
-        cur_fn: FunctionValue<'ctx>,
+        _cur_fn: FunctionValue<'ctx>,
     ) -> Result<PointerValue<'ctx>> {
         match node {
             Node::Str { value } => {
@@ -657,27 +692,19 @@ impl<'ctx> Compiler<'ctx> {
                 };
                 ptr.map_err(|e| CodegenError::Llvm(e.to_string()))
             }
-            // Allow a `let` whose body is the buffer: no — too complex. For
-            // Phase 1, only literal Str args lower as buffers. echo.tac uses
-            // a string literal as the read target buffer, which is valid IR
-            // (LLVM lets you `read()` into a non-const region by linkage);
-            // for Phase 1 correctness we make the global non-constant when
-            // the arg is the read buffer slot. Done at the call site above.
-            _ => {
-                // TODO(phase-2): the writable-buffer model lands here. Today's
-                // fallback compiles the expression as an i64 and treats it as
-                // a raw pointer — usable only if a future smoke program builds
-                // a pointer via primitives. Not exercised by the Stage 4
-                // corpus; replace this arm when the writable-buffer ADR (the
-                // blocker for smoke #8 / `echo.tac`) lands.
-                let v = self.compile_expr(node, env, cur_fn)?;
-                let ptr_ty = self.context.ptr_type(AddressSpace::default());
-                let ptr = self
-                    .builder
-                    .build_int_to_ptr(v, ptr_ty, "int_as_ptr")
-                    .map_err(|e| CodegenError::Llvm(e.to_string()))?;
-                Ok(ptr)
+            // `Var` may resolve to a `Binding::Ptr` produced by `@buf-alloc` (ADR 0038).
+            Node::Var { index } => {
+                let binding = lookup_var(env, *index)?;
+                match binding {
+                    Binding::Ptr(ptr) => Ok(*ptr),
+                    _ => Err(CodegenError::Unsupported(
+                        "buffer argument must be a string literal or @buf-alloc binding",
+                    )),
+                }
             }
+            _ => Err(CodegenError::Unsupported(
+                "buffer argument must be a string literal or @buf-alloc binding",
+            )),
         }
     }
 
@@ -855,13 +882,36 @@ impl<'ctx> Compiler<'ctx> {
                         .build_unconditional_branch(merge_bb)
                         .map_err(|e| CodegenError::Llvm(e.to_string()))?;
                 }
+                Node::PatInt { value } => {
+                    let lit: i64 = value
+                        .parse()
+                        .map_err(|_| CodegenError::UnsupportedMatchPattern)?;
+                    let lit_val = self.context.i64_type().const_int(lit as u64, true);
+                    let cond = self
+                        .builder
+                        .build_int_compare(IntPredicate::EQ, scrut, lit_val, "arm_cmp")
+                        .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+                    let arm_bb = self
+                        .context
+                        .append_basic_block(cur_fn, &format!("arm{}", i));
+                    let next_bb = self
+                        .context
+                        .append_basic_block(cur_fn, &format!("next{}", i));
+                    self.builder
+                        .build_conditional_branch(cond, arm_bb, next_bb)
+                        .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+                    self.builder.position_at_end(arm_bb);
+                    let v = self.compile_expr(body, env, cur_fn)?;
+                    let end_bb = self.builder.get_insert_block().unwrap();
+                    incoming.push((v, end_bb));
+                    self.builder
+                        .build_unconditional_branch(merge_bb)
+                        .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+                    self.builder.position_at_end(next_bb);
+                }
                 Node::PatCtor { name, sub_patterns } => {
-                    // TODO(phase-2): retire this special case when the
-                    // canonical `pat-int` extension lands (the deferred ADR
-                    // unblocking smoke #7 / `match-int.tac`). Until then, a
-                    // numeric `pat-ctor` name is interpreted as an integer
-                    // literal arm — the smallest reading of the frozen
-                    // canonical surface that lets smoke #7 round-trip.
+                    // Numeric `pat-ctor` names are treated as integer literal arms
+                    // for backward compatibility with pre-ADR-0037 canonical files.
                     if !sub_patterns.is_empty() {
                         return Err(CodegenError::UnsupportedMatchPattern);
                     }

@@ -80,6 +80,24 @@ fn run_smoke(file_stem: &str) -> (Vec<u8>, i32) {
     run(&built)
 }
 
+fn run_with_stdin(built: &Built, stdin_bytes: &[u8]) -> (Vec<u8>, i32) {
+    use std::io::Write;
+    let mut child = Command::new(&built.exe)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn exe");
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(stdin_bytes)
+        .expect("write stdin");
+    let out = child.wait_with_output().expect("wait");
+    let code = out.status.code().unwrap_or(-1);
+    (out.stdout, code)
+}
+
 #[test]
 fn return_zero() {
     let (out, code) = run_smoke("return-zero");
@@ -130,4 +148,21 @@ fn exit_nonzero() {
     let (out, code) = run_smoke("exit-nonzero");
     assert!(out.is_empty());
     assert_eq!(code, 7);
+}
+
+#[test]
+fn match_int() {
+    // `match 0 with | 0 => 42 | _ => 0` — first arm matches, exit 42.
+    let (out, code) = run_smoke("match-int");
+    assert!(out.is_empty());
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn echo() {
+    let path = examples_root().join("echo.tac");
+    let built = build(&path, "echo");
+    let (out, code) = run_with_stdin(&built, b"hi\n");
+    assert_eq!(code, 0);
+    assert_eq!(out, b"hi\n");
 }

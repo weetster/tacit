@@ -14,7 +14,10 @@ pub struct DiagOutput {
 
 impl DiagOutput {
     pub fn new(errors: Vec<Diagnostic>) -> Self {
-        DiagOutput { schema_version: "p2.0".to_string(), errors }
+        DiagOutput {
+            schema_version: "p2.0".to_string(),
+            errors,
+        }
     }
 
     pub fn to_json_string(&self) -> String {
@@ -88,7 +91,10 @@ impl Diagnostic {
 
     pub fn unresolved_type(path: &[usize], name: &str) -> Self {
         let msg = if RESERVED_TYPE_NAMES.contains(&name) {
-            format!("type '{}' is reserved for Phase 3+, not yet implemented", name)
+            format!(
+                "type '{}' is reserved for Phase 3+, not yet implemented",
+                name
+            )
         } else {
             format!("unknown type '{}'", name)
         };
@@ -100,7 +106,10 @@ impl Diagnostic {
             "module-missing-annotation",
             "warning",
             path,
-            format!("exported binding {} has no type+effect signature", binding_idx),
+            format!(
+                "exported binding {} has no type+effect signature",
+                binding_idx
+            ),
         )
     }
 
@@ -158,10 +167,7 @@ impl Diagnostic {
             "effect-violation",
             "error",
             path,
-            format!(
-                "effect set mismatch: expected {}, got {}",
-                expected, actual
-            ),
+            format!("effect set mismatch: expected {}, got {}", expected, actual),
         );
         d.expected = Some(eff_set_to_json(expected));
         d.actual = Some(eff_set_to_json(actual));
@@ -235,6 +241,7 @@ pub fn ty_to_json(ty: &Ty) -> Value {
         }),
         Ty::Meta(id) => serde_json::json!({"meta": id}),
         Ty::Unknown => Value::Null,
+        Ty::Buf => serde_json::json!({"sym": "Buf"}),
     }
 }
 
@@ -248,6 +255,10 @@ pub fn fn_eff_to_json(eff: &FnEff) -> Value {
 
 /// Convert an `EffSet` to JSON: an array of sorted atom strings.
 pub fn eff_set_to_json(eff: &EffSet) -> Value {
-    let atoms: Vec<Value> = eff.atoms.iter().map(|a| Value::String(a.to_string())).collect();
+    let atoms: Vec<Value> = eff
+        .atoms
+        .iter()
+        .map(|a| Value::String(a.to_string()))
+        .collect();
     Value::Array(atoms)
 }

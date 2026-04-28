@@ -58,7 +58,11 @@ pub fn infer_module(node: &Node) -> Result<TypedModule, Vec<Diagnostic>> {
         .collect();
 
     if errors.is_empty() {
-        Ok(TypedModule { ty, effects, binding_types })
+        Ok(TypedModule {
+            ty,
+            effects,
+            binding_types,
+        })
     } else {
         Err(errors)
     }

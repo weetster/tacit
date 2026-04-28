@@ -32,6 +32,7 @@ pub enum Token {
     Lambda,
     Let,
     Rec,
+    Module,
     In,
     If,
     Then,
@@ -107,6 +108,13 @@ pub fn lex(input: &[u8]) -> Result<Vec<Token>, LexError> {
             b'@' => {
                 tokens.push(Token::At);
                 i += 1;
+                // Consume symbol name allowing hyphens (e.g. @buf-alloc).
+                // Regular identifiers forbid hyphens; sym names do not.
+                if i < n && (is_ident_start(input[i]) || input[i] == b'_') {
+                    let (name, ni) = lex_sym_name(input, i);
+                    tokens.push(Token::Ident(name));
+                    i = ni;
+                }
             }
             b'=' => {
                 if i + 1 < n && input[i + 1] == b'>' {
@@ -174,6 +182,18 @@ fn lex_ident(input: &[u8], start: usize) -> (String, usize) {
     (String::from_utf8_lossy(&input[start..i]).into_owned(), i)
 }
 
+fn is_sym_name_cont(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b == b'_' || b == b'-'
+}
+
+fn lex_sym_name(input: &[u8], start: usize) -> (String, usize) {
+    let mut i = start;
+    while i < input.len() && is_sym_name_cont(input[i]) {
+        i += 1;
+    }
+    (String::from_utf8_lossy(&input[start..i]).into_owned(), i)
+}
+
 fn lex_int(input: &[u8], start: usize) -> (String, usize) {
     let mut i = start;
     if i < input.len() && input[i] == b'-' {
@@ -190,6 +210,7 @@ fn keyword_or_ident(name: String) -> Token {
         "lambda" => Token::Lambda,
         "let" => Token::Let,
         "rec" => Token::Rec,
+        "module" => Token::Module,
         "in" => Token::In,
         "if" => Token::If,
         "then" => Token::Then,

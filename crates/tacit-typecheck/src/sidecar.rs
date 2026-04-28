@@ -38,7 +38,9 @@ impl TypeSidecar {
             Ok(text) => {
                 let outer: TomlOuter = toml::from_str(&text)
                     .map_err(|e| format!("TOML parse error in {:?}: {}", path, e))?;
-                Ok(TypeSidecar { types: outer.types.unwrap_or_default() })
+                Ok(TypeSidecar {
+                    types: outer.types.unwrap_or_default(),
+                })
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(TypeSidecar::default()),
             Err(e) => Err(format!("I/O error reading {:?}: {}", path, e)),
@@ -94,11 +96,19 @@ pub fn check_against_sidecar(
         // Check effect set.
         let expected_eff = parse_effect_list(&entry.effects);
         if eval_eff != expected_eff {
-            diags.push(Diagnostic::effect_set_mismatch(&[], &expected_eff, &eval_eff));
+            diags.push(Diagnostic::effect_set_mismatch(
+                &[],
+                &expected_eff,
+                &eval_eff,
+            ));
         }
     }
 
-    if diags.is_empty() { Ok(()) } else { Err(diags) }
+    if diags.is_empty() {
+        Ok(())
+    } else {
+        Err(diags)
+    }
 }
 
 // ── Type string parser ────────────────────────────────────────────────────────
@@ -133,7 +143,11 @@ fn parse_fn_type(s: &str) -> Result<Ty, String> {
         let arg = parse_atom_type(left)?;
         let ret = parse_fn_type(right)?;
         // Sidecar type strings don't carry effect annotations; assume pure.
-        Ok(Ty::Fn(Box::new(arg), Box::new(ret), crate::ty::FnEff::pure_()))
+        Ok(Ty::Fn(
+            Box::new(arg),
+            Box::new(ret),
+            crate::ty::FnEff::pure_(),
+        ))
     } else {
         parse_atom_type(s)
     }
@@ -159,10 +173,18 @@ pub fn parse_effect_list(effects: &[String]) -> EffSet {
     let mut set = EffSet::empty();
     for atom in effects {
         match atom.as_str() {
-            "Alloc" => { set.atoms.insert(EffAtom::Alloc); }
-            "Div" => { set.atoms.insert(EffAtom::Div); }
-            "IO" => { set.atoms.insert(EffAtom::IO); }
-            "Mut" => { set.atoms.insert(EffAtom::Mut); }
+            "Alloc" => {
+                set.atoms.insert(EffAtom::Alloc);
+            }
+            "Div" => {
+                set.atoms.insert(EffAtom::Div);
+            }
+            "IO" => {
+                set.atoms.insert(EffAtom::IO);
+            }
+            "Mut" => {
+                set.atoms.insert(EffAtom::Mut);
+            }
             _ => {} // unknown atoms silently ignored in sidecar parsing
         }
     }
@@ -249,12 +271,17 @@ mod tests {
     #[test]
     fn sidecar_type_mismatch() {
         use std::collections::BTreeMap;
-        let ast = Node::Str { value: "hello".to_string() };
+        let ast = Node::Str {
+            value: "hello".to_string(),
+        };
         let mut types = BTreeMap::new();
-        types.insert("main".to_string(), TypeEntry {
-            type_str: "Int".to_string(),
-            effects: vec![],
-        });
+        types.insert(
+            "main".to_string(),
+            TypeEntry {
+                type_str: "Int".to_string(),
+                effects: vec![],
+            },
+        );
         let sidecar = TypeSidecar { types };
         let result = check_against_sidecar(&ast, &sidecar);
         let diags = result.unwrap_err();
@@ -265,12 +292,17 @@ mod tests {
     fn sidecar_effect_mismatch() {
         use std::collections::BTreeMap;
         // Expression is pure (0), but sidecar expects IO.
-        let ast = Node::Int { value: "0".to_string() };
+        let ast = Node::Int {
+            value: "0".to_string(),
+        };
         let mut types = BTreeMap::new();
-        types.insert("main".to_string(), TypeEntry {
-            type_str: "Int".to_string(),
-            effects: vec!["IO".to_string()],
-        });
+        types.insert(
+            "main".to_string(),
+            TypeEntry {
+                type_str: "Int".to_string(),
+                effects: vec!["IO".to_string()],
+            },
+        );
         let sidecar = TypeSidecar { types };
         let result = check_against_sidecar(&ast, &sidecar);
         let diags = result.unwrap_err();
