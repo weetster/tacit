@@ -250,7 +250,7 @@ a Phase 3 codegen-additions table; clippy clean.
 added; clippy clean; `libc-effects.toml` unchanged (no new OS-boundary
 symbols per ADR 0025/0047).
 
-### Stage 3: Phase 2 carry-over programs (~3–5 days)
+### Stage 3: Phase 2 carry-over programs (~3–5 days) ✓ LANDED 2026-04-28
 
 Closes the deferral from [ADR 0046](../decisions/0046-p2-stage-5-frozen.md)
 § 3. Hand-authored Tacit-Lite programs under `examples/phase-3/`:

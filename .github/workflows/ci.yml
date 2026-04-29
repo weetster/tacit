@@ -74,6 +74,20 @@ jobs:
           ./target/debug/tacit view examples/smoke/hello.tac --as authoring > /dev/null
           ./target/debug/tacit view examples/smoke/hello.tac --as inspection > /dev/null
 
+      - name: Phase 3 carry-over programs (compile + check)
+        run: |
+          ./target/debug/tacit check examples/phase-3/sort.tac
+          ./target/debug/tacit check examples/phase-3/list.tac
+          ./target/debug/tacit check examples/phase-3/sum-numbers.tac
+          ./target/debug/tacit compile examples/phase-3/sort.tac -o /tmp/tacit-sort
+          output=$(/tmp/tacit-sort)
+          test "$output" = "$(printf '1\n2\n3\n4\n5')"
+          ./target/debug/tacit compile examples/phase-3/list.tac -o /tmp/tacit-list
+          /tmp/tacit-list; test $? -eq 15
+          ./target/debug/tacit compile examples/phase-3/sum-numbers.tac -o /tmp/tacit-sum-numbers
+          output=$(printf '1\n2\n3\n' | /tmp/tacit-sum-numbers)
+          test "$output" = "6"
+
   corpus:
     name: corpus
     runs-on: ubuntu-latest
