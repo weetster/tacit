@@ -86,17 +86,21 @@ A tool that walks `corpus/tasks/` sees only open tasks; one that walks
 question the author must answer, rather than an ambient property of the
 filesystem.
 
-### Layer 4 — Claude Code permission denies
+### Layer 4 — AI agent guardrails
 
-`.claude/settings.json` denies Read/Edit/Write on `corpus/sealed/**` plus
-common Bash read patterns (`cat`, `less`, `head`, `tail`, `bat`, `grep`,
-`rg`, `find`). This protects against Claude sessions in this repo
-accidentally ingesting held-out content during primer-related work.
+Two agent-specific files block the easy paths to reading held-out content:
 
-This is the *softest* of the four layers — it binds only Claude Code in
-this repo's cwd, does not protect against `--dangerously-skip-permissions`,
-other agents, or human inspection — and is explicitly not load-bearing.
-It exists to make the easy path the right path.
+- **`.claude/settings.json`** denies Read/Edit/Write on `corpus/sealed/**`
+  plus common Bash read patterns (`cat`, `less`, `head`, `tail`, `bat`,
+  `grep`, `rg`, `find`). Binds Claude Code sessions in this repo's cwd.
+- **`AGENTS.md`** instructs OpenAI Codex CLI (and any other agent that
+  reads `AGENTS.md`) never to read, list, search, or otherwise access any
+  path under `corpus/sealed/`.
+
+This is the *softest* of the four layers — it does not protect against
+`--dangerously-skip-permissions`, agents that ignore project instructions,
+or human inspection — and is explicitly not load-bearing. It exists to make
+the easy path the right path for AI coding agents working in this repo.
 
 ## Alternatives considered
 
