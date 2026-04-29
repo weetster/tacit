@@ -14,8 +14,8 @@ fn check_phase3(name: &str) {
     let tac_path = dir.join(format!("{}.tac", name));
     let sidecar_path = dir.join(format!("{}.tac.sidecar.toml", name));
 
-    let src = std::fs::read(&tac_path)
-        .unwrap_or_else(|e| panic!("could not read {}.tac: {}", name, e));
+    let src =
+        std::fs::read(&tac_path).unwrap_or_else(|e| panic!("could not read {}.tac: {}", name, e));
 
     let (ast, _sidecar_node) = tacit_views::authoring::parse_authoring(&src)
         .unwrap_or_else(|e| panic!("parse error in {}.tac: {:?}", name, e));
