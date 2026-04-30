@@ -141,3 +141,138 @@ agent = "codex"
 model = "undisclosed"
 date = "2026-04-30"
 sealed_access = false
+
+[[reference]]
+task = "collections/021-unique-in-order"
+path = "corpus/tasks/collections/021-unique-in-order/reference.tac"
+authoring_mode = "expert-agent"
+agent = "codex"
+model = "undisclosed"
+date = "2026-04-30"
+sealed_access = false
+
+[[reference]]
+task = "collections/023-flatten-one-level"
+path = "corpus/tasks/collections/023-flatten-one-level/reference.tac"
+authoring_mode = "expert-agent"
+agent = "codex"
+model = "undisclosed"
+date = "2026-04-30"
+sealed_access = false
+
+[[reference]]
+task = "collections/025-partition-eo"
+path = "corpus/tasks/collections/025-partition-eo/reference.tac"
+authoring_mode = "expert-agent"
+agent = "codex"
+model = "undisclosed"
+date = "2026-04-30"
+sealed_access = false
+
+[[reference]]
+task = "collections/026-group-counts"
+path = "corpus/tasks/collections/026-group-counts/reference.tac"
+authoring_mode = "expert-agent"
+agent = "codex"
+model = "undisclosed"
+date = "2026-04-30"
+sealed_access = false
+
+[[reference]]
+task = "collections/027-rotate-left"
+path = "corpus/tasks/collections/027-rotate-left/reference.tac"
+authoring_mode = "expert-agent"
+agent = "codex"
+model = "undisclosed"
+date = "2026-04-30"
+sealed_access = false
+
+[[reference]]
+task = "collections/028-chunks"
+path = "corpus/tasks/collections/028-chunks/reference.tac"
+authoring_mode = "expert-agent"
+agent = "codex"
+model = "undisclosed"
+date = "2026-04-30"
+sealed_access = false
+
+[[reference]]
+task = "collections/030-transpose-matrix"
+path = "corpus/tasks/collections/030-transpose-matrix/reference.tac"
+authoring_mode = "expert-agent"
+agent = "codex"
+model = "undisclosed"
+date = "2026-04-30"
+sealed_access = false
+
+[[reference]]
+task = "algorithms/031-binary-search"
+path = "corpus/tasks/algorithms/031-binary-search/reference.tac"
+authoring_mode = "expert-agent"
+agent = "codex"
+model = "undisclosed"
+date = "2026-04-30"
+sealed_access = false
+
+[[reference]]
+task = "algorithms/032-fizzbuzz"
+path = "corpus/tasks/algorithms/032-fizzbuzz/reference.tac"
+authoring_mode = "expert-agent"
+agent = "codex"
+model = "undisclosed"
+date = "2026-04-30"
+sealed_access = false
+
+[[reference]]
+task = "algorithms/033-two-sum"
+path = "corpus/tasks/algorithms/033-two-sum/reference.tac"
+authoring_mode = "expert-agent"
+agent = "codex"
+model = "undisclosed"
+date = "2026-04-30"
+sealed_access = false
+
+[[reference]]
+task = "algorithms/035-bubble-sort"
+path = "corpus/tasks/algorithms/035-bubble-sort/reference.tac"
+authoring_mode = "expert-agent"
+agent = "codex"
+model = "undisclosed"
+date = "2026-04-30"
+sealed_access = false
+
+[[reference]]
+task = "algorithms/036-quicksort"
+path = "corpus/tasks/algorithms/036-quicksort/reference.tac"
+authoring_mode = "expert-agent"
+agent = "codex"
+model = "undisclosed"
+date = "2026-04-30"
+sealed_access = false
+
+[[reference]]
+task = "algorithms/037-merge-sort"
+path = "corpus/tasks/algorithms/037-merge-sort/reference.tac"
+authoring_mode = "expert-agent"
+agent = "codex"
+model = "undisclosed"
+date = "2026-04-30"
+sealed_access = false
+
+[[reference]]
+task = "algorithms/038-linear-search"
+path = "corpus/tasks/algorithms/038-linear-search/reference.tac"
+authoring_mode = "expert-agent"
+agent = "codex"
+model = "undisclosed"
+date = "2026-04-30"
+sealed_access = false
+
+[[reference]]
+task = "algorithms/040-josephus"
+path = "corpus/tasks/algorithms/040-josephus/reference.tac"
+authoring_mode = "expert-agent"
+agent = "codex"
+model = "undisclosed"
+date = "2026-04-30"
+sealed_access = false

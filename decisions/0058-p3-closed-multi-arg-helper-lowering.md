@@ -3,6 +3,7 @@
 **Status:** Accepted
 **Date:** 2026-04-30
 **Phase:** 3, Stage 4
+**Amended by:** [ADR 0059](0059-p3-rec-hidden-captures.md)
 
 ## Context
 
@@ -51,4 +52,3 @@ codegen error.
 - Existing unary programs compile unchanged.
 - Partial application and open lambdas remain future work; the compiler reports
   arity errors rather than manufacturing closures.
-

@@ -327,6 +327,15 @@ Natural session split: collections (7) in one session; algorithms 031–040
 Exit gate: 15 additional references implemented and passing under
 `corpus-run-tacit`. Cumulative: 31 of 47 open references done.
 
+**Stage 5 landed (2026-04-30):** All 15 open collections/algorithms-part-1
+references implemented under `corpus/tasks/**/reference.tac` with sidecars;
+sealed tasks 022/024/029/034/039 have no Tacit references.
+`corpus-run-tacit` passes 215/215 tests across 31 open Tacit references.
+Stage 5 required ADR 0059 so `rec` helpers can receive captured runtime
+values and buffers as hidden direct-call parameters. `corpus-tokens` reports
+31 implemented Tacit references at 14,404 tokens versus 3,123 Python tokens
+for the same implemented subset.
+
 ### Stage 6: Tacit-Lite references — algorithms part 2 + I/O (041–060) (~1 week, ~2 sessions)
 
 Same shape. Open tasks:

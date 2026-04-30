@@ -124,3 +124,21 @@ fn closed_multi_arg_rec_lowers_as_direct_call() {
     assert!(ir.contains("define private i64 @tacit_fn_0_rec(i64"));
     assert!(ir.contains("call i64 @tacit_fn_0_rec"));
 }
+
+#[test]
+fn rec_value_capture_lowers_as_hidden_param() {
+    let src = b"let n = @add 40 2 in rec { add_n = lambda x. @add x n } in add_n 1";
+    let (node, _) = parse_authoring(src).expect("parse");
+    let ir = compile_to_ir_string(&node, "rec_value_capture").expect("codegen");
+    assert!(ir.contains("define private i64 @tacit_fn_0_rec(i64 %0, i64 %1)"));
+    assert!(ir.contains("call i64 @tacit_fn_0_rec(i64 1, i64 42)"));
+}
+
+#[test]
+fn rec_buffer_capture_lowers_as_hidden_param() {
+    let src = b"let buf = @buf-alloc 1 in let _ = @buf-set buf 0 41 in rec { get = lambda x. @add x (@buf-get buf 0) } in get 1";
+    let (node, _) = parse_authoring(src).expect("parse");
+    let ir = compile_to_ir_string(&node, "rec_buffer_capture").expect("codegen");
+    assert!(ir.contains("define private i64 @tacit_fn_0_rec(i64 %0, i64 %1, ptr %2)"));
+    assert!(ir.contains("call i64 @tacit_fn_0_rec(i64 1, i64 0, ptr %buf_ptr)"));
+}

@@ -318,10 +318,13 @@ Phase 3 Stage 2 added eight new `@name` primitives across four categories
 Conformance tests for all eight primitives: `crates/tacit-codegen/tests/p3_primitives.rs`
 (positive + boundary case per primitive). Source programs under `examples/smoke/p3-*.tac`.
 
-Phase 3 Stage 4 also lifts the direct-call lowering from unary-only to closed
-multi-argument lambda chains (ADR 0058). This is still not a closure ABI:
-`lambda a. lambda b. body` lowers as one private function taking two `i64`
-parameters, and callers must supply every argument at the call site.
+Phase 3 Stage 4 lifts the direct-call lowering from unary-only to
+multi-argument lambda chains (ADR 0058). Stage 5 adds hidden capture
+parameters for `rec` members (ADR 0059): runtime `i64` values and buffer
+pointers visible at the `rec` site are appended to the private function
+signature and call. This is still not a first-class closure ABI. Callers must
+supply every source-level argument at the call site, and partial application
+remains unsupported.
 
 Out of scope for Phase 1–3 (per the relevant ADRs):
 
@@ -348,4 +351,6 @@ Out of scope for Phase 1–3 (per the relevant ADRs):
 - [ADR 0041](../decisions/0041-p2-structured-error-format.md) — structured error format.
 - [ADR 0046](../decisions/0046-p2-stage-5-frozen.md) — Phase 2 freeze.
 - [ADR 0047](../decisions/0047-p3-stdlib-expansion-surface.md) — Phase 3 `@name` surface expansion (PARSE/FORMAT/MEM + `@buf-alloc-dyn`).
+- [ADR 0058](../decisions/0058-p3-closed-multi-arg-helper-lowering.md) — direct multi-argument helper lowering.
+- [ADR 0059](../decisions/0059-p3-rec-hidden-captures.md) — hidden capture parameters for `rec` helpers.
 - [phase-3-plan.md](../plans/phase-3-plan.md) — Phase 3 plan + stage gates.

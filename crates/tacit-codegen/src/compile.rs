@@ -7,10 +7,12 @@
 //! - The program's value, computed as `i64`, becomes `main`'s exit code
 //!   (truncated to `i32` per C runtime convention; ADR 0025 § Phase 1
 //!   libc set notes `return 0` is preferred over `exit(0)`).
-//! - Every lowered `Lam` chain is closed (ADR 0026) and hoisted as a
-//!   top-level LLVM function under default C calling convention (ADR 0027).
-//!   Direct calls may supply every argument in a consecutive lambda chain;
-//!   partial application remains unsupported.
+//! - `let`/anonymous `Lam` chains are closed (ADR 0026) and hoisted as
+//!   top-level LLVM functions under default C calling convention (ADR 0027).
+//!   `rec` members lower as direct-call helpers; Phase 3 permits hidden
+//!   parameters for captured runtime values and buffers (ADR 0059).
+//!   Direct calls may supply every source-level argument in a consecutive
+//!   lambda chain; partial application remains unsupported.
 //! - `App(Lam_or_RecMember, arg)` lowers as a direct call. Other `App`
 //!   shapes (e.g., applying a `Var` resolving to a non-`Lam` binding)
 //!   fail with `CodegenError::AppNonFunction`.
@@ -111,10 +113,11 @@ enum Binding<'ctx> {
     Ptr(PointerValue<'ctx>),
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct FunctionBinding<'ctx> {
     value: FunctionValue<'ctx>,
     arity: usize,
+    captures: Vec<Binding<'ctx>>,
 }
 
 impl<'ctx> Compiler<'ctx> {
@@ -412,7 +415,7 @@ impl<'ctx> Compiler<'ctx> {
                 }
                 let fn_val = self.hoist_lambda(lam_body, arity, "anon")?;
                 let arg_vals = self.compile_call_args(&args, env, cur_fn)?;
-                self.call_function(fn_val.value, &arg_vals)
+                self.call_function(&fn_val, &arg_vals)
             }
             Node::Var { index } => {
                 let binding = lookup_var(env, *index)?;
@@ -425,7 +428,7 @@ impl<'ctx> Compiler<'ctx> {
                             });
                         }
                         let arg_vals = self.compile_call_args(&args, env, cur_fn)?;
-                        self.call_function(fn_val.value, &arg_vals)
+                        self.call_function(fn_val, &arg_vals)
                     }
                     Binding::Value(_) | Binding::Ptr(_) => Err(CodegenError::AppNonFunction),
                 }
@@ -449,17 +452,24 @@ impl<'ctx> Compiler<'ctx> {
 
     fn call_function(
         &mut self,
-        fn_val: FunctionValue<'ctx>,
+        fn_binding: &FunctionBinding<'ctx>,
         args: &[IntValue<'ctx>],
     ) -> Result<IntValue<'ctx>> {
-        let call_args: Vec<BasicMetadataValueEnum<'ctx>> = args
+        let mut call_args: Vec<BasicMetadataValueEnum<'ctx>> = args
             .iter()
             .copied()
             .map(BasicMetadataValueEnum::IntValue)
             .collect();
+        for capture in &fn_binding.captures {
+            match capture {
+                Binding::Value(v) => call_args.push(BasicMetadataValueEnum::IntValue(*v)),
+                Binding::Ptr(p) => call_args.push(BasicMetadataValueEnum::PointerValue(*p)),
+                Binding::Function(_) => {}
+            }
+        }
         let call = self
             .builder
-            .build_call(fn_val, &call_args, "call")
+            .build_call(fn_binding.value, &call_args, "call")
             .map_err(|e| CodegenError::Llvm(e.to_string()))?;
         // C calling convention is the LLVM default (ADR 0027 § 2); no override needed.
         let ret = call
@@ -1605,21 +1615,35 @@ impl<'ctx> Compiler<'ctx> {
         check_closed(lam_body, arity as u64)?;
 
         let fn_name = self.fresh_fn_name(name_hint);
-        let fn_val = self.add_tacit_function(&fn_name, arity);
+        let fn_val = self.add_tacit_function(&fn_name, arity, &[]);
         // C calling convention is LLVM's default (ADR 0027); no override needed.
 
         self.compile_lambda_body(fn_val, lam_body, arity)?;
         Ok(FunctionBinding {
             value: fn_val,
             arity,
+            captures: Vec::new(),
         })
     }
 
-    fn add_tacit_function(&self, name: &str, arity: usize) -> FunctionValue<'ctx> {
+    fn add_tacit_function(
+        &self,
+        name: &str,
+        arity: usize,
+        captures: &[Binding<'ctx>],
+    ) -> FunctionValue<'ctx> {
         let i64_t = self.context.i64_type();
-        let params: Vec<BasicMetadataTypeEnum<'ctx>> = (0..arity)
+        let ptr_t = self.context.ptr_type(AddressSpace::default());
+        let mut params: Vec<BasicMetadataTypeEnum<'ctx>> = (0..arity)
             .map(|_| BasicMetadataTypeEnum::IntType(i64_t))
             .collect();
+        for capture in captures {
+            match capture {
+                Binding::Value(_) => params.push(BasicMetadataTypeEnum::IntType(i64_t)),
+                Binding::Ptr(_) => params.push(BasicMetadataTypeEnum::PointerType(ptr_t)),
+                Binding::Function(_) => {}
+            }
+        }
         let fn_ty = i64_t.fn_type(&params, false);
         self.module
             .add_function(name, fn_ty, Some(Linkage::Private))
@@ -1659,6 +1683,10 @@ impl<'ctx> Compiler<'ctx> {
     /// top-level direct-call function, then define each body, then emit
     /// `body` in the current scope (ADR 0027 § 1).
     ///
+    /// Phase 3 adds direct-call hidden captures for the outer value/pointer
+    /// environment (ADR 0059). Captures are appended after source-level
+    /// lambda arguments in the function signature and at each call site.
+    ///
     /// Codegen restriction: every binding member is a `Lam` chain. (Non-`Lam`
     /// members would create mutually recursive *values*, which is a
     /// different problem.) Each member sees all members at DeBruijn
@@ -1688,10 +1716,11 @@ impl<'ctx> Compiler<'ctx> {
         let mut fns: Vec<FunctionBinding<'ctx>> = Vec::with_capacity(n);
         for (arity, _) in &specs {
             let name = self.fresh_fn_name("rec");
-            let f = self.add_tacit_function(&name, *arity);
+            let f = self.add_tacit_function(&name, *arity, env);
             fns.push(FunctionBinding {
                 value: f,
                 arity: *arity,
+                captures: env.to_vec(),
             });
         }
 
@@ -1701,17 +1730,16 @@ impl<'ctx> Compiler<'ctx> {
         // frame so DeBruijn N+i still resolves to env[i].
         let mut rec_env: Vec<Binding<'ctx>> = Vec::with_capacity(n + env.len());
         for f in &fns {
-            rec_env.push(Binding::Function(*f));
+            rec_env.push(Binding::Function(f.clone()));
         }
         rec_env.extend_from_slice(env);
 
         // Define each member body.
         for (i, (arity, lam_body)) in specs.iter().enumerate() {
             // The lambda body sees its params in reverse DeBruijn order,
-            // then the rec frame, then the outer env. Build the per-body env
-            // accordingly.
-            // (Done inline in compile_lambda_body_with_env below.)
-            self.compile_lambda_body_with_rec_env(fns[i].value, lam_body, *arity, &rec_env)
+            // then the rec frame, then hidden capture parameters standing in
+            // for the outer env. Build the per-body env accordingly.
+            self.compile_lambda_body_with_rec_env(fns[i].value, lam_body, *arity, &fns, env)
                 .map_err(|cause| CodegenError::RecGroupFailed {
                     failing_index: i,
                     cause: Box::new(cause),
@@ -1728,11 +1756,24 @@ impl<'ctx> Compiler<'ctx> {
         fn_val: FunctionValue<'ctx>,
         body: &Node,
         arity: usize,
-        rec_env: &[Binding<'ctx>],
+        rec_fns: &[FunctionBinding<'ctx>],
+        outer_env: &[Binding<'ctx>],
     ) -> Result<()> {
         let saved_block = self.builder.get_insert_block();
         let entry = self.context.append_basic_block(fn_val, "entry");
         self.builder.position_at_end(entry);
+        let captured_env = self.capture_env_from_params(fn_val, arity, outer_env)?;
+        let mut rec_env: Vec<Binding<'ctx>> =
+            Vec::with_capacity(rec_fns.len() + captured_env.len());
+        for f in rec_fns {
+            rec_env.push(Binding::Function(FunctionBinding {
+                value: f.value,
+                arity: f.arity,
+                captures: captured_env.clone(),
+            }));
+        }
+        rec_env.extend_from_slice(&captured_env);
+
         let mut body_env: Vec<Binding<'ctx>> = Vec::with_capacity(arity + rec_env.len());
         for i in (0..arity).rev() {
             let param = fn_val
@@ -1741,7 +1782,7 @@ impl<'ctx> Compiler<'ctx> {
                 .into_int_value();
             body_env.push(Binding::Value(param));
         }
-        body_env.extend_from_slice(rec_env);
+        body_env.extend_from_slice(&rec_env);
         let v = self.compile_expr(body, &body_env, fn_val)?;
         self.builder
             .build_return(Some(&v))
@@ -1750,6 +1791,48 @@ impl<'ctx> Compiler<'ctx> {
             self.builder.position_at_end(saved);
         }
         Ok(())
+    }
+
+    fn capture_env_from_params(
+        &self,
+        fn_val: FunctionValue<'ctx>,
+        arity: usize,
+        outer_env: &[Binding<'ctx>],
+    ) -> Result<Vec<Binding<'ctx>>> {
+        let mut param_index = arity as u32;
+        let mut captured = Vec::with_capacity(outer_env.len());
+        for binding in outer_env {
+            match binding {
+                Binding::Value(_) => {
+                    let param = fn_val
+                        .get_nth_param(param_index)
+                        .ok_or_else(|| {
+                            CodegenError::Llvm(format!(
+                                "lambda missing captured int param {}",
+                                param_index
+                            ))
+                        })?
+                        .into_int_value();
+                    captured.push(Binding::Value(param));
+                    param_index += 1;
+                }
+                Binding::Ptr(_) => {
+                    let param = fn_val
+                        .get_nth_param(param_index)
+                        .ok_or_else(|| {
+                            CodegenError::Llvm(format!(
+                                "lambda missing captured ptr param {}",
+                                param_index
+                            ))
+                        })?
+                        .into_pointer_value();
+                    captured.push(Binding::Ptr(param));
+                    param_index += 1;
+                }
+                Binding::Function(f) => captured.push(Binding::Function(f.clone())),
+            }
+        }
+        Ok(captured)
     }
 
     /// `Match` over an integer scrutinee. Each `arm` has a `pat-ctor "<int>"`
