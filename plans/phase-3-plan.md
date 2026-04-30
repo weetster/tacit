@@ -355,6 +355,15 @@ full open set; any task that resists clean Tacit expression is documented
 as a Q-P3-1 follow-up (a primitive gap) and triggers a Stage 2 patch
 rather than relaxing the reference rules.
 
+**Stage 6 landed (2026-04-30):** All 16 remaining open
+algorithms-part-2/I/O references implemented under
+`corpus/tasks/**/reference.tac` with sidecars; sealed tasks
+043/048/053/058 have no Tacit references. `corpus-run-tacit` passes
+319/319 tests across all 47 open Tacit references. `corpus-tokens`
+reports the full open set at 20,661 Tacit tokens versus 4,584 Python
+tokens; non-stdlib-dominated open tasks are 20,214 Tacit tokens versus
+4,466 Python tokens.
+
 ### Stage 7: Primer document — core (~3–5 days, ~2 sessions)
 
 Authors the bulk of the primer in the location pinned by Q-P3-4. Two

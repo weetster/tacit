@@ -276,3 +276,147 @@ agent = "codex"
 model = "undisclosed"
 date = "2026-04-30"
 sealed_access = false
+
+[[reference]]
+task = "algorithms/041-rle-decode"
+path = "corpus/tasks/algorithms/041-rle-decode/reference.tac"
+authoring_mode = "expert-agent"
+agent = "codex"
+model = "undisclosed"
+date = "2026-04-30"
+sealed_access = false
+
+[[reference]]
+task = "algorithms/042-valid-sudoku-row"
+path = "corpus/tasks/algorithms/042-valid-sudoku-row/reference.tac"
+authoring_mode = "expert-agent"
+agent = "codex"
+model = "undisclosed"
+date = "2026-04-30"
+sealed_access = false
+
+[[reference]]
+task = "algorithms/044-count-islands"
+path = "corpus/tasks/algorithms/044-count-islands/reference.tac"
+authoring_mode = "expert-agent"
+agent = "codex"
+model = "undisclosed"
+date = "2026-04-30"
+sealed_access = false
+
+[[reference]]
+task = "algorithms/045-reverse-words"
+path = "corpus/tasks/algorithms/045-reverse-words/reference.tac"
+authoring_mode = "expert-agent"
+agent = "codex"
+model = "undisclosed"
+date = "2026-04-30"
+sealed_access = false
+
+[[reference]]
+task = "algorithms/046-max-subarray"
+path = "corpus/tasks/algorithms/046-max-subarray/reference.tac"
+authoring_mode = "expert-agent"
+agent = "codex"
+model = "undisclosed"
+date = "2026-04-30"
+sealed_access = false
+
+[[reference]]
+task = "algorithms/047-stable-sort-pairs"
+path = "corpus/tasks/algorithms/047-stable-sort-pairs/reference.tac"
+authoring_mode = "expert-agent"
+agent = "codex"
+model = "undisclosed"
+date = "2026-04-30"
+sealed_access = false
+
+[[reference]]
+task = "algorithms/049-matrix-multiply"
+path = "corpus/tasks/algorithms/049-matrix-multiply/reference.tac"
+authoring_mode = "expert-agent"
+agent = "codex"
+model = "undisclosed"
+date = "2026-04-30"
+sealed_access = false
+
+[[reference]]
+task = "algorithms/050-longest-run"
+path = "corpus/tasks/algorithms/050-longest-run/reference.tac"
+authoring_mode = "expert-agent"
+agent = "codex"
+model = "undisclosed"
+date = "2026-04-30"
+sealed_access = false
+
+[[reference]]
+task = "io/051-line-count"
+path = "corpus/tasks/io/051-line-count/reference.tac"
+authoring_mode = "expert-agent"
+agent = "codex"
+model = "undisclosed"
+date = "2026-04-30"
+sealed_access = false
+
+[[reference]]
+task = "io/052-sum-numbers"
+path = "corpus/tasks/io/052-sum-numbers/reference.tac"
+authoring_mode = "expert-agent"
+agent = "codex"
+model = "undisclosed"
+date = "2026-04-30"
+sealed_access = false
+
+[[reference]]
+task = "io/054-grep-substring"
+path = "corpus/tasks/io/054-grep-substring/reference.tac"
+authoring_mode = "expert-agent"
+agent = "codex"
+model = "undisclosed"
+date = "2026-04-30"
+sealed_access = false
+
+[[reference]]
+task = "io/055-sort-lines"
+path = "corpus/tasks/io/055-sort-lines/reference.tac"
+authoring_mode = "expert-agent"
+agent = "codex"
+model = "undisclosed"
+date = "2026-04-30"
+sealed_access = false
+
+[[reference]]
+task = "io/056-unique-lines"
+path = "corpus/tasks/io/056-unique-lines/reference.tac"
+authoring_mode = "expert-agent"
+agent = "codex"
+model = "undisclosed"
+date = "2026-04-30"
+sealed_access = false
+
+[[reference]]
+task = "io/057-word-count"
+path = "corpus/tasks/io/057-word-count/reference.tac"
+authoring_mode = "expert-agent"
+agent = "codex"
+model = "undisclosed"
+date = "2026-04-30"
+sealed_access = false
+
+[[reference]]
+task = "io/059-echo-reverse"
+path = "corpus/tasks/io/059-echo-reverse/reference.tac"
+authoring_mode = "expert-agent"
+agent = "codex"
+model = "undisclosed"
+date = "2026-04-30"
+sealed_access = false
+
+[[reference]]
+task = "io/060-longest-line"
+path = "corpus/tasks/io/060-longest-line/reference.tac"
+authoring_mode = "expert-agent"
+agent = "codex"
+model = "undisclosed"
+date = "2026-04-30"
+sealed_access = false
