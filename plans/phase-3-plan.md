@@ -389,6 +389,16 @@ typechecks under a primer-fixture test (`cargo test
 --features ...` extracts and validates each fenced block); no primer
 example is drawn from `sealed/`.
 
+**Stage 7 landed (2026-04-30):** Primer authored at
+`plans/primer/tacit-lite-primer.md` with six ADR 0050 sections and a
+measured `o200k_base` count of 10,149 tokens. The primer fixture lives at
+`crates/tacit-codegen/tests/primer_fixture.rs`; it extracts every fenced
+`tacit` block, typechecks/codegens success blocks, verifies expected
+diagnostic kinds for fail blocks, and compares blocks against open corpus
+Tacit references without traversing `corpus/sealed/`. Sealed integrity
+remains enforced by `corpus-verify-sealed` per ADR 0020. The formal
+metrics JSON Schema landed at `docs/phase-3-metrics.schema.json`.
+
 ### Stage 8: Evaluation harness — generation + grading (~1 week)
 
 Extends `corpus/harness/` per Q-P3-6 and Q-P3-9:

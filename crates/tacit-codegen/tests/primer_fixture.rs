@@ -1,0 +1,227 @@
+//! Phase 3 Stage 7 primer fixture.
+//!
+//! The primer is model-facing teaching material, so every fenced Tacit block
+//! must stay executable or intentionally failing with a documented diagnostic.
+//! This fixture also checks primer blocks against open corpus Tacit references.
+//! It intentionally does not read `corpus/sealed/**`; agent-level sealing rules
+//! forbid accessing that subtree.
+
+#![cfg(feature = "llvm")]
+
+use std::collections::HashSet;
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use tacit_codegen::analysis::{check_closed, check_no_holes};
+use tacit_codegen::compile_to_ir_string;
+use tacit_typecheck::infer_module;
+use tacit_views::authoring::parse_authoring;
+
+#[derive(Debug)]
+struct Block {
+    line: usize,
+    info: String,
+    source: String,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum Expectation {
+    Success,
+    Fail(String),
+}
+
+fn repo_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+}
+
+fn primer_path() -> PathBuf {
+    repo_root()
+        .join("plans")
+        .join("primer")
+        .join("tacit-lite-primer.md")
+}
+
+fn extract_tacit_blocks(markdown: &str) -> Vec<Block> {
+    let mut blocks = Vec::new();
+    let mut current: Option<(usize, String, Vec<String>)> = None;
+
+    for (idx, line) in markdown.lines().enumerate() {
+        let line_no = idx + 1;
+        if let Some(rest) = line.strip_prefix("```") {
+            if let Some((start, info, lines)) = current.take() {
+                blocks.push(Block {
+                    line: start,
+                    info,
+                    source: lines.join("\n"),
+                });
+            } else {
+                let info = rest.trim().to_string();
+                if info.starts_with("tacit") {
+                    current = Some((line_no, info, Vec::new()));
+                }
+            }
+            continue;
+        }
+
+        if let Some((_, _, lines)) = current.as_mut() {
+            lines.push(line.to_string());
+        }
+    }
+
+    assert!(
+        current.is_none(),
+        "unterminated Tacit fence in {}",
+        primer_path().display()
+    );
+    blocks
+}
+
+fn expectation(info: &str) -> Expectation {
+    for raw in info.split_whitespace().skip(1) {
+        let attr = raw.trim_matches(|c| c == '{' || c == '}');
+        if let Some(value) = attr.strip_prefix("fail=") {
+            let kind = value.trim_matches(|c| c == '"' || c == '\'');
+            return Expectation::Fail(kind.to_string());
+        }
+    }
+    Expectation::Success
+}
+
+fn collect_reference_sources(dir: &Path, out: &mut Vec<(PathBuf, String)>) {
+    for entry in fs::read_dir(dir).unwrap_or_else(|e| panic!("read {}: {}", dir.display(), e)) {
+        let entry = entry.unwrap_or_else(|e| panic!("read entry in {}: {}", dir.display(), e));
+        let path = entry.path();
+        if path.is_dir() {
+            collect_reference_sources(&path, out);
+        } else if path.file_name().and_then(|n| n.to_str()) == Some("reference.tac") {
+            let src = fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("read {}: {}", path.display(), e));
+            out.push((path, src));
+        }
+    }
+}
+
+fn lexical_units(src: &str) -> Vec<String> {
+    let mut units = Vec::new();
+    let mut buf = String::new();
+    for ch in src.chars() {
+        if ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '@') {
+            buf.push(ch);
+        } else {
+            if !buf.is_empty() {
+                units.push(std::mem::take(&mut buf));
+            }
+            if !ch.is_whitespace() {
+                units.push(ch.to_string());
+            }
+        }
+    }
+    if !buf.is_empty() {
+        units.push(buf);
+    }
+    units
+}
+
+fn windows(units: &[String], size: usize) -> HashSet<String> {
+    units
+        .windows(size)
+        .map(|window| window.join("\u{1f}"))
+        .collect()
+}
+
+fn assert_not_corpus_reference(block: &Block, references: &[(PathBuf, String)]) {
+    let block_trimmed = block.source.trim();
+    let block_units = lexical_units(block_trimmed);
+    let block_windows = windows(&block_units, 32);
+
+    for (path, reference) in references {
+        let reference_trimmed = reference.trim();
+        assert_ne!(
+            block_trimmed,
+            reference_trimmed,
+            "primer Tacit block at line {} exactly matches {}",
+            block.line,
+            path.display()
+        );
+
+        let reference_units = lexical_units(reference_trimmed);
+        for candidate in reference_units
+            .windows(32)
+            .map(|window| window.join("\u{1f}"))
+        {
+            assert!(
+                !block_windows.contains(&candidate),
+                "primer Tacit block at line {} shares a 32-token run with {}",
+                block.line,
+                path.display()
+            );
+        }
+    }
+}
+
+#[test]
+fn primer_tacit_fences_validate() {
+    let primer = fs::read_to_string(primer_path()).expect("read primer");
+    let blocks = extract_tacit_blocks(&primer);
+    assert!(
+        blocks.len() >= 20,
+        "expected at least 20 Tacit primer blocks"
+    );
+
+    let mut references = Vec::new();
+    collect_reference_sources(&repo_root().join("corpus").join("tasks"), &mut references);
+    assert!(
+        !references.is_empty(),
+        "expected open corpus reference.tac files for contamination check"
+    );
+
+    let mut successes = 0usize;
+    let mut failures = 0usize;
+
+    for (idx, block) in blocks.iter().enumerate() {
+        assert_not_corpus_reference(block, &references);
+        let (node, _) = parse_authoring(block.source.as_bytes())
+            .unwrap_or_else(|e| panic!("parse primer block at line {}: {}", block.line, e));
+
+        match expectation(&block.info) {
+            Expectation::Success => {
+                successes += 1;
+                check_no_holes(&node)
+                    .unwrap_or_else(|e| panic!("hole check line {}: {}", block.line, e));
+                check_closed(&node, 0)
+                    .unwrap_or_else(|e| panic!("closed check line {}: {}", block.line, e));
+                infer_module(&node)
+                    .unwrap_or_else(|diags| panic!("typecheck line {}: {:?}", block.line, diags));
+                compile_to_ir_string(&node, &format!("primer_block_{}", idx))
+                    .unwrap_or_else(|e| panic!("codegen line {}: {}", block.line, e));
+            }
+            Expectation::Fail(kind) => {
+                failures += 1;
+                let diags = match infer_module(&node) {
+                    Ok(_) => {
+                        panic!(
+                            "primer block at line {} was marked fail={} but typechecked",
+                            block.line, kind
+                        )
+                    }
+                    Err(diags) => diags,
+                };
+                assert!(
+                    diags.iter().any(|diag| diag.kind == kind),
+                    "primer block at line {} expected {}, got {:?}",
+                    block.line,
+                    kind,
+                    diags.iter().map(|diag| &diag.kind).collect::<Vec<_>>()
+                );
+            }
+        }
+    }
+
+    assert!(
+        successes >= 12,
+        "expected at least 12 successful Tacit blocks"
+    );
+    assert!(failures >= 8, "expected at least 8 failing Tacit blocks");
+}

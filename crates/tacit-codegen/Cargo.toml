@@ -35,5 +35,6 @@ llvm18-1 = ["dep:inkwell", "inkwell/llvm18-1", "llvm"]
 llvm19-1 = ["dep:inkwell", "inkwell/llvm19-1", "llvm"]
 
 [dev-dependencies]
+tacit-typecheck = { path = "../tacit-typecheck" }
 tacit-views = { path = "../tacit-views" }
 tempfile = "3"

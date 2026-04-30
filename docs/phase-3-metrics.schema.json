@@ -1,0 +1,576 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tacit-lang.local/schemas/phase-3-metrics.schema.json",
+  "title": "Tacit Phase 3 metrics",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "run_id",
+    "track",
+    "scope",
+    "model",
+    "tasks",
+    "aggregates",
+    "gates"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "p3.0"
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "track": {
+      "enum": [
+        "primary",
+        "maintenance",
+        "cross-family"
+      ]
+    },
+    "scope": {
+      "enum": [
+        "open",
+        "sealed",
+        "maintenance"
+      ]
+    },
+    "model": {
+      "$ref": "#/$defs/model"
+    },
+    "tasks": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "$ref": "#/$defs/primary_task"
+          },
+          {
+            "$ref": "#/$defs/maintenance_task"
+          }
+        ]
+      }
+    },
+    "aggregates": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/primary_aggregates"
+        },
+        {
+          "$ref": "#/$defs/maintenance_aggregates"
+        }
+      ]
+    },
+    "gates": {
+      "$ref": "#/$defs/gates"
+    }
+  },
+  "$defs": {
+    "non_negative_integer": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "rate": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "model": {
+      "type": "object",
+      "required": [
+        "provider",
+        "id",
+        "primer_hash",
+        "primer_tokens"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "provider": {
+          "enum": [
+            "anthropic",
+            "openrouter"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "primer_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "primer_tokens": {
+          "$ref": "#/$defs/non_negative_integer"
+        }
+      }
+    },
+    "diagnostic_envelope": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "errors"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "p2.0"
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/diagnostic"
+          }
+        }
+      }
+    },
+    "diagnostic": {
+      "type": "object",
+      "required": [
+        "kind",
+        "severity",
+        "location",
+        "message",
+        "expected",
+        "actual",
+        "fix",
+        "related"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "severity": {
+          "enum": [
+            "error",
+            "warning"
+          ]
+        },
+        "location": {
+          "$ref": "#/$defs/location"
+        },
+        "message": {
+          "type": "string"
+        },
+        "expected": true,
+        "actual": true,
+        "fix": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/fix"
+            }
+          ]
+        },
+        "related": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/diagnostic"
+          }
+        }
+      }
+    },
+    "location": {
+      "type": "object",
+      "required": [
+        "ast_path",
+        "source_span"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "ast_path": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "child"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "child": {
+                "$ref": "#/$defs/non_negative_integer"
+              }
+            }
+          }
+        },
+        "source_span": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "required": [
+                "start",
+                "end"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "start": {
+                  "$ref": "#/$defs/non_negative_integer"
+                },
+                "end": {
+                  "$ref": "#/$defs/non_negative_integer"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "fix": {
+      "type": "object",
+      "required": [
+        "description",
+        "edits"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "edits": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "location",
+              "replacement"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "location": {
+                "$ref": "#/$defs/location"
+              },
+              "replacement": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "primary_task": {
+      "type": "object",
+      "required": [
+        "task_id",
+        "stdlib_dominated",
+        "compile_pass",
+        "typecheck_pass",
+        "tests_pass",
+        "tests_total",
+        "generation_tokens",
+        "python_baseline_tokens",
+        "diagnostics",
+        "duration_ms",
+        "retries"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "task_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "stdlib_dominated": {
+          "type": "boolean"
+        },
+        "compile_pass": {
+          "type": "boolean"
+        },
+        "typecheck_pass": {
+          "type": "boolean"
+        },
+        "tests_pass": {
+          "$ref": "#/$defs/non_negative_integer"
+        },
+        "tests_total": {
+          "$ref": "#/$defs/non_negative_integer"
+        },
+        "generation_tokens": {
+          "$ref": "#/$defs/non_negative_integer"
+        },
+        "python_baseline_tokens": {
+          "$ref": "#/$defs/non_negative_integer"
+        },
+        "diagnostics": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/diagnostic_envelope"
+            }
+          ]
+        },
+        "duration_ms": {
+          "$ref": "#/$defs/non_negative_integer"
+        },
+        "retries": {
+          "$ref": "#/$defs/non_negative_integer"
+        }
+      }
+    },
+    "maintenance_task": {
+      "type": "object",
+      "required": [
+        "task_id",
+        "subtype",
+        "compile_pass",
+        "typecheck_pass",
+        "tests_pass",
+        "tests_total",
+        "diff_locality",
+        "starting_tokens",
+        "generation_tokens",
+        "diagnostics",
+        "duration_ms",
+        "retries"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "task_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "subtype": {
+          "enum": [
+            "repair",
+            "edit",
+            "refactor"
+          ]
+        },
+        "compile_pass": {
+          "type": "boolean"
+        },
+        "typecheck_pass": {
+          "type": "boolean"
+        },
+        "tests_pass": {
+          "$ref": "#/$defs/non_negative_integer"
+        },
+        "tests_total": {
+          "$ref": "#/$defs/non_negative_integer"
+        },
+        "diff_locality": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/rate"
+            }
+          ]
+        },
+        "starting_tokens": {
+          "$ref": "#/$defs/non_negative_integer"
+        },
+        "generation_tokens": {
+          "$ref": "#/$defs/non_negative_integer"
+        },
+        "diagnostics": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/diagnostic_envelope"
+            }
+          ]
+        },
+        "duration_ms": {
+          "$ref": "#/$defs/non_negative_integer"
+        },
+        "retries": {
+          "$ref": "#/$defs/non_negative_integer"
+        }
+      }
+    },
+    "primary_aggregates": {
+      "type": "object",
+      "required": [
+        "full",
+        "stdlib_dominated",
+        "non_stdlib_dominated"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "full": {
+          "$ref": "#/$defs/primary_bucket"
+        },
+        "stdlib_dominated": {
+          "$ref": "#/$defs/primary_bucket"
+        },
+        "non_stdlib_dominated": {
+          "$ref": "#/$defs/primary_bucket"
+        }
+      }
+    },
+    "primary_bucket": {
+      "type": "object",
+      "required": [
+        "task_count",
+        "compile_pass_rate",
+        "typecheck_pass_rate",
+        "tests_pass_rate",
+        "tacit_tokens_total",
+        "python_tokens_total",
+        "token_delta",
+        "primer_amortized_total",
+        "tests_pass_total",
+        "tests_total_total"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "task_count": {
+          "$ref": "#/$defs/non_negative_integer"
+        },
+        "compile_pass_rate": {
+          "$ref": "#/$defs/rate"
+        },
+        "typecheck_pass_rate": {
+          "$ref": "#/$defs/rate"
+        },
+        "tests_pass_rate": {
+          "$ref": "#/$defs/rate"
+        },
+        "tacit_tokens_total": {
+          "$ref": "#/$defs/non_negative_integer"
+        },
+        "python_tokens_total": {
+          "$ref": "#/$defs/non_negative_integer"
+        },
+        "token_delta": {
+          "type": "number"
+        },
+        "primer_amortized_total": {
+          "$ref": "#/$defs/non_negative_integer"
+        },
+        "tests_pass_total": {
+          "$ref": "#/$defs/non_negative_integer"
+        },
+        "tests_total_total": {
+          "$ref": "#/$defs/non_negative_integer"
+        }
+      }
+    },
+    "maintenance_aggregates": {
+      "type": "object",
+      "required": [
+        "by_subtype",
+        "overall"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "by_subtype": {
+          "type": "object",
+          "required": [
+            "repair",
+            "edit",
+            "refactor"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "repair": {
+              "$ref": "#/$defs/maintenance_bucket"
+            },
+            "edit": {
+              "$ref": "#/$defs/maintenance_bucket"
+            },
+            "refactor": {
+              "$ref": "#/$defs/maintenance_bucket"
+            }
+          }
+        },
+        "overall": {
+          "$ref": "#/$defs/maintenance_bucket"
+        }
+      }
+    },
+    "maintenance_bucket": {
+      "type": "object",
+      "required": [
+        "task_count",
+        "compile_pass_rate",
+        "tests_pass_rate"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "task_count": {
+          "$ref": "#/$defs/non_negative_integer"
+        },
+        "compile_pass_rate": {
+          "$ref": "#/$defs/rate"
+        },
+        "tests_pass_rate": {
+          "$ref": "#/$defs/rate"
+        },
+        "diff_locality_mean": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/rate"
+            }
+          ]
+        }
+      }
+    },
+    "gates": {
+      "type": "object",
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "$ref": "#/$defs/gate"
+          },
+          {
+            "type": "boolean"
+          }
+        ]
+      },
+      "properties": {
+        "passed_overall": {
+          "type": "boolean"
+        }
+      }
+    },
+    "gate": {
+      "type": "object",
+      "required": [
+        "applies",
+        "metric",
+        "scope",
+        "threshold",
+        "value",
+        "passed"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "applies": {
+          "type": "boolean"
+        },
+        "metric": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scope": {
+          "type": "string",
+          "minLength": 1
+        },
+        "threshold": {
+          "type": "number"
+        },
+        "value": {
+          "type": "number"
+        },
+        "passed": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

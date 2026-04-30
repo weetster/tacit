@@ -606,6 +606,7 @@ version = "0.1.0"
 dependencies = [
  "inkwell",
  "tacit-canonical",
+ "tacit-typecheck",
  "tacit-views",
  "tempfile",
  "thiserror 1.0.69",
