@@ -430,6 +430,19 @@ gates verification correctly; CI runs `corpus-eval --dry-run` (compiles
 the harness, validates the primer fixture, exercises the metrics writer
 without invoking a paid model) on every push.
 
+**Stage 8 landed (2026-04-30):** `corpus-eval` is implemented in
+`corpus/harness/src/tacit_corpus/eval.py` and exposed through the
+uv-managed harness scripts. It supports Anthropic primary runs via
+`ANTHROPIC_API_KEY`, OpenRouter cross-family runs via
+`OPENROUTER_API_KEY`, open-only default scope, `--include-sealed` grading
+scope, fenced `tacit` extraction, generated sidecar synthesis,
+repo-local `tacit check` / `tacit compile` grading, `tests.jsonl`
+execution, failure capture under `plans/phase-3-results/failures/`, and
+paired ADR 0052/0055 `<run-id>.run.json` / `<run-id>.metrics.json`
+outputs. CI now runs `uv run corpus-eval --dry-run`; the dry-run uses
+open Tacit references as synthetic model outputs and exercises the
+metrics writer without invoking a paid model.
+
 ### Stage 9: Primary baseline run — Sonnet + Haiku (~2–3 days)
 
 Runs `corpus-eval` end-to-end for the Phase 3 baseline gate.
