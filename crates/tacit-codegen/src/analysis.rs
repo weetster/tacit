@@ -29,6 +29,21 @@ pub fn unfold_app(node: &Node) -> (&Node, Vec<&Node>) {
     }
 }
 
+/// Walk a consecutive `Lam` chain:
+/// `Lam(Lam(body))` -> `(2, body)`.
+///
+/// The returned arity is the number of parameters in source order. The body is
+/// the first non-`Lam` node after the parameter binders.
+pub fn collect_lam_chain(node: &Node) -> Option<(usize, &Node)> {
+    let mut arity = 0usize;
+    let mut cur = node;
+    while let Node::Lam { body } = cur {
+        arity += 1;
+        cur = body.as_ref();
+    }
+    (arity > 0).then_some((arity, cur))
+}
+
 /// Verify the AST contains no `Hole` nodes. ADR 0023 / Phase 1 hard-fails
 /// on holes; this gate runs once at codegen entry.
 pub fn check_no_holes(node: &Node) -> Result<(), CodegenError> {
@@ -279,6 +294,15 @@ mod tests {
         let (head, args) = unfold_app(&ast);
         assert!(matches!(head, Node::Lam { .. }));
         assert_eq!(args.len(), 1);
+    }
+
+    #[test]
+    fn collect_lam_chain_counts_consecutive_lambdas() {
+        let ast = lam(lam(app(var(1), var(0))));
+        let (arity, body) = collect_lam_chain(&ast).expect("lambda chain");
+        assert_eq!(arity, 2);
+        assert!(matches!(body, Node::App { .. }));
+        assert!(collect_lam_chain(&int("0")).is_none());
     }
 
     #[test]

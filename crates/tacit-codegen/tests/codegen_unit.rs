@@ -6,8 +6,10 @@
 #![cfg(feature = "llvm")]
 
 use tacit_canonical::ast::Node;
+use tacit_codegen::compile_to_ir_string;
 use tacit_codegen::error::CodegenError;
 use tacit_codegen::primitives::PrimKind;
+use tacit_views::authoring::parse_authoring;
 
 #[test]
 fn primitive_lookup_smoke() {
@@ -103,4 +105,22 @@ fn integer_overflow_rejected() {
     let mut compiler = tacit_codegen::compile::Compiler::new(&context, "m");
     let err = compiler.compile_program(&node).expect_err("expected error");
     assert!(matches!(err, CodegenError::IntegerOverflow { .. }));
+}
+
+#[test]
+fn closed_multi_arg_let_lowers_as_direct_call() {
+    let src = b"let add2 = lambda x. lambda y. @add x y in add2 40 2";
+    let (node, _) = parse_authoring(src).expect("parse");
+    let ir = compile_to_ir_string(&node, "multi_arg_let").expect("codegen");
+    assert!(ir.contains("define private i64 @tacit_fn_0_let(i64"));
+    assert!(ir.contains(", i64"));
+}
+
+#[test]
+fn closed_multi_arg_rec_lowers_as_direct_call() {
+    let src = b"rec { gcd = lambda a. lambda b. if b then gcd b (@mod a b) else a } in gcd 12 18";
+    let (node, _) = parse_authoring(src).expect("parse");
+    let ir = compile_to_ir_string(&node, "multi_arg_rec").expect("codegen");
+    assert!(ir.contains("define private i64 @tacit_fn_0_rec(i64"));
+    assert!(ir.contains("call i64 @tacit_fn_0_rec"));
 }

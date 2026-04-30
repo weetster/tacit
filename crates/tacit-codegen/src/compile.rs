@@ -7,10 +7,10 @@
 //! - The program's value, computed as `i64`, becomes `main`'s exit code
 //!   (truncated to `i32` per C runtime convention; ADR 0025 § Phase 1
 //!   libc set notes `return 0` is preferred over `exit(0)`).
-//! - Every `Lam` is closed (ADR 0026), unary, and hoisted as a top-level
-//!   LLVM function `(i64) -> i64` under default C calling convention
-//!   (ADR 0027). Multi-arg functions are not supported; the Phase 1
-//!   smoke corpus is unary-only.
+//! - Every lowered `Lam` chain is closed (ADR 0026) and hoisted as a
+//!   top-level LLVM function under default C calling convention (ADR 0027).
+//!   Direct calls may supply every argument in a consecutive lambda chain;
+//!   partial application remains unsupported.
 //! - `App(Lam_or_RecMember, arg)` lowers as a direct call. Other `App`
 //!   shapes (e.g., applying a `Var` resolving to a non-`Lam` binding)
 //!   fail with `CodegenError::AppNonFunction`.
@@ -61,7 +61,9 @@ const LLVM_C_CALL_CONV: u32 = 0;
 
 use tacit_canonical::ast::Node;
 
-use crate::analysis::{check_closed, check_no_holes, parse_int_literal, sanitize, unfold_app};
+use crate::analysis::{
+    check_closed, check_no_holes, collect_lam_chain, parse_int_literal, sanitize, unfold_app,
+};
 use crate::error::CodegenError;
 use crate::primitives::{ArithOp, CmpOp, PrimKind};
 
@@ -103,10 +105,16 @@ enum Binding<'ctx> {
     Value(IntValue<'ctx>),
     /// A top-level function reference. Only callable at `App` head;
     /// reading the binding outside head position is `FirstClassFunction`.
-    Function(FunctionValue<'ctx>),
+    Function(FunctionBinding<'ctx>),
     /// A stack-allocated byte buffer (from `@buf-alloc N`). Only valid as
     /// a buffer argument to `@read` / `@write`; not a first-class value (ADR 0038).
     Ptr(PointerValue<'ctx>),
+}
+
+#[derive(Clone, Copy)]
+struct FunctionBinding<'ctx> {
+    value: FunctionValue<'ctx>,
+    arity: usize,
 }
 
 impl<'ctx> Compiler<'ctx> {
@@ -266,10 +274,12 @@ impl<'ctx> Compiler<'ctx> {
         env: &[Binding<'ctx>],
         cur_fn: FunctionValue<'ctx>,
     ) -> Result<IntValue<'ctx>> {
-        // Special-case Let-of-Lam: hoist the lambda to a top-level function
-        // and bind the body under a `Function` entry. ADR 0026 § 3 second bullet.
-        if let Node::Lam { body: lam_body } = rhs {
-            let fn_val = self.hoist_lambda(lam_body, "let")?;
+        // Special-case Let-of-Lam-chain: hoist the closed lambda chain to a
+        // top-level function and bind the body under a `Function` entry.
+        // ADR 0026 § 3 second bullet; Phase 3 permits direct multi-arg calls
+        // when all arguments are supplied at the call site.
+        if let Some((arity, lam_body)) = collect_lam_chain(rhs) {
+            let fn_val = self.hoist_lambda(lam_body, arity, "let")?;
             let mut new_env = env.to_vec();
             new_env.insert(0, Binding::Function(fn_val));
             return self.compile_expr(body, &new_env, cur_fn);
@@ -377,7 +387,7 @@ impl<'ctx> Compiler<'ctx> {
 
     /// Compile `App` left-spine. Recognises:
     ///   1. `Sym(name)` head → primitive (libc / arith / cmp).
-    ///   2. `Lam(_)` head     → hoist + direct call.
+    ///   2. `Lam(_)` head     → collect a closed lambda chain, hoist + direct call.
     ///   3. `Var(i)` head whose binding is `Function(_)` → direct call.
     ///
     /// Anything else fails.
@@ -391,27 +401,31 @@ impl<'ctx> Compiler<'ctx> {
 
         match head {
             Node::Sym { name } => self.compile_primitive_call(name, &args, env, cur_fn),
-            Node::Lam { body: lam_body } => {
-                if args.len() != 1 {
-                    return Err(CodegenError::Unsupported(
-                        "multi-argument application of bare lambda (Phase 1 unary only)",
-                    ));
+            Node::Lam { .. } => {
+                let (arity, lam_body) =
+                    collect_lam_chain(head).expect("Node::Lam has a lambda chain");
+                if args.len() != arity {
+                    return Err(CodegenError::FunctionArity {
+                        expected: arity,
+                        got: args.len(),
+                    });
                 }
-                let fn_val = self.hoist_lambda(lam_body, "anon")?;
-                let arg_val = self.compile_expr(args[0], env, cur_fn)?;
-                self.call_function(fn_val, arg_val)
+                let fn_val = self.hoist_lambda(lam_body, arity, "anon")?;
+                let arg_vals = self.compile_call_args(&args, env, cur_fn)?;
+                self.call_function(fn_val.value, &arg_vals)
             }
             Node::Var { index } => {
                 let binding = lookup_var(env, *index)?;
                 match binding {
                     Binding::Function(fn_val) => {
-                        if args.len() != 1 {
-                            return Err(CodegenError::Unsupported(
-                                "multi-argument application (Phase 1 unary only)",
-                            ));
+                        if args.len() != fn_val.arity {
+                            return Err(CodegenError::FunctionArity {
+                                expected: fn_val.arity,
+                                got: args.len(),
+                            });
                         }
-                        let arg_val = self.compile_expr(args[0], env, cur_fn)?;
-                        self.call_function(*fn_val, arg_val)
+                        let arg_vals = self.compile_call_args(&args, env, cur_fn)?;
+                        self.call_function(fn_val.value, &arg_vals)
                     }
                     Binding::Value(_) | Binding::Ptr(_) => Err(CodegenError::AppNonFunction),
                 }
@@ -420,14 +434,32 @@ impl<'ctx> Compiler<'ctx> {
         }
     }
 
+    fn compile_call_args(
+        &mut self,
+        args: &[&Node],
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<Vec<IntValue<'ctx>>> {
+        let mut values = Vec::with_capacity(args.len());
+        for arg in args {
+            values.push(self.compile_expr(arg, env, cur_fn)?);
+        }
+        Ok(values)
+    }
+
     fn call_function(
         &mut self,
         fn_val: FunctionValue<'ctx>,
-        arg: IntValue<'ctx>,
+        args: &[IntValue<'ctx>],
     ) -> Result<IntValue<'ctx>> {
+        let call_args: Vec<BasicMetadataValueEnum<'ctx>> = args
+            .iter()
+            .copied()
+            .map(BasicMetadataValueEnum::IntValue)
+            .collect();
         let call = self
             .builder
-            .build_call(fn_val, &[BasicMetadataValueEnum::IntValue(arg)], "call")
+            .build_call(fn_val, &call_args, "call")
             .map_err(|e| CodegenError::Llvm(e.to_string()))?;
         // C calling convention is the LLVM default (ADR 0027 § 2); no override needed.
         let ret = call
@@ -1561,34 +1593,56 @@ impl<'ctx> Compiler<'ctx> {
         Ok(ret_phi.as_basic_value().into_int_value())
     }
 
-    /// Hoist a `Lam` body to a top-level function `i64 -> i64`.
-    /// The lambda must be closed (free DeBruijn check below); body is
-    /// compiled with the new env containing only the parameter at index 0.
-    fn hoist_lambda(&mut self, lam_body: &Node, name_hint: &str) -> Result<FunctionValue<'ctx>> {
-        check_closed(lam_body, 1)?;
+    /// Hoist a consecutive `Lam` chain to a top-level function.
+    /// The lambda chain must be closed (free DeBruijn check below); body is
+    /// compiled with an env containing all parameters in DeBruijn order.
+    fn hoist_lambda(
+        &mut self,
+        lam_body: &Node,
+        arity: usize,
+        name_hint: &str,
+    ) -> Result<FunctionBinding<'ctx>> {
+        check_closed(lam_body, arity as u64)?;
 
         let fn_name = self.fresh_fn_name(name_hint);
-        let i64_t = self.context.i64_type();
-        let fn_ty = i64_t.fn_type(&[BasicMetadataTypeEnum::IntType(i64_t)], false);
-        let fn_val = self
-            .module
-            .add_function(&fn_name, fn_ty, Some(Linkage::Private));
+        let fn_val = self.add_tacit_function(&fn_name, arity);
         // C calling convention is LLVM's default (ADR 0027); no override needed.
 
-        self.compile_lambda_body(fn_val, lam_body)?;
-        Ok(fn_val)
+        self.compile_lambda_body(fn_val, lam_body, arity)?;
+        Ok(FunctionBinding {
+            value: fn_val,
+            arity,
+        })
     }
 
-    fn compile_lambda_body(&mut self, fn_val: FunctionValue<'ctx>, body: &Node) -> Result<()> {
+    fn add_tacit_function(&self, name: &str, arity: usize) -> FunctionValue<'ctx> {
+        let i64_t = self.context.i64_type();
+        let params: Vec<BasicMetadataTypeEnum<'ctx>> = (0..arity)
+            .map(|_| BasicMetadataTypeEnum::IntType(i64_t))
+            .collect();
+        let fn_ty = i64_t.fn_type(&params, false);
+        self.module
+            .add_function(name, fn_ty, Some(Linkage::Private))
+    }
+
+    fn compile_lambda_body(
+        &mut self,
+        fn_val: FunctionValue<'ctx>,
+        body: &Node,
+        arity: usize,
+    ) -> Result<()> {
         let saved_block = self.builder.get_insert_block();
         let entry = self.context.append_basic_block(fn_val, "entry");
         self.builder.position_at_end(entry);
 
-        let param = fn_val
-            .get_nth_param(0)
-            .ok_or_else(|| CodegenError::Llvm("lambda missing param 0".into()))?
-            .into_int_value();
-        let env = vec![Binding::Value(param)];
+        let mut env = Vec::with_capacity(arity);
+        for i in (0..arity).rev() {
+            let param = fn_val
+                .get_nth_param(i as u32)
+                .ok_or_else(|| CodegenError::Llvm(format!("lambda missing param {i}")))?
+                .into_int_value();
+            env.push(Binding::Value(param));
+        }
 
         let v = self.compile_expr(body, &env, fn_val)?;
         self.builder
@@ -1602,10 +1656,10 @@ impl<'ctx> Compiler<'ctx> {
     }
 
     /// `Rec { bindings, body }`: forward-declare every binding member as a
-    /// top-level `i64 → i64` function, then define each body, then emit
+    /// top-level direct-call function, then define each body, then emit
     /// `body` in the current scope (ADR 0027 § 1).
     ///
-    /// Phase 1 restriction: every binding member is a `Lam`. (Non-`Lam`
+    /// Codegen restriction: every binding member is a `Lam` chain. (Non-`Lam`
     /// members would create mutually recursive *values*, which is a
     /// different problem.) Each member sees all members at DeBruijn
     /// indices 0..N (per ADR 0007).
@@ -1616,9 +1670,12 @@ impl<'ctx> Compiler<'ctx> {
         env: &[Binding<'ctx>],
         cur_fn: FunctionValue<'ctx>,
     ) -> Result<IntValue<'ctx>> {
-        // Phase 1: every Rec member must be a Lam.
+        // Every Rec member must be a Lam chain.
+        let mut specs: Vec<(usize, &Node)> = Vec::with_capacity(bindings.len());
         for (i, b) in bindings.iter().enumerate() {
-            if !matches!(b, Node::Lam { .. }) {
+            if let Some(spec) = collect_lam_chain(b) {
+                specs.push(spec);
+            } else {
                 return Err(CodegenError::RecGroupFailed {
                     failing_index: i,
                     cause: Box::new(CodegenError::Unsupported("rec member that is not a lambda")),
@@ -1628,15 +1685,14 @@ impl<'ctx> Compiler<'ctx> {
 
         // Forward-declare all N functions.
         let n = bindings.len();
-        let i64_t = self.context.i64_type();
-        let fn_ty = i64_t.fn_type(&[BasicMetadataTypeEnum::IntType(i64_t)], false);
-        let mut fns: Vec<FunctionValue<'ctx>> = Vec::with_capacity(n);
-        for _ in 0..n {
+        let mut fns: Vec<FunctionBinding<'ctx>> = Vec::with_capacity(n);
+        for (arity, _) in &specs {
             let name = self.fresh_fn_name("rec");
-            let f = self
-                .module
-                .add_function(&name, fn_ty, Some(Linkage::Private));
-            fns.push(f);
+            let f = self.add_tacit_function(&name, *arity);
+            fns.push(FunctionBinding {
+                value: f,
+                arity: *arity,
+            });
         }
 
         // Build the rec-frame env once; it's the same for every member's body
@@ -1650,15 +1706,12 @@ impl<'ctx> Compiler<'ctx> {
         rec_env.extend_from_slice(env);
 
         // Define each member body.
-        for (i, b) in bindings.iter().enumerate() {
-            let lam_body = match b {
-                Node::Lam { body } => body,
-                _ => unreachable!(),
-            };
-            // The lambda body sees: 1 param at index 0, then the rec frame at
-            // 1..=N, then the outer env. Build the per-body env accordingly.
+        for (i, (arity, lam_body)) in specs.iter().enumerate() {
+            // The lambda body sees its params in reverse DeBruijn order,
+            // then the rec frame, then the outer env. Build the per-body env
+            // accordingly.
             // (Done inline in compile_lambda_body_with_env below.)
-            self.compile_lambda_body_with_rec_env(fns[i], lam_body, &rec_env)
+            self.compile_lambda_body_with_rec_env(fns[i].value, lam_body, *arity, &rec_env)
                 .map_err(|cause| CodegenError::RecGroupFailed {
                     failing_index: i,
                     cause: Box::new(cause),
@@ -1674,16 +1727,20 @@ impl<'ctx> Compiler<'ctx> {
         &mut self,
         fn_val: FunctionValue<'ctx>,
         body: &Node,
+        arity: usize,
         rec_env: &[Binding<'ctx>],
     ) -> Result<()> {
         let saved_block = self.builder.get_insert_block();
         let entry = self.context.append_basic_block(fn_val, "entry");
         self.builder.position_at_end(entry);
-        let param = fn_val
-            .get_nth_param(0)
-            .ok_or_else(|| CodegenError::Llvm("lambda missing param 0".into()))?
-            .into_int_value();
-        let mut body_env: Vec<Binding<'ctx>> = vec![Binding::Value(param)];
+        let mut body_env: Vec<Binding<'ctx>> = Vec::with_capacity(arity + rec_env.len());
+        for i in (0..arity).rev() {
+            let param = fn_val
+                .get_nth_param(i as u32)
+                .ok_or_else(|| CodegenError::Llvm(format!("lambda missing param {i}")))?
+                .into_int_value();
+            body_env.push(Binding::Value(param));
+        }
         body_env.extend_from_slice(rec_env);
         let v = self.compile_expr(body, &body_env, fn_val)?;
         self.builder

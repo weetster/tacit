@@ -73,3 +73,4 @@ Keep ADRs short. They record the decision, not the full analysis that led to it.
 - [0055 — Phase 3 metrics JSON schema](0055-p3-metrics-schema.md)
 - [0056 — Phase 3 Stage 1 frozen](0056-p3-stage-1-frozen.md)
 - [0057 — Expert-agent authorship for Tacit-Lite corpus references](0057-p3-expert-agent-tacit-reference-authorship.md)
+- [0058 — Phase 3 closed multi-argument helper lowering](0058-p3-closed-multi-arg-helper-lowering.md)

@@ -318,6 +318,11 @@ Phase 3 Stage 2 added eight new `@name` primitives across four categories
 Conformance tests for all eight primitives: `crates/tacit-codegen/tests/p3_primitives.rs`
 (positive + boundary case per primitive). Source programs under `examples/smoke/p3-*.tac`.
 
+Phase 3 Stage 4 also lifts the direct-call lowering from unary-only to closed
+multi-argument lambda chains (ADR 0058). This is still not a closure ABI:
+`lambda a. lambda b. body` lowers as one private function taking two `i64`
+parameters, and callers must supply every argument at the call site.
+
 Out of scope for Phase 1–3 (per the relevant ADRs):
 
 - Open lambdas / first-class function values (ADR 0026).

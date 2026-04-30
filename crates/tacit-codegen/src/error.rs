@@ -30,6 +30,11 @@ pub enum CodegenError {
     #[error("application of non-function value")]
     AppNonFunction,
 
+    /// A direct Tacit function call supplied too few or too many arguments.
+    /// Partial application remains unsupported by codegen.
+    #[error("function expects arity {expected}, got {got}")]
+    FunctionArity { expected: usize, got: usize },
+
     /// `Var` that resolves to a `Lam` binding but appears outside `App` head
     /// position. First-class function values are banned in Phase 1 (ADR 0026 § 4).
     #[error("first-class function value: lambdas may only appear at App head in Phase 1")]
