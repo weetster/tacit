@@ -15,6 +15,7 @@ dev = [
 
 [project.scripts]
 corpus-run = "tacit_corpus.run:main"
+corpus-run-tacit = "tacit_corpus.run_tacit:main"
 corpus-tokens = "tacit_corpus.count_tokens:main"
 corpus-verify-sealed = "tacit_corpus.verify_sealed:main"
 

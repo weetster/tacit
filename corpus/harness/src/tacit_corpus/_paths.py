@@ -1,6 +1,7 @@
 from pathlib import Path
 
 CORPUS_ROOT = Path(__file__).resolve().parents[3]
+REPO_ROOT = CORPUS_ROOT.parent
 OPEN_TASKS_ROOT = CORPUS_ROOT / "tasks"
 SEALED_ROOT = CORPUS_ROOT / "sealed"
 SEALED_HASHES_FILE = CORPUS_ROOT / "sealed-hashes.txt"

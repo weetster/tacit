@@ -1,0 +1,143 @@
+[[reference]]
+task = "arithmetic/001-sum-to-n"
+path = "corpus/tasks/arithmetic/001-sum-to-n/reference.tac"
+authoring_mode = "expert-agent"
+agent = "codex"
+model = "undisclosed"
+date = "2026-04-30"
+sealed_access = false
+
+[[reference]]
+task = "arithmetic/003-factorial"
+path = "corpus/tasks/arithmetic/003-factorial/reference.tac"
+authoring_mode = "expert-agent"
+agent = "codex"
+model = "undisclosed"
+date = "2026-04-30"
+sealed_access = false
+
+[[reference]]
+task = "arithmetic/004-gcd"
+path = "corpus/tasks/arithmetic/004-gcd/reference.tac"
+authoring_mode = "expert-agent"
+agent = "codex"
+model = "undisclosed"
+date = "2026-04-30"
+sealed_access = false
+
+[[reference]]
+task = "arithmetic/005-is-prime"
+path = "corpus/tasks/arithmetic/005-is-prime/reference.tac"
+authoring_mode = "expert-agent"
+agent = "codex"
+model = "undisclosed"
+date = "2026-04-30"
+sealed_access = false
+
+[[reference]]
+task = "arithmetic/006-digit-sum"
+path = "corpus/tasks/arithmetic/006-digit-sum/reference.tac"
+authoring_mode = "expert-agent"
+agent = "codex"
+model = "undisclosed"
+date = "2026-04-30"
+sealed_access = false
+
+[[reference]]
+task = "arithmetic/007-to-binary"
+path = "corpus/tasks/arithmetic/007-to-binary/reference.tac"
+authoring_mode = "expert-agent"
+agent = "codex"
+model = "undisclosed"
+date = "2026-04-30"
+sealed_access = false
+
+[[reference]]
+task = "arithmetic/009-divisors"
+path = "corpus/tasks/arithmetic/009-divisors/reference.tac"
+authoring_mode = "expert-agent"
+agent = "codex"
+model = "undisclosed"
+date = "2026-04-30"
+sealed_access = false
+
+[[reference]]
+task = "arithmetic/010-power"
+path = "corpus/tasks/arithmetic/010-power/reference.tac"
+authoring_mode = "expert-agent"
+agent = "codex"
+model = "undisclosed"
+date = "2026-04-30"
+sealed_access = false
+
+[[reference]]
+task = "strings/011-reverse-string"
+path = "corpus/tasks/strings/011-reverse-string/reference.tac"
+authoring_mode = "expert-agent"
+agent = "codex"
+model = "undisclosed"
+date = "2026-04-30"
+sealed_access = false
+
+[[reference]]
+task = "strings/012-count-vowels"
+path = "corpus/tasks/strings/012-count-vowels/reference.tac"
+authoring_mode = "expert-agent"
+agent = "codex"
+model = "undisclosed"
+date = "2026-04-30"
+sealed_access = false
+
+[[reference]]
+task = "strings/013-is-palindrome"
+path = "corpus/tasks/strings/013-is-palindrome/reference.tac"
+authoring_mode = "expert-agent"
+agent = "codex"
+model = "undisclosed"
+date = "2026-04-30"
+sealed_access = false
+
+[[reference]]
+task = "strings/015-title-case"
+path = "corpus/tasks/strings/015-title-case/reference.tac"
+authoring_mode = "expert-agent"
+agent = "codex"
+model = "undisclosed"
+date = "2026-04-30"
+sealed_access = false
+
+[[reference]]
+task = "strings/016-longest-word"
+path = "corpus/tasks/strings/016-longest-word/reference.tac"
+authoring_mode = "expert-agent"
+agent = "codex"
+model = "undisclosed"
+date = "2026-04-30"
+sealed_access = false
+
+[[reference]]
+task = "strings/017-common-prefix"
+path = "corpus/tasks/strings/017-common-prefix/reference.tac"
+authoring_mode = "expert-agent"
+agent = "codex"
+model = "undisclosed"
+date = "2026-04-30"
+sealed_access = false
+
+[[reference]]
+task = "strings/018-run-length-encode"
+path = "corpus/tasks/strings/018-run-length-encode/reference.tac"
+authoring_mode = "expert-agent"
+agent = "codex"
+model = "undisclosed"
+date = "2026-04-30"
+sealed_access = false
+
+[[reference]]
+task = "strings/020-is-anagram"
+path = "corpus/tasks/strings/020-is-anagram/reference.tac"
+authoring_mode = "expert-agent"
+agent = "codex"
+model = "undisclosed"
+date = "2026-04-30"
+sealed_access = false

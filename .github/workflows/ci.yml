@@ -105,11 +105,20 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Install LLVM 19
+        run: sudo apt-get install -y llvm-19-dev libpolly-19-dev
+
       - name: Install dependencies
         run: uv sync --extra dev
+
+      - name: Build tacit CLI
+        run: cargo build --manifest-path ../../Cargo.toml --features tacit-cli/llvm19-1 --bin tacit
 
       - name: Verify sealed manifest
         run: uv run corpus-verify-sealed
 
       - name: Run open corpus tasks
         run: uv run corpus-run
+
+      - name: Run open Tacit references
+        run: uv run corpus-run-tacit

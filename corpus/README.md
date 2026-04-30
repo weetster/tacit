@@ -125,6 +125,7 @@ cd corpus/harness
 uv sync
 uv run corpus-run                    # run open tasks only (default)
 uv run corpus-run --include-sealed   # Phase 3 grading mode: open + sealed
+uv run corpus-run-tacit              # run open Tacit references only
 uv run corpus-tokens                 # open-only token counts
 uv run corpus-tokens --include-sealed
 uv run corpus-verify-sealed          # CI check: sealed/ matches sealed-hashes.txt
@@ -133,19 +134,23 @@ uv run corpus-verify-sealed --write  # regen manifest after an ADR-approved seal
 
 `corpus-run` compiles each Rust reference with `rustc --edition 2024` into
 a tempdir and feeds each test case's `stdin` to both the Python and Rust
-binaries, asserting byte-identical `stdout`. Failures print a diff. The CI
-workflow in [.github/workflows/ci.yml](../.github/workflows/ci.yml) runs
-`corpus-verify-sealed` and `corpus-run` (open tasks only) on every push
+binaries, asserting byte-identical `stdout`. `corpus-run-tacit` typechecks,
+compiles, and runs each open `reference.tac` against the same tests. Failures
+print a diff. The CI workflow in
+[.github/workflows/ci.yml](../.github/workflows/ci.yml) runs
+`corpus-verify-sealed`, `corpus-run`, and `corpus-run-tacit` on every push
 and pull request to `main`.
 
-`corpus-tokens` measures `reference.py` and `reference.rs` with tiktoken's
-`o200k_base` encoding per [ADR 0001](../decisions/0001-target-tokenizer.md).
-Three aggregates are reported per [ADR 0021](../decisions/0021-corpus-stdlib-dominance-reporting.md):
-full, stdlib-dominated, and non-stdlib-dominated. The full and
-non-stdlib-dominated aggregates gate Phase 3; the stdlib-dominated
-aggregate is reported but not gated. Every task in scope must have an
-entry in [stdlib-dominance.toml](stdlib-dominance.toml) or the command
-errors.
+`corpus-tokens` measures `reference.py`, `reference.tac` when present, and
+`reference.rs` with tiktoken's `o200k_base` encoding per
+[ADR 0001](../decisions/0001-target-tokenizer.md). Three aggregates are
+reported per [ADR 0021](../decisions/0021-corpus-stdlib-dominance-reporting.md):
+full, stdlib-dominated, and non-stdlib-dominated. During Stages 4–6, Tacit
+aggregates cover the implemented `reference.tac` subset; once all open
+references exist, those rows become the full Phase 3 Tacit side. The full and
+non-stdlib-dominated aggregates gate Phase 3; the stdlib-dominated aggregate
+is reported but not gated. Every task in scope must have an entry in
+[stdlib-dominance.toml](stdlib-dominance.toml) or the command errors.
 
 `corpus-verify-sealed` is the load-bearing integrity check per
 [ADR 0020](../decisions/0020-sealing-held-out-in-repo.md). It walks

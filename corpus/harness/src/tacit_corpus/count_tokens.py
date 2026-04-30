@@ -19,6 +19,7 @@ import tiktoken
 from tacit_corpus._paths import CORPUS_ROOT, iter_task_dirs, rel_to_corpus
 
 DOMINANCE_FILE = CORPUS_ROOT / "stdlib-dominance.toml"
+MISSING = "-"
 
 
 def load_dominance_map() -> dict[str, bool]:
@@ -29,6 +30,19 @@ def load_dominance_map() -> dict[str, bool]:
 
 def task_key(task_dir: Path) -> str:
     return f"{task_dir.parent.name}/{task_dir.name}"
+
+
+def delta(py_n: int, tacit_n: int | None) -> str:
+    if tacit_n is None:
+        return MISSING
+    if py_n == 0:
+        return "n/a"
+    pct = ((tacit_n - py_n) / py_n) * 100
+    return f"{pct:+.0f}%"
+
+
+def fmt_count(value: int | None) -> str:
+    return MISSING if value is None else str(value)
 
 
 def main() -> None:
@@ -58,23 +72,40 @@ def main() -> None:
         )
         sys.exit(1)
 
-    rows: list[tuple[str, bool, int, int]] = []
+    rows: list[tuple[str, bool, int, int | None, int]] = []
     for task_dir in task_dirs:
         rel = rel_to_corpus(task_dir)
         dom = dominance[task_key(task_dir)]
         py = (task_dir / "reference.py").read_text()
         rs = (task_dir / "reference.rs").read_text()
-        rows.append((rel, dom, len(enc.encode(py)), len(enc.encode(rs))))
+        tacit_path = task_dir / "reference.tac"
+        tacit = tacit_path.read_text() if tacit_path.is_file() else None
+        rows.append(
+            (
+                rel,
+                dom,
+                len(enc.encode(py)),
+                len(enc.encode(tacit)) if tacit is not None else None,
+                len(enc.encode(rs)),
+            )
+        )
 
-    print(f"{'task':<44} {'dom':>3} {'py':>6} {'rs':>6}")
-    print("-" * 64)
+    print(f"{'task':<44} {'dom':>3} {'py':>6} {'tacit':>6} {'rs':>6} {'delta':>7}")
+    print("-" * 80)
 
     py_all = rs_all = 0
     py_dom = rs_dom = 0
     py_non = rs_non = 0
-    for task, dom, py_n, rs_n in rows:
+    py_tacit_all = tacit_all = 0
+    py_tacit_dom = tacit_dom = 0
+    py_tacit_non = tacit_non = 0
+    tacit_ref_count = 0
+    for task, dom, py_n, tacit_n, rs_n in rows:
         flag = "D" if dom else "-"
-        print(f"{task:<44} {flag:>3} {py_n:>6} {rs_n:>6}")
+        print(
+            f"{task:<44} {flag:>3} {py_n:>6} {fmt_count(tacit_n):>6} "
+            f"{rs_n:>6} {delta(py_n, tacit_n):>7}"
+        )
         py_all += py_n
         rs_all += rs_n
         if dom:
@@ -83,12 +114,46 @@ def main() -> None:
         else:
             py_non += py_n
             rs_non += rs_n
+        if tacit_n is not None:
+            tacit_ref_count += 1
+            py_tacit_all += py_n
+            tacit_all += tacit_n
+            if dom:
+                py_tacit_dom += py_n
+                tacit_dom += tacit_n
+            else:
+                py_tacit_non += py_n
+                tacit_non += tacit_n
 
     scope = "open+sealed" if args.include_sealed else "open"
-    print("-" * 64)
-    print(f"{'TOTAL (' + scope + ', all)':<48} {py_all:>6} {rs_all:>6}")
-    print(f"{'TOTAL (' + scope + ', stdlib-dominated)':<48} {py_dom:>6} {rs_dom:>6}")
-    print(f"{'TOTAL (' + scope + ', non-stdlib-dominated)':<48} {py_non:>6} {rs_non:>6}")
+    print("-" * 80)
+    print(
+        f"{'TOTAL (' + scope + ', Python/Rust all)':<48} "
+        f"{py_all:>6} {MISSING:>6} {rs_all:>6} {MISSING:>7}"
+    )
+    print(
+        f"{'TOTAL (' + scope + ', Python/Rust stdlib-dominated)':<48} "
+        f"{py_dom:>6} {MISSING:>6} {rs_dom:>6} {MISSING:>7}"
+    )
+    print(
+        f"{'TOTAL (' + scope + ', Python/Rust non-stdlib-dominated)':<48} "
+        f"{py_non:>6} {MISSING:>6} {rs_non:>6} {MISSING:>7}"
+    )
+    print(
+        f"{'TOTAL (' + scope + ', Tacit refs all; n=' + str(tacit_ref_count) + ')':<48} "
+        f"{py_tacit_all:>6} {tacit_all:>6} {MISSING:>6} "
+        f"{delta(py_tacit_all, tacit_all):>7}"
+    )
+    print(
+        f"{'TOTAL (' + scope + ', Tacit refs stdlib-dominated)':<48} "
+        f"{py_tacit_dom:>6} {tacit_dom:>6} {MISSING:>6} "
+        f"{delta(py_tacit_dom, tacit_dom):>7}"
+    )
+    print(
+        f"{'TOTAL (' + scope + ', Tacit refs non-stdlib-dominated)':<48} "
+        f"{py_tacit_non:>6} {tacit_non:>6} {MISSING:>6} "
+        f"{delta(py_tacit_non, tacit_non):>7}"
+    )
 
 
 if __name__ == "__main__":

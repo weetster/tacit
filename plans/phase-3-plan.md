@@ -303,6 +303,14 @@ Exit gate: 16 references implemented; `corpus-run-tacit` passes on every
 one; `corpus-tokens` reports Tacit-Lite per-task and aggregate token
 counts alongside Python; CI runs `corpus-run-tacit` on every push.
 
+**Stage 4 landed (2026-04-30):** All 16 open arithmetic/string references
+implemented under `corpus/tasks/**/reference.tac` with sidecars; sealed
+tasks 002/008/014/019 have no Tacit references. `corpus-run-tacit` runs
+the open Tacit references end-to-end, `corpus-tokens` reports Tacit counts
+and implemented-reference aggregate deltas, CI runs the Tacit corpus gate,
+and ADR 0057 authorship is recorded in
+[`corpus/tacit-reference-authorship.toml`](../corpus/tacit-reference-authorship.toml).
+
 ### Stage 5: Tacit-Lite references — collections + algorithms part 1 (021–040) (~1 week, ~2 sessions)
 
 Same shape as Stage 4. Open tasks:
