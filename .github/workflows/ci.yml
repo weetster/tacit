@@ -122,3 +122,6 @@ jobs:
 
       - name: Run open Tacit references
         run: uv run corpus-run-tacit
+
+      - name: Dry-run Phase 3 eval harness
+        run: uv run corpus-eval --dry-run

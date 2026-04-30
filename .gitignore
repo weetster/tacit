@@ -21,3 +21,7 @@ target
 #.idea/
 
 __pycache__/
+
+# Phase 3 eval harness local run artifacts
+plans/phase-3-results/failures/
+plans/phase-3-results/*.outputs/

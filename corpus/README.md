@@ -128,6 +128,8 @@ uv run corpus-run --include-sealed   # Phase 3 grading mode: open + sealed
 uv run corpus-run-tacit              # run open Tacit references only
 uv run corpus-tokens                 # open-only token counts
 uv run corpus-tokens --include-sealed
+uv run corpus-eval --dry-run         # CI-safe Stage 8 harness exercise
+uv run corpus-eval --model claude-sonnet-4-6 --tasks 001
 uv run corpus-verify-sealed          # CI check: sealed/ matches sealed-hashes.txt
 uv run corpus-verify-sealed --write  # regen manifest after an ADR-approved sealed edit
 ```
@@ -158,3 +160,11 @@ is reported but not gated. Every task in scope must have an entry in
 missing, extra, or mismatched file fails. `--write` regenerates the
 manifest from the current tree — only use after an ADR-approved sealed
 edit.
+
+`corpus-eval` is the Phase 3 Stage 8 model-generation harness. It loads the
+primer, sends one task statement per request, extracts a single `tacit` fenced
+block, compiles it with the repo-local `tacit` binary, runs `tests.jsonl`, and
+writes ADR 0052/0055 run and metrics JSON under
+[`plans/phase-3-results/`](../plans/phase-3-results/). Anthropic runs use
+`ANTHROPIC_API_KEY`; OpenRouter runs use `OPENROUTER_API_KEY`. `--dry-run`
+uses open Tacit references as synthetic outputs and is what CI runs.
