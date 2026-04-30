@@ -11,6 +11,7 @@ Dry-run mode exercises the same grading and metrics writer using open
 from __future__ import annotations
 
 import argparse
+import email.utils
 import json
 import os
 import random
@@ -280,24 +281,28 @@ def _http_json(
     headers: dict[str, str],
     payload: dict[str, Any],
     timeout_seconds: int,
-) -> tuple[int, dict[str, Any]]:
+) -> tuple[int, dict[str, Any], dict[str, str]]:
     data = json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(url, data=data, headers=headers, method="POST")
     try:
         with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
             body = response.read().decode("utf-8")
-            return response.status, json.loads(body)
+            return response.status, json.loads(body), _normalize_headers(response.headers.items())
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="replace")
         try:
             parsed = json.loads(body)
         except json.JSONDecodeError:
             parsed = {"error": body}
-        return e.code, parsed
+        return e.code, parsed, _normalize_headers(e.headers.items()) if e.headers is not None else {}
 
 
 def _transient_status(status: int) -> bool:
     return status in {408, 429} or 500 <= status <= 599
+
+
+def _normalize_headers(items: Any) -> dict[str, str]:
+    return {str(key).lower(): str(value) for key, value in items}
 
 
 def _anthropic_call(
@@ -310,7 +315,7 @@ def _anthropic_call(
     temperature: float,
     timeout_seconds: int,
 ) -> ModelResponse:
-    status, data = _http_json(
+    status, data, response_headers = _http_json(
         url="https://api.anthropic.com/v1/messages",
         headers={
             "content-type": "application/json",
@@ -333,7 +338,7 @@ def _anthropic_call(
         timeout_seconds=timeout_seconds,
     )
     if status >= 400:
-        raise ApiStatusError(status, data)
+        raise ApiStatusError(status, data, headers=response_headers)
     text_parts: list[str] = []
     for block in data.get("content", []):
         if isinstance(block, dict) and block.get("type") == "text":
@@ -351,7 +356,7 @@ def _openrouter_call(
     temperature: float,
     timeout_seconds: int,
 ) -> ModelResponse:
-    status, data = _http_json(
+    status, data, response_headers = _http_json(
         url="https://openrouter.ai/api/v1/chat/completions",
         headers={
             "content-type": "application/json",
@@ -370,10 +375,10 @@ def _openrouter_call(
         timeout_seconds=timeout_seconds,
     )
     if status >= 400:
-        raise ApiStatusError(status, data)
+        raise ApiStatusError(status, data, headers=response_headers)
     choices = data.get("choices") or []
     if not choices:
-        raise ApiStatusError(502, {"error": "OpenRouter response had no choices"})
+        raise ApiStatusError(502, {"error": "OpenRouter response had no choices"}, headers={})
     choice = choices[0]
     message = choice.get("message", {})
     content = message.get("content", "")
@@ -389,10 +394,11 @@ def _openrouter_call(
 
 
 class ApiStatusError(RuntimeError):
-    def __init__(self, status: int, body: dict[str, Any]):
+    def __init__(self, status: int, body: dict[str, Any], headers: dict[str, str] | None = None):
         super().__init__(f"API returned HTTP {status}: {body!r}")
         self.status = status
         self.body = body
+        self.headers = {str(key).lower(): str(value) for key, value in (headers or {}).items()}
 
 
 def call_model_with_retries(
@@ -409,6 +415,7 @@ def call_model_with_retries(
 ) -> ModelOutcome:
     retries = 0
     for attempt in range(max_retries + 1):
+        retry_headers: dict[str, str] | None = None
         try:
             if provider == "anthropic":
                 response = _anthropic_call(
@@ -440,6 +447,7 @@ def call_model_with_retries(
                         "api-error", f"model API call failed: HTTP {e.status}"
                     ),
                 )
+            retry_headers = e.headers
         except (TimeoutError, urllib.error.URLError, OSError) as e:
             if attempt == max_retries:
                 return ModelOutcome(
@@ -451,13 +459,42 @@ def call_model_with_retries(
                 )
 
         retries += 1
-        time.sleep(2 ** attempt)
+        time.sleep(_retry_delay_seconds(attempt=attempt, headers=retry_headers))
 
     return ModelOutcome(
         response=None,
         retries=retries,
         diagnostics=diagnostic_envelope("api-error", "model API call failed"),
     )
+
+
+def _retry_delay_seconds(*, attempt: int, headers: dict[str, str] | None) -> float:
+    retry_after = _parse_retry_after(headers.get("retry-after")) if headers else None
+    if retry_after is not None:
+        return retry_after
+    return float(2**attempt)
+
+
+def _parse_retry_after(value: str | None) -> float | None:
+    if value is None:
+        return None
+    value = value.strip()
+    if not value:
+        return None
+    try:
+        seconds = float(value)
+    except ValueError:
+        pass
+    else:
+        return max(0.0, seconds)
+    try:
+        dt = email.utils.parsedate_to_datetime(value)
+    except (TypeError, ValueError, IndexError):
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    delta = (dt - datetime.now(UTC)).total_seconds()
+    return max(0.0, delta)
 
 
 TACIT_FENCE_RE = re.compile(

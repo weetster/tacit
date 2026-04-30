@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import re
+from datetime import UTC, datetime, timedelta
 
 import tiktoken
+import pytest
 
 from tacit_corpus import eval as corpus_eval
 
@@ -101,3 +103,53 @@ def test_uuid7_shape() -> None:
         r"[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}",
         run_id,
     )
+
+
+def test_parse_retry_after_accepts_seconds() -> None:
+    assert corpus_eval._parse_retry_after("3.5") == 3.5
+
+
+def test_parse_retry_after_accepts_http_date() -> None:
+    future = datetime.now(UTC) + timedelta(seconds=10)
+    value = future.strftime("%a, %d %b %Y %H:%M:%S GMT")
+
+    delay = corpus_eval._parse_retry_after(value)
+
+    assert delay is not None
+    assert delay == pytest.approx(10, abs=2)
+
+
+def test_call_model_with_retries_honors_retry_after(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[str] = []
+    sleeps: list[float] = []
+
+    def fake_anthropic_call(**_: object) -> corpus_eval.ModelResponse:
+        calls.append("call")
+        if len(calls) == 1:
+            raise corpus_eval.ApiStatusError(
+                429,
+                {"error": "rate limited"},
+                headers={"Retry-After": "7"},
+            )
+        return corpus_eval.ModelResponse(text="```tacit\n0\n```", stop_reason="end_turn")
+
+    monkeypatch.setattr(corpus_eval, "_anthropic_call", fake_anthropic_call)
+    monkeypatch.setattr(corpus_eval.time, "sleep", lambda seconds: sleeps.append(seconds))
+
+    outcome = corpus_eval.call_model_with_retries(
+        provider="anthropic",
+        api_key="key",
+        model="claude-sonnet-4-6",
+        primer="primer",
+        prompt="prompt",
+        max_tokens=10,
+        temperature=0,
+        timeout_seconds=1,
+        max_retries=1,
+    )
+
+    assert outcome.response is not None
+    assert outcome.response.text == "```tacit\n0\n```"
+    assert outcome.retries == 1
+    assert sleeps == [7]
+    assert len(calls) == 2
