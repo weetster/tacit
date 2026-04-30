@@ -4,6 +4,7 @@
 **Date:** 2026-04-28
 **Phase:** 3, Stage 1
 **Closes:** [phase-3-plan.md Q-P3-2](../plans/phase-3-plan.md)
+**Amended by:** [ADR 0057](0057-p3-expert-agent-tacit-reference-authorship.md)
 
 ## Context
 
