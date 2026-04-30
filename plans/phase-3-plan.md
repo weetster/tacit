@@ -391,7 +391,7 @@ example is drawn from `sealed/`.
 
 **Stage 7 landed (2026-04-30):** Primer authored at
 `plans/primer/tacit-lite-primer.md` with six ADR 0050 sections and a
-measured `o200k_base` count of 10,149 tokens. The primer fixture lives at
+measured `o200k_base` count of 10,202 tokens. The primer fixture lives at
 `crates/tacit-codegen/tests/primer_fixture.rs`; it extracts every fenced
 `tacit` block, typechecks/codegens success blocks, verifies expected
 diagnostic kinds for fail blocks, and compares blocks against open corpus
