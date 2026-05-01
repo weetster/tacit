@@ -10,14 +10,16 @@ hard failures. If uncertain, choose the simplest implementation that fits the
 primitive surface and finish the one block. If an implementation is growing
 too long, switch to a smaller complete algorithm before writing the block; a
 finished simple program is better than a partial elaborate program.
+Never show scratch work before the block. Never open a second block to revise
+the first one. The final answer starts with ```` ```tacit ```` and ends with
+the matching closing fence.
 
 ## 1. Semantic Summary
 
-Tacit-Lite is a small expression language whose durable identity is a
-content-addressed AST. Authors write the authoring view: `let`, `lambda`,
-`rec`, `if`, `match`, records, and `@name` primitive calls. The
-compiler parses that view to the AST, typechecks it, emits native code, and
-can render it back while preserving author-facing names.
+Tacit-Lite is a small expression language. Authors write source using `let`,
+`lambda`, `rec`, `if`, `match`, records, and `@name` primitive calls. The
+compiler parses that source, typechecks it, emits native code, and can render
+it back while preserving author-facing names.
 
 A Tacit program is usually one expression. A binding extends only the body
 after `in`. A lambda has exactly one parameter, so multi-argument functions
@@ -428,6 +430,11 @@ let b = @parse-i64 buf (@add nl 1) (@sub n (@add nl 1)) in
 @add a b
 ```
 
+`@scan-byte buf off len byte` returns an absolute offset. If the byte is not
+found, the result is `off + len`. Do not add `off` to the result again. When
+scanning inside a line, pass the remaining length as `@sub line_end off`, not
+the absolute end offset.
+
 Tacit code is densest when it keeps the computation in expression form. A
 long chain of `let`s is normal and readable. Avoid translating statement for
 statement when a helper can express the loop state directly. For example, a
@@ -501,6 +508,13 @@ the buffer handle is not a general heap object, keep it inside the expression
 that owns it; do not try to return a closure that stores a buffer for later
 use.
 
+Do not build an integer array with `@buf-set vals i value` unless `value` is
+known to stay in `0..255`. Negative numbers and values above 255 will not be
+stored as full integers. For sorting or indexed access to parsed integers,
+prefer one of these shapes: rescan the input to find the nth token, store byte
+offsets into the original input using multiple buffer cells per offset, or
+carry the few needed integer values in recursive state.
+
 For recursive scans over a buffer, allocate the buffer outside the `rec` group
 and refer to that buffer by name inside the helper. Use source-level helper
 parameters for changing integer state: offsets, lengths, counters, flags, and
@@ -511,6 +525,11 @@ helper.
 let buf = @buf-alloc-dyn n in
 rec {scan = lambda i. lambda acc. ... @buf-get buf i ... scan next_i next_acc} in scan 0 0
 ```
+
+If you need to output a slice that starts at a nonzero offset, do not overwrite
+the input buffer while later scans still need it. Either copy the slice into a
+separate output buffer with `@buf-copy out 0 input start len` and then write
+`out len`, or emit one byte at a time through a one-byte scratch buffer.
 
 ### Output Rules
 
@@ -554,6 +573,12 @@ small as possible.
 ```tacit
 rec {sum = lambda n. if n then @add n (sum (@sub n 1)) else 0} in sum 5
 ```
+
+Put sibling recursive helpers in one `rec` group instead of creating a fresh
+`rec` inside a recursive helper body. A nested helper that needs `i`, `end`,
+or another changing value should usually become a sibling and receive that
+value as a parameter. This keeps parsing simple and keeps every changing part
+visible at the call site.
 
 Use `if` for two branches selected by a comparison or truthy integer.
 
@@ -613,8 +638,10 @@ as `(expr:@Type)`.
 (5:@Int)
 ```
 
-When a recursive helper needs an outer value, refer to that value by name.
-Keep the explicit parameters for the state that changes on each call.
+When a recursive helper needs an outer value that was bound before the `rec`
+group, refer to that value by name. Keep explicit parameters for state that
+changes on each call. Do not hide changing loop state inside a nested helper;
+pass it as `loop i acc best flag` or as a sibling helper argument.
 
 ```tacit
 let base = 40 in
@@ -623,11 +650,10 @@ rec {plus_base = lambda x. @add x base} in plus_base 2
 
 ### Names
 
-Names are display information, but they matter for readability. Prefer names
-that describe the local role: `n`, `i`, `len`, `buf`, `out`, `w`, `loop`,
-`state`, `acc`, `head`, `tail`, `left`, `right`. Do not rename only to shave
-tokens. The compiler's round-trip machinery can preserve authoring names, so
-write names that are easy to reason about during repair.
+Names matter for readability. Prefer names that describe the local role: `n`,
+`i`, `len`, `buf`, `out`, `w`, `loop`, `state`, `acc`, `head`, `tail`,
+`left`, `right`. Do not rename only to shave tokens. Write names that are
+easy to reason about during repair.
 Local identifiers use letters, digits, and underscores. Do not put hyphens in
 local names: write `find_newline`, not `find-newline`. Hyphens are valid in
 primitive names after `@`, such as `@parse-i64`, and in negative integer
@@ -652,9 +678,9 @@ This is `text` because `done`, `next_i`, and `next_acc` are placeholders.
 
 Records are useful for pure grouping, but executable programs are
 not designed around a large record-heavy style. Use records when a function
-naturally returns a small bundle that is consumed immediately. Field order in
-canonical form is sorted; authoring order is not semantic. If you project a
-field, make sure the inferred record type actually contains that field.
+naturally returns a small bundle that is consumed immediately. Field order is
+not semantic. If you project a field, make sure the inferred record type
+actually contains that field.
 
 ### Constructors And Patterns
 
@@ -694,7 +720,7 @@ declaration omits `IO`, the checker reports an effect violation.
 ## 4. Effect Reasoning
 
 A pure program has no allocation, mutation, IO, or possible divergence beyond
-ordinary finite evaluation.
+ordinary finite execution.
 
 ```tacit
 let square = lambda x. @mul x x in square 6
@@ -810,8 +836,7 @@ buffer allocation primitive. `Div` comes from recursion, division, or modulo.
 ## 5. Negative Examples And Diagnostics
 
 Each failing Tacit block below is marked with the diagnostic kind it should
-produce. The JSON shape is always this diagnostic envelope:
-`{"schema_version":"p2.0","errors":[...]}`.
+produce.
 
 Wrong base annotation:
 
@@ -939,30 +964,8 @@ primitive surface, or bind a lowercase helper name before using it.
 @add 1 0
 ```
 
-### Diagnostic Envelope Pattern
+### Diagnostic Reading Pattern
 
-The checker emits a JSON object with schema version `p2.0`. A successful JSON
-check emits an empty error list. A failing check emits one or more entries:
-
-```json
-{
-  "schema_version": "p2.0",
-  "errors": [
-    {
-      "kind": "type-mismatch",
-      "severity": "error",
-      "location": {"ast_path": [{"child": 0}], "source_span": null},
-      "message": "type mismatch: expected Int, got Str",
-      "expected": {"sym": "Int"},
-      "actual": {"sym": "Str"},
-      "fix": null,
-      "related": []
-    }
-  ]
-}
-```
-
-The exact `location.ast_path` depends on where the error appears in the AST.
 The important repair signals are `kind`, `message`, `expected`, and `actual`.
 For repair, read the first error, fix the smallest local expression that can
 cause it, then rerun the checker. Later errors may disappear after the first
@@ -1026,9 +1029,8 @@ prove it is valid. Keep buffer use inside the `let` body that owns it.
 
 `parse-error`, `unexpected-token`, `expected-expr`, `unclosed-paren`,
 `expected-pattern`, `unbound-name`, and `arity-mismatch` come from parser
-recovery holes. The parser still produces an AST, but the hole flows through
-typechecking as an error. Fix the local syntax first; later diagnostics may
-be consequences of the hole.
+recovery holes. Fix the local syntax first; later diagnostics may be
+consequences of the hole.
 
 ### Repair Checklist
 
@@ -1084,7 +1086,9 @@ cleanest way to avoid doubled spaces.
 Searching a buffer: prefer `@scan-byte` for a byte target and `@buf-eq` for a
 slice equality check. Hand-written recursive scans are acceptable when the
 predicate is richer than equality, but they are longer and more error-prone.
-Keep offsets and lengths explicit.
+Keep offsets and lengths explicit. `@scan-byte` returns the absolute found
+offset, so the next byte after a found newline is `@add end 1`, not `@add
+start (@add end 1)`.
 
 When scanning bytes read from stdin, treat the byte count returned by `@read`
 as the exclusive upper bound. A helper with state `i` should inspect
@@ -1104,6 +1108,30 @@ For large-output transforms such as sorting lines or grouping items, prefer a
 simple complete quadratic pass over a clever partial divide-and-conquer shape.
 Direct recursion with explicit indexes is easier to finish and repair than a
 program that needs lists, heaps, or a dictionary.
+
+Token streams of signed integers: define `skip`, `token_end`, and `parse_at`
+helpers over the original input. `skip pos` advances past spaces and
+newlines. `token_end pos` stops at space, newline, or EOF. `parse_at p` calls
+`@parse-i64 input p (@sub (token_end p) p)`. This handles negative signs
+without hand-scanning digits and avoids corrupting full integers in byte
+buffers.
+
+Longest-word and common-prefix tasks: keep byte offsets and lengths into the
+input, not a packed integer encoding of the word. For longest word, carry
+`cur_start`, `cur_len`, `best_start`, and `best_len`; on a tie, keep the old
+best if the task asks for the first occurrence. At the end, copy `best_len`
+bytes from `best_start` into an output buffer or emit those bytes.
+
+Binary search over a token line: count tokens first, then search with a
+half-open interval `[lo, hi)`. Stop when `lo >= hi`. Compute `mid = (lo + hi)
+/ 2`, parse the value at token `mid`, then recurse into `[mid + 1, hi)` or
+`[lo, mid)`. A closed interval is easy to get wrong at the empty range.
+
+Maximum-subarray over parsed integers: parse the first integer before the
+main loop and initialize both `cur` and `best` to that value. Then for each
+remaining value `x`, set `cur = max(x, cur + x)` and `best = max(best, cur)`.
+Do not initialize `best` to zero because all-negative input must return the
+largest negative value.
 
 Comparing flags: comparison primitives return `Bool`, while integer
 truthiness is also accepted in conditions. Arithmetic expects integers. If
@@ -1132,12 +1160,10 @@ the byte is absent. Parse `@parse-i64 buf start (@sub end start)`. This avoids
 the common bug where the first large `@read` consumes both lines and a second
 `@read` sees EOF.
 
-### Maintaining Round-Trip Stability
+### Keeping Source Easy To Repair
 
-Round-trip stability means the authoring view can parse to the AST and render
-back with the same binding names and layout intent. This matters for repair
-tasks because a structural edit should not rename every local or reorder
-unrelated code. Keep these habits:
+Generated source is easier to repair when names, helper shapes, and branch
+structure stay stable. Keep these habits:
 
 Use stable helper names. A recursive helper named `loop` is fine when there
 is one loop. If there are two, use names such as `outer`, `inner`, `scan`, or
@@ -1193,7 +1219,7 @@ the temporary digits in reverse order.
 Compactness matters because Tacit is meant to be economical for models to
 read and write. That does not mean the generated program should be cryptic. A
 program that passes is worth more than a short program that fails. Use the
-canonical idioms from this primer first. Only shorten after the algorithm is
+recommended idioms from this primer first. Only shorten after the algorithm is
 obviously correct.
 
 Avoid token tricks that hurt repair: meaningless one-letter names everywhere,
@@ -1220,7 +1246,11 @@ digit byte with `@sub byte 48`. Convert back for output either with
 
 UTF-8 text: byte loops are correct for ASCII tasks. If a task is explicitly
 about characters and may include non-ASCII input, do not reverse or split the
-middle bytes of a multi-byte sequence. Copy each UTF-8 sequence as a unit.
+middle bytes of a multi-byte sequence. Copy each UTF-8 sequence as a unit. For
+character palindrome checks, the last byte is not necessarily the last
+character. Move the right pointer left over continuation bytes in `128..191`,
+compare the whole byte span for the left and right characters, then advance by
+the span lengths.
 
 Negative numbers: `@parse-i64` handles the primitive contract for integer
 text. If hand-scanning bytes, account for a leading minus sign explicitly.

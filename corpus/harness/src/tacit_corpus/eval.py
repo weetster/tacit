@@ -50,7 +50,8 @@ DEFAULT_MAX_RETRIES = 3
 HARNESS_VERSION = "0.1.0"
 PROMPT_SUFFIX = (
     "Write the solution as a single Tacit-Lite program in a fenced "
-    "block: ```tacit ... ```. Do not include the sidecar."
+    "block: ```tacit ... ```. Do not include any extra files, metadata, "
+    "explanation, or second block."
 )
 RESULTS_DIR = REPO_ROOT / "plans" / "phase-3-results"
 PRIMER_PATH = REPO_ROOT / "plans" / "primer" / "tacit-lite-primer.md"
