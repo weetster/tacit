@@ -1,0 +1,1438 @@
+{
+  "aggregates": {
+    "full": {
+      "compile_pass_rate": 0.10638297872340426,
+      "primer_amortized_total": 22508,
+      "python_tokens_total": 4584,
+      "tacit_tokens_total": 491800,
+      "task_count": 47,
+      "tests_pass_rate": 0.06382978723404255,
+      "tests_pass_total": 23,
+      "tests_total_total": 34,
+      "token_delta": 106.28621291448516,
+      "typecheck_pass_rate": 0.10638297872340426
+    },
+    "non_stdlib_dominated": {
+      "compile_pass_rate": 0.10869565217391304,
+      "primer_amortized_total": 22508,
+      "python_tokens_total": 4466,
+      "tacit_tokens_total": 481598,
+      "task_count": 46,
+      "tests_pass_rate": 0.06521739130434782,
+      "tests_pass_total": 23,
+      "tests_total_total": 34,
+      "token_delta": 106.83654276757726,
+      "typecheck_pass_rate": 0.10869565217391304
+    },
+    "stdlib_dominated": {
+      "compile_pass_rate": 0.0,
+      "primer_amortized_total": 10202,
+      "python_tokens_total": 118,
+      "tacit_tokens_total": 10202,
+      "task_count": 1,
+      "tests_pass_rate": 0.0,
+      "tests_pass_total": 0,
+      "tests_total_total": 0,
+      "token_delta": 85.45762711864407,
+      "typecheck_pass_rate": 0.0
+    }
+  },
+  "gates": {
+    "passed_overall": false,
+    "primary_pass_rate_gate": {
+      "applies": true,
+      "metric": "tests_pass_rate",
+      "passed": false,
+      "scope": "full",
+      "threshold": 0.7,
+      "value": 0.06382978723404255
+    },
+    "primary_token_gate_full": {
+      "applies": true,
+      "metric": "token_delta",
+      "passed": false,
+      "scope": "full",
+      "threshold": -0.3,
+      "value": 106.28621291448516
+    },
+    "primary_token_gate_non_stdlib": {
+      "applies": true,
+      "metric": "token_delta",
+      "passed": false,
+      "scope": "non_stdlib_dominated",
+      "threshold": -0.3,
+      "value": 106.83654276757726
+    }
+  },
+  "model": {
+    "id": "claude-sonnet-4-6",
+    "primer_hash": "63c6eabd544bf5779b4d9804777caf2a9d930f806dab1daafb9f2aa22edc302e",
+    "primer_tokens": 10202,
+    "provider": "anthropic"
+  },
+  "run_id": "019de0bf-2c96-7d98-a369-20060dab522d",
+  "schema_version": "p3.0",
+  "scope": "open",
+  "tasks": [
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "duration_ms": 3919,
+      "generation_tokens": 110,
+      "python_baseline_tokens": 60,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "arithmetic/001-sum-to-n",
+      "tests_pass": 5,
+      "tests_total": 5,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "duration_ms": 3482,
+      "generation_tokens": 126,
+      "python_baseline_tokens": 72,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "arithmetic/003-factorial",
+      "tests_pass": 5,
+      "tests_total": 5,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "duration_ms": 4689,
+      "generation_tokens": 165,
+      "python_baseline_tokens": 51,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "arithmetic/004-gcd",
+      "tests_pass": 10,
+      "tests_total": 10,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "typecheck-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: /tmp/tmpbdhwc5d3/generated.tac: expected 'else' but got end of input",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 6292,
+      "generation_tokens": 292,
+      "python_baseline_tokens": 125,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "arithmetic/005-is-prime",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "typecheck-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: /tmp/tmpn5lmmazt/generated.tac: expected 'else' but got RBrace",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 4208,
+      "generation_tokens": 187,
+      "python_baseline_tokens": 57,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "arithmetic/006-digit-sum",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "extraction-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "model response contained multiple ```tacit fenced blocks",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 16570,
+      "generation_tokens": 0,
+      "python_baseline_tokens": 90,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "arithmetic/007-to-binary",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "extraction-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "model response stopped at max_tokens",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 112052,
+      "generation_tokens": 0,
+      "python_baseline_tokens": 145,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "arithmetic/009-divisors",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "test-failure",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "stdout mismatch for basic: expected '1024\\n', got '1\\n'; stdout mismatch for negative-base: expected '-32\\n', got '1\\n'; stdout mismatch for one-exp: expected '7\\n', got '1\\n'; 3 more failure(s)",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 3381,
+      "generation_tokens": 162,
+      "python_baseline_tokens": 88,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "arithmetic/010-power",
+      "tests_pass": 1,
+      "tests_total": 7,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "extraction-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "model response contained multiple ```tacit fenced blocks",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 21422,
+      "generation_tokens": 0,
+      "python_baseline_tokens": 37,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "strings/011-reverse-string",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "extraction-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "model response contained multiple ```tacit fenced blocks",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 10074,
+      "generation_tokens": 0,
+      "python_baseline_tokens": 60,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "strings/012-count-vowels",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "typecheck-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: /tmp/tmp0ez1nh9m/generated.tac: expected 'else' but got end of input",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 6890,
+      "generation_tokens": 288,
+      "python_baseline_tokens": 65,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "strings/013-is-palindrome",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "typecheck-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: /tmp/tmpks74sts8/generated.tac: expected 'else' but got RBrace",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 11732,
+      "generation_tokens": 456,
+      "python_baseline_tokens": 63,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "strings/015-title-case",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "typecheck-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: /tmp/tmpqvef2660/generated.tac: expected 'else' but got RBrace",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 9737,
+      "generation_tokens": 425,
+      "python_baseline_tokens": 89,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "strings/016-longest-word",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "extraction-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "model response contained multiple ```tacit fenced blocks",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 15554,
+      "generation_tokens": 0,
+      "python_baseline_tokens": 123,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "strings/017-common-prefix",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "typecheck-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: /tmp/tmpcpdjlz49/generated.tac: expected 'else' but got end of input",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 11933,
+      "generation_tokens": 349,
+      "python_baseline_tokens": 137,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "strings/018-run-length-encode",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "typecheck-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: /tmp/tmp7ll21d9n/generated.tac: expected 'else' but got Semicolon",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 15745,
+      "generation_tokens": 466,
+      "python_baseline_tokens": 103,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "strings/020-is-anagram",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "extraction-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "model response contained multiple ```tacit fenced blocks",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 51249,
+      "generation_tokens": 0,
+      "python_baseline_tokens": 111,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "collections/021-unique-in-order",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "typecheck-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: /tmp/tmpc_9fa7ry/generated.tac: expected 'else' but got RBrace",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 13381,
+      "generation_tokens": 362,
+      "python_baseline_tokens": 60,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "collections/023-flatten-one-level",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "extraction-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "model response contained multiple ```tacit fenced blocks",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 53183,
+      "generation_tokens": 0,
+      "python_baseline_tokens": 100,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "collections/025-partition-eo",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "extraction-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "model response stopped at max_tokens",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 114083,
+      "generation_tokens": 0,
+      "python_baseline_tokens": 103,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "collections/026-group-counts",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "typecheck-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: /tmp/tmpnooy8ous/generated.tac: expected 'else' but got RBrace",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 19632,
+      "generation_tokens": 763,
+      "python_baseline_tokens": 113,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "collections/027-rotate-left",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "typecheck-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: /tmp/tmp_y4ubp3r/generated.tac: expected 'else' but got RBrace",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 17814,
+      "generation_tokens": 629,
+      "python_baseline_tokens": 123,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "collections/028-chunks",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "extraction-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "model response contained multiple ```tacit fenced blocks",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 65432,
+      "generation_tokens": 0,
+      "python_baseline_tokens": 68,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "collections/030-transpose-matrix",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "extraction-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "model response stopped at max_tokens",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 91186,
+      "generation_tokens": 0,
+      "python_baseline_tokens": 118,
+      "retries": 0,
+      "stdlib_dominated": true,
+      "task_id": "algorithms/031-binary-search",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "typecheck-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: /tmp/tmp1f2txndh/generated.tac: expected 'else' but got RBrace",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 5308,
+      "generation_tokens": 327,
+      "python_baseline_tokens": 109,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/032-fizzbuzz",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "extraction-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "model response contained multiple ```tacit fenced blocks",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 30585,
+      "generation_tokens": 0,
+      "python_baseline_tokens": 152,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/033-two-sum",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "extraction-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "model response contained multiple ```tacit fenced blocks",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 86099,
+      "generation_tokens": 0,
+      "python_baseline_tokens": 141,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/035-bubble-sort",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "typecheck-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: /tmp/tmphjglsja8/generated.tac: expected 'else' but got RBrace",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 20531,
+      "generation_tokens": 711,
+      "python_baseline_tokens": 143,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/036-quicksort",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "typecheck-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: /tmp/tmp0u0z6qb4/generated.tac: expected 'else' but got RBrace",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 23846,
+      "generation_tokens": 928,
+      "python_baseline_tokens": 201,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/037-merge-sort",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "typecheck-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: /tmp/tmpm9ajp1er/generated.tac: lex: unexpected byte 0x2d at 75",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 14270,
+      "generation_tokens": 531,
+      "python_baseline_tokens": 111,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/038-linear-search",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "test-failure",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "stdout mismatch for classic-5-2: expected '2\\n', got '0\\n'; stdout mismatch for step-1: expected '5\\n', got '0\\n'; stdout mismatch for seven-three: expected '3\\n', got '0\\n'; 2 more failure(s)",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 5589,
+      "generation_tokens": 185,
+      "python_baseline_tokens": 105,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/040-josephus",
+      "tests_pass": 2,
+      "tests_total": 7,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "typecheck-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: /tmp/tmph639epas/generated.tac: expected 'else' but got end of input",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 17911,
+      "generation_tokens": 409,
+      "python_baseline_tokens": 125,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/041-rle-decode",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "typecheck-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: /tmp/tmpxyd1m3vt/generated.tac: expected 'else' but got RBrace",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 16177,
+      "generation_tokens": 606,
+      "python_baseline_tokens": 92,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/042-valid-sudoku-row",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "typecheck-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: /tmp/tmppr0gpf8a/generated.tac: unexpected end of input in rec block",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 28639,
+      "generation_tokens": 1505,
+      "python_baseline_tokens": 280,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/044-count-islands",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "typecheck-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: /tmp/tmpgcj5mq78/generated.tac: expected 'else' but got end of input",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 12917,
+      "generation_tokens": 443,
+      "python_baseline_tokens": 48,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/045-reverse-words",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "extraction-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "model response contained multiple ```tacit fenced blocks",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 35425,
+      "generation_tokens": 0,
+      "python_baseline_tokens": 95,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/046-max-subarray",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "extraction-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "model response contained multiple ```tacit fenced blocks",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 61652,
+      "generation_tokens": 0,
+      "python_baseline_tokens": 83,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/047-stable-sort-pairs",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "extraction-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "model response stopped at max_tokens",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 108987,
+      "generation_tokens": 0,
+      "python_baseline_tokens": 243,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/049-matrix-multiply",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "typecheck-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: /tmp/tmp1o6trwrn/generated.tac: expected 'else' but got Semicolon",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 10388,
+      "generation_tokens": 526,
+      "python_baseline_tokens": 119,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/050-longest-run",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "extraction-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "model response contained multiple ```tacit fenced blocks",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 8815,
+      "generation_tokens": 0,
+      "python_baseline_tokens": 66,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "io/051-line-count",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "typecheck-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: /tmp/tmpdudrudbe/generated.tac: expected 'else' but got RBrace",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 6804,
+      "generation_tokens": 303,
+      "python_baseline_tokens": 40,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "io/052-sum-numbers",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "extraction-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "model response contained multiple ```tacit fenced blocks",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 32905,
+      "generation_tokens": 0,
+      "python_baseline_tokens": 56,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "io/054-grep-substring",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "extraction-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "model response stopped at max_tokens",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 104184,
+      "generation_tokens": 0,
+      "python_baseline_tokens": 41,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "io/055-sort-lines",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "typecheck-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: /tmp/tmp2h67tju_/generated.tac: expected 'else' but got RBrace",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 17165,
+      "generation_tokens": 420,
+      "python_baseline_tokens": 38,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "io/056-unique-lines",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "typecheck-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: /tmp/tmpy03cobmr/generated.tac: expected 'else' but got RBrace",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 5845,
+      "generation_tokens": 247,
+      "python_baseline_tokens": 30,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "io/057-word-count",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "typecheck-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: /tmp/tmpnl0wp0ui/generated.tac: expected 'else' but got RBrace",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 18423,
+      "generation_tokens": 385,
+      "python_baseline_tokens": 41,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "io/059-echo-reverse",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "extraction-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "model response contained multiple ```tacit fenced blocks",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 51756,
+      "generation_tokens": 0,
+      "python_baseline_tokens": 64,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "io/060-longest-line",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    }
+  ],
+  "track": "primary"
+}
