@@ -16,6 +16,15 @@ alternative approaches outside the block. If you need to revise while
 thinking, do it silently and return only the final program. The final answer
 starts with ```` ```tacit ```` and ends with the matching closing fence.
 
+Length pressure is not permission to split the answer. For a large ordering,
+row/column, line-processing, or grid traversal program, choose one complete
+direct shape and finish it. Do not provide a short version plus a more
+complete version. Do not leave a `let`, `rec`, `if`, or fenced block open. If
+the program is getting too long, simplify the algorithm before writing the
+final block: rescan input instead of storing a complex table, use one clear
+quadratic pass instead of a half-written divide-and-conquer routine, and
+prefer direct output over building a large abstract result.
+
 ## 1. Semantic Summary
 
 Tacit-Lite is a small expression language. Authors write source using `let`,
@@ -32,6 +41,12 @@ called with all of its source-level arguments at each executable call site:
 `loop next_i next_acc`, not `loop next_i`, when the helper was defined as
 `lambda i. lambda acc. ...`.
 
+Every `rec` member must be a lambda. Do not put constants, buffers, parsed
+values, or other computed expressions inside a `rec` group as members. Bind
+those values before or after the group with `let`. Inside the group, each
+helper should either return an `Int`/`Bool`-shaped value or perform direct
+buffer/IO work and return an `Int` status.
+
 Type inference is local. Standalone examples in this primer rely on
 inference. The base runtime values are `Int`, `Bool`, `Str`, `Buf`, records,
 constructors, lambdas, and holes. The effect lattice has four atoms: `Alloc`,
@@ -45,7 +60,7 @@ primitives. A `Buf` is a byte buffer: each `@buf-get` reads one byte-sized
 integer. Keep counters, offsets, indexes, and other large `Int` values in
 lambda parameters or `let` bindings, not in buffer cells. There is no general
 heap buffer, hash map, object system, type class, effect handler, or
-user-defined effect in Tacit-Lite. If a task wants those, write the direct
+user-defined effect in Tacit-Lite. If a program needs those, write the direct
 Tacit-Lite shape with the available primitives.
 
 ## 2. Progressive Python/Rust/Tacit Pairs
@@ -411,7 +426,7 @@ in this order:
    stored values are bytes or small flags. Use explicit offsets. Keep full
    `Int` values in recursive state or local bindings.
 5. Replace standard-library parsing and formatting with `@parse-i64` and
-   `@fmt-i64`. Do not hand-roll those unless the task is specifically about
+   `@fmt-i64`. Do not hand-roll those unless the program is specifically about
    parsing or formatting internals.
 6. Check the effect story last. If the program reads or writes, it has `IO`.
    If it allocates a buffer, it has `Alloc`. If it writes to a buffer, it has
@@ -459,7 +474,7 @@ larger abstraction. It is not useful as a synonym for `@add`.
 ### Executable Helper Shapes
 
 Executable programs support direct helper calls, not general function values.
-This distinction matters most in larger tasks.
+This distinction matters most in larger programs.
 
 Safe shapes:
 
@@ -499,6 +514,27 @@ let _ = loop 0 0 in
 loop 1 0
 ```
 
+The same rule applies to ordinary local lambdas inside recursive helpers. A
+shape like this is closure-like even when it typechecks:
+
+```text
+rec {outer = lambda i.
+  let emit = lambda j. ... i ... in
+  emit 0
+} in outer 0
+```
+
+Lift `emit` into the same `rec` group and pass `i` explicitly. This avoids
+free-variable lowering failures and makes every changing value visible at the
+call site:
+
+```text
+rec {
+  emit = lambda i. lambda j. ... emit i next_j;
+  outer = lambda i. let _ = emit i 0 in outer next_i
+} in outer 0
+```
+
 ```text
 rec {outer = lambda i.
   rec {inner = lambda j. ... i ... inner next_j} in inner 0
@@ -521,6 +557,12 @@ For token parsers, this usually means one `rec` group containing `skip`,
 `line_end`, a pattern length, or a mode flag, either make it a `rec` member
 that reads the earlier binding directly, or add the value as an explicit
 parameter. Do not hide that value inside a returned lambda.
+
+Use only helper-to-helper calls in executable recursive code. Avoid binding a
+partially applied helper, returning a helper, storing a helper in a record, or
+selecting a helper with `if`. If a branch chooses behavior, pass a mode flag
+such as `want_even`, `ascending`, or `emit_separator`, then branch inside the
+helper body.
 
 ### Branch Syntax Traps
 
@@ -570,7 +612,7 @@ it does not repair a missing `else`, missing `in`, or too-wide branch.
 ### Choosing Between `if` And `match`
 
 Use `if` when there is one condition and two outcomes. Use `match` when the
-branches correspond to values or constructors. In small programming tasks,
+branches correspond to values or constructors. In small programming exercises,
 integer matching is useful for sentinels, parser states, and compact
 zero/non-zero cases where the branch names are clearer than nested
 comparisons.
@@ -603,9 +645,9 @@ sentinel in recursive state.
 
 Avoid giant stack-sized buffers. A buffer such as `@buf-alloc 16777216` can
 crash before the algorithm starts. Prefer the smallest practical bound for the
-task shape: 32 bytes for one formatted integer, a few thousand bytes for tiny
-examples, 65536 bytes for many line-oriented tasks, and at most about one
-megabyte unless the task's tests clearly require more. Dynamic allocation is
+input shape: 32 bytes for one formatted integer, a few thousand bytes for tiny
+examples, 65536 bytes for many line-oriented programs, and at most about one
+megabyte unless the input contract clearly requires more. Dynamic allocation is
 still local scratch storage, so it is not a reason to allocate hundreds of
 megabytes.
 
@@ -622,6 +664,32 @@ separate helpers named for each buffer.
 let buf = @buf-alloc-dyn n in
 rec {scan = lambda i. lambda acc. ... @buf-get buf i ... scan next_i next_acc} in scan 0 0
 ```
+
+When a buffer must store indexes or offsets, store a fixed-width byte
+encoding, not the raw integer. For inputs below one million bytes, three cells
+are enough for an index. Allocate `3 * max_items` cells; this small example
+stores up to 1000 indexes:
+
+```text
+let idx = @buf-alloc 3000 in
+rec {
+  set_idx = lambda pos. lambda val.
+    let off = @mul pos 3 in
+    let _ = @buf-set idx off (@mod val 256) in
+    let _ = @buf-set idx (@add off 1) (@mod (@div val 256) 256) in
+    @buf-set idx (@add off 2) (@div val 65536);
+  get_idx = lambda pos.
+    let off = @mul pos 3 in
+    @add (@buf-get idx off)
+      (@add (@mul (@buf-get idx (@add off 1)) 256)
+            (@mul (@buf-get idx (@add off 2)) 65536))
+} in ...
+```
+
+Use a separate concrete pair such as `set_aux`/`get_aux` for a second buffer.
+Do not write a generic `get b pos` helper that takes the buffer as a
+parameter; executable helpers should close over concrete buffers bound before
+the `rec` group.
 
 If you need to output a slice that starts at a nonzero offset, do not overwrite
 the input buffer while later scans still need it. Either copy the slice into a
@@ -788,7 +856,7 @@ Capitalized identifiers are constructors. `True` and `False` are known
 nullary boolean constructors. Other constructors can appear in parsed syntax
 and patterns, but executable programs should usually avoid algebraic data
 construction at runtime because the executable subset is intentionally small.
-For integer-heavy tasks, prefer `match` with integer patterns or `if` with
+For integer-heavy programs, prefer `match` with integer patterns or `if` with
 comparison primitives.
 
 ### Primitive Surface
@@ -1147,19 +1215,19 @@ When a program fails, use this sequence:
 6. Unsupported executable shape: rewrite toward the executable subset:
    integer result, direct helper calls, `rec`, `if`, `match`, `let`, and
    supported primitives.
-7. Test failure after compile success: keep the type/effect shape and debug
+7. Wrong output after compile success: keep the type/effect shape and debug
    the algorithm with smaller input.
 
-### Common Task Recipes
+### Common Programming Recipes
 
-These recipes are language-level patterns. They name the shapes that appear
-across small programming tasks without assuming any external file layout.
+These recipes are language-level patterns. They name reusable shapes for
+small Tacit programs without assuming any external file layout.
 
 Summation over a known range: write a recursive helper with an index and an
 accumulator. The condition checks whether the index has reached the bound.
 The recursive call advances the index and accumulator. If the bound is known
 at authoring time and tiny, a fixed chain of `@add` calls is sometimes
-clearer, but for task-shaped input use recursion.
+clearer, but for input-sized work use recursion.
 
 Counting bytes in stdin: allocate a one-byte buffer, read one byte at a time,
 and carry the count in the recursive state. If `@read` returns zero, return
@@ -1191,12 +1259,13 @@ Keep offsets and lengths explicit. `@scan-byte` returns the absolute found
 offset, so the next byte after a found newline is `@add end 1`, not `@add
 start (@add end 1)`.
 
-Substring filtering: when the first input line is the pattern, the pattern
-slice is `[0, pat_end)` and the text begins at `pat_end + 1`. A line contains
-the pattern if some absolute candidate offset `p` in that line satisfies
-`@buf-eq buf 0 buf p pat_len`. Do not compare the line against itself by
-using the line start as the pattern offset. The candidate loop stops when
-`p + pat_len > line_end`. If `pat_len` is zero, every line matches.
+Searching for one byte span inside another: keep the pattern as `(pat_off,
+pat_len)` and the candidate span as `(span_off, span_len)`. A candidate
+position `p` is an absolute input offset; compare with
+`@buf-eq input pat_off input p pat_len`. Do not accidentally compare the
+candidate span against itself. The search loop stops when `p + pat_len` is
+greater than `span_off + span_len`. A zero-length pattern is found at the
+start of every span.
 
 When scanning bytes read from stdin, treat the byte count returned by `@read`
 as the exclusive upper bound. A helper with state `i` should inspect
@@ -1206,13 +1275,39 @@ Copying a slice: use `@buf-copy dst dst_off src src_off len`. Remember that
 the first buffer is the destination. Many wrong answers reverse `dst` and
 `src`; the typechecker cannot catch that because both are `Buf`.
 
-Sorting a fixed tiny buffer: direct buffer reads and writes can be clearer
-than a general recursive sort. For a dynamic or task-shaped size, write a
+Ordering a fixed tiny buffer: direct buffer reads and writes can be clearer
+than a general recursive ordering routine. For a dynamic size, write a
 recursive outer loop and inner loop, or choose a simple algorithm whose state
 fits cleanly in integers and buffers. Prefer correctness over clever token
 packing.
 
-For large-output transforms such as sorting lines or grouping items, prefer a
+For integer sorting where values may exceed one byte, sort indexes rather
+than values. Read the input once, count tokens, initialize `idx[i] = i` with
+fixed-width byte packing, and define `value_at want pos cur` to rescan the
+original input until token `want`. A comparison becomes:
+
+```text
+let av = value_at (get_idx i) 0 0 in
+let bv = value_at (get_idx j) 0 0 in
+if @gt av bv then swap i j else 0
+```
+
+Many ordering algorithms can use this representation because the mutable
+state is only the indirection buffer. Keep `set_idx`, `get_idx`, `swap`,
+`value_at`, loop helpers, and emit helpers as siblings in one `rec` group. If
+an algorithm needs temporary ordering state, use a second concrete index
+buffer named for its role; do not pass either buffer as a helper argument.
+
+For lexicographic or key-based ordering over input spans, a repeated-minimum
+pass is often simpler than maintaining a mutable collection. Keep the
+previous emitted key or span in recursive state. Each pass scans all input and
+finds the smallest candidate greater than the previous one, then a second
+pass emits all items matching that candidate in original order. This is
+quadratic, but it avoids dictionaries and preserves stable ordering
+naturally. If output includes an aggregate such as a count, compute that
+aggregate by a separate scan of matching spans before emitting.
+
+For large-output transforms that select, group, or reorder spans, prefer a
 simple complete quadratic pass over a clever partial divide-and-conquer shape.
 Direct recursion with explicit indexes is easier to finish and repair than a
 program that needs lists, heaps, or a dictionary.
@@ -1224,6 +1319,49 @@ newlines. `token_end pos` stops at space, newline, or EOF. `parse_at p` calls
 without hand-scanning digits and avoids corrupting full integers in byte
 buffers.
 
+Run-based or predicate-based integer output should parse each token once per
+pass and emit immediately. Carry `have` and `prev` when the decision depends
+on the previous value; carry `first` for separators. For an empty result,
+write only the required newline, not a formatted zero. A safe `emit_int`
+shape is:
+
+```text
+emit_int = lambda v. lambda first.
+  let _ = if first then 0 else @write 1 " " 1 in
+  let w = @fmt-i64 out 0 v in
+  @write 1 out w
+```
+
+Then the loop should return the next `first` flag, where `0` means something
+has already been emitted. This works for one output stream or for repeated
+passes with different predicates. Do not write a separator after every item;
+that leaves trailing spaces on one-element and short-final-row cases.
+
+Grouped fixed-width output is a separator problem, not a formatting special
+case. Carry `col` and `seen`. For each emitted integer, pass `@eq col 0` as
+the `first` flag. After incrementing `col`, if it equals the group width,
+write one newline and reset `col` to zero. At EOF, write a final newline only
+when at least one value was seen and `col` is not zero. If there are no
+groups to emit, do not print anything.
+
+Line span work should keep `(start, length)` pairs into the original input.
+Use helpers `line_end pos`, `next_line end`, `span_eq`, `span_lt`, and
+`emit_span`. Emit a span through a one-byte scratch buffer when it may start
+at a nonzero offset:
+
+```text
+emit_span = lambda off. lambda slen. lambda i.
+  if @ge i slen then 0 else
+    let _ = @buf-set one 0 (@buf-get input (@add off i)) in
+    let _ = @write 1 one 1 in
+    emit_span off slen (@add i 1)
+```
+
+This is the default shape for line-oriented transforms that compare, select,
+deduplicate, reorder, reverse, aggregate, or emit parts of the original input.
+Do not copy the whole remaining input into a small formatting buffer, and do
+not format a byte span as an integer.
+
 If you hand-scan signed integers, maintain `cur`, `acc`, `in_num`, and `neg`.
 On a digit byte, set `cur = cur * 10 + (byte - 48)` and mark `in_num = 1`.
 On `45` before digits, set `neg = 1`. On any separator, flush only when
@@ -1231,31 +1369,29 @@ On `45` before digits, set `neg = 1`. On any separator, flush only when
 `in_num`, and `neg`. At EOF, run the same flush once. Do not allocate a huge
 input buffer just because the statement gives a large theoretical maximum.
 
-Proper divisors in ascending order: factor-pair enumeration does not emit
-sorted output if you print `i` and `n / i` together. For `n = 1`, print only
-the trailing newline. For `n > 1`, `1` is always a proper divisor. Then scan
-`i` upward from `2` while `i * i <= n`, emitting small divisors in ascending
-order. To emit large complements in ascending order, do a second scan
-downward from the largest tested `i` to `2` and emit `n / i` when `i` divides
-`n`, excluding `n` itself and excluding the square-root duplicate. A `first`
-flag is the safest separator rule.
+Factor-pair enumeration does not naturally emit sorted output if you print
+`i` and `n / i` together. When output order matters, make one pass for the
+small side of each pair and a second pass for the large complements. Exclude
+duplicates at square roots explicitly. A `first` flag is the safest separator
+rule.
 
-Longest-word and common-prefix tasks: keep byte offsets and lengths into the
-input, not a packed integer encoding of the word. For longest word, carry
-`cur_start`, `cur_len`, `best_start`, and `best_len`; on a tie, keep the old
-best if the task asks for the first occurrence. At the end, copy `best_len`
-bytes from `best_start` into an output buffer or emit those bytes.
+Selecting spans from text: keep byte offsets and lengths into the input, not
+a packed integer encoding of the span contents. For best-span selection, carry
+current and best starts and lengths, such as `cur_start`, `cur_len`,
+`best_start`, and `best_len`. On ties, keep or replace the old best according
+to the requested tie rule. At the end, copy the selected bytes into an output
+buffer or emit the span directly.
 
-Binary search over a token line: count tokens first, then search with a
+Searching ordered token data: count tokens first, then search with a
 half-open interval `[lo, hi)`. Stop when `lo >= hi`. Compute `mid = (lo + hi)
 / 2`, parse the value at token `mid`, then recurse into `[mid + 1, hi)` or
 `[lo, mid)`. A closed interval is easy to get wrong at the empty range.
 
-Maximum-subarray over parsed integers: parse the first integer before the
-main loop and initialize both `cur` and `best` to that value. Then for each
-remaining value `x`, set `cur = max(x, cur + x)` and `best = max(best, cur)`.
-Do not initialize `best` to zero because all-negative input must return the
-largest negative value.
+Running recurrences over parsed integers: initialize from the first value
+when zero is not a valid identity for all inputs. Carry the current state and
+best state explicitly. For example, if all values may be negative, do not
+initialize a best value to zero unless zero is truly allowed by the requested
+behavior.
 
 Comparing flags: comparison primitives return `Bool`, while integer
 truthiness is also accepted in conditions. Arithmetic expects integers. If
@@ -1275,7 +1411,7 @@ read stdin bytes -> parse or scan -> compute Int/Buf result -> format/write
 ```
 
 The final expression should normally be `0` after successful output. If the
-task asks for an exit code, return that code or call `@exit`.
+caller asks for an exit code, return that code or call `@exit`.
 
 For multi-value input, read once when practical and parse slices. Use
 `@scan-byte buf off len 10` to find a newline and `@scan-byte buf off len 32`
@@ -1338,8 +1474,8 @@ read-before-write. A giant buffer can overflow local storage. A flags buffer
 that was never initialized can make every item look already used, which often
 leads to offset `-1` and an invalid buffer access.
 
-If tests fail but compile and typecheck pass, reason from input bytes. Most
-wrong outputs are one of: off-by-one length,
+If output is wrong but the program compiles and typechecks, reason from input
+bytes. Most wrong outputs are one of: off-by-one length,
 forgetting to flush the last number at EOF, writing the whole output buffer
 instead of `w` bytes, mixing destination and source in `@buf-copy`, or using
 ASCII byte values without subtracting `48` for digits.
@@ -1369,23 +1505,33 @@ Empty input: `@read` returns zero immediately. Make the EOF branch return the
 right identity value: count zero, sum zero, longest length zero, or the
 current accumulated value if the last token has no trailing newline.
 
-Single element: sorting, unique, longest, and prefix-shaped tasks often fail
-on one-element input when the recursive step assumes a successor exists.
+Single element: ordering, deduplication, selection, and prefix-shaped programs
+often fail on one-element input when the recursive step assumes a successor
+exists.
 
 Trailing newline: line-oriented programs should decide whether a final empty
-line counts. Follow the task statement, not a generic Python habit.
+line counts. Follow the requested behavior, not a generic Python habit.
 
 ASCII digits: byte `48` is digit zero and byte `57` is digit nine. Convert a
 digit byte with `@sub byte 48`. Convert back for output either with
 `@fmt-i64` for whole integers or by adding `48` for a single digit byte.
 
-UTF-8 text: byte loops are correct for ASCII tasks. If a task is explicitly
-about characters and may include non-ASCII input, do not reverse or split the
-middle bytes of a multi-byte sequence. Copy each UTF-8 sequence as a unit. For
-character palindrome checks, the last byte is not necessarily the last
-character. Move the right pointer left over continuation bytes in `128..191`,
-compare the whole byte span for the left and right characters, then advance by
-the span lengths.
+UTF-8 text: byte loops are correct for ASCII input. If the required behavior
+is character-based and input may include non-ASCII text, do not reverse or
+split the middle bytes of a multi-byte sequence. Copy each UTF-8 sequence as a
+unit. For character palindrome checks, the last byte is not necessarily the
+last character. Move the right pointer left over continuation bytes in
+`128..191`, compare the whole byte span for the left and right characters,
+then advance by the span lengths.
+
+For stream transforms that need to emit UTF-8 code points in reverse order,
+recursive delayed output is often the shortest safe shape: read the first byte
+of one code point, read its continuation bytes into one-byte buffers, recurse
+to the stream boundary, then write the saved bytes in their original order.
+Stop before writing delimiter bytes that should not participate in the
+transform, then emit the required delimiter after the recursion finishes. This
+avoids allocating an output buffer as large as the input and avoids invalid
+negative indexes on empty input.
 
 Negative numbers: `@parse-i64` handles the primitive contract for integer
 text. If hand-scanning bytes, account for a leading minus sign explicitly.
@@ -1415,19 +1561,19 @@ let _ = @write 1 "\n" 1 in
 0
 ```
 
-Use this skeleton for integer-output tasks. For tasks that output a string or
-transformed bytes, compute the output buffer and logical length, then write
-that buffer and length directly. Do not format a buffer as an integer unless
-the required output is numeric.
+Use this skeleton for integer-output programs. For programs that output a
+string or transformed bytes, compute the output buffer and logical length,
+then write that buffer and length directly. Do not format a buffer as an
+integer unless the required output is numeric.
 
 ### Checking Edge Cases
 
-Use the problem statement to infer edge cases. If the statement says lines,
-handle empty input and trailing newline. If it says integers, handle zero, one
+Use the requested behavior to infer edge cases. For line-oriented input,
+handle empty input and trailing newline. For integer input, handle zero, one
 value, and negative signs when the equivalent Python or Rust solution would.
-If it says sorted output, preserve duplicates unless the statement says
-unique. If it says first occurrence, do not update the answer after finding an
-equal later occurrence.
+For ordered output, preserve duplicates unless deduplication is explicitly
+requested. For first-occurrence behavior, do not update the answer after
+finding an equal later occurrence.
 
 Because static checks cover syntax, types, effects, and executable-shape
 support, most semantic bugs survive until execution. Before finalizing a
@@ -1461,15 +1607,15 @@ values. ASCII lowercase letters are `97` through `122`; uppercase letters are
 
 To lowercase an ASCII uppercase byte, check `@ge byte 65` and `@le byte 90`,
 then add `32`. To detect a digit, check `@ge byte 48` and `@le byte 57`.
-To detect whitespace in small tasks, compare against the explicit bytes the
-task permits, commonly space and newline. Tacit-Lite has no Unicode
-normalization surface.
+To detect whitespace in small programs, compare against the explicit bytes
+the input format permits, commonly space and newline. Tacit-Lite has no
+Unicode normalization surface.
 
 For UTF-8 code point work, treat continuation bytes as part of the same
 character. A continuation byte satisfies `128 <= byte < 192`. A leading byte
 determines the code point length: `<128` is 1 byte, `<224` is 2, `<240` is 3,
-otherwise 4. Input tasks promise valid UTF-8 when they ask for Unicode code
-points, so you only need to preserve these byte spans.
+otherwise 4. When the input contract promises valid UTF-8, preserving these
+byte spans is enough to preserve code points.
 
 To reverse UTF-8 by code point, use a helper `prev_start end` where `end` is
 an exclusive byte offset. Start at `end - 1` and move left while the byte is a
@@ -1510,15 +1656,15 @@ clear. A clever asymptotic improvement that needs a hash map, heap, or
 general list library is not a win because those abstractions are not
 available.
 
-For search tasks, linear scan is the default unless the task explicitly gives
-sorted input and asks for binary search. For grouping tasks, sorted or
-stable-order buffer passes are often clearer than inventing a dictionary.
-For matrix-like tasks, compute row and column offsets manually and keep the
-dimension variables named. For dynamic programming tasks, be wary: if the
-state table would be large, the task may be dominated by missing standard
-library support and the explicit Tacit version will be longer.
+For search, linear scan is the default unless the input is already ordered and
+the required behavior depends on that ordering. For grouping, sorted or
+stable-order buffer passes are often clearer than inventing a dictionary. For
+row/column data, compute row and column offsets manually and keep the
+dimension variables named. For table-like dynamic programming, be wary: if the
+state table would be large, the explicit Tacit version will be longer because
+there is no general collection library.
 
-For matrix-like integer tasks, avoid generic helpers that take a buffer
+For row/column integer data, avoid generic helpers that take a buffer
 parameter such as `get_val mat idx` or `set_val mat idx value`. Use separate
 helpers for each concrete buffer, for example `get_a`, `get_b`, `set_c`, or
 inline the few reads and writes. If values can exceed one byte, either rescan
@@ -1529,6 +1675,24 @@ For nested row/column loops, use the bounds literally. If rows are `0..r` and
 columns are `0..c`, the outer loop stops at `r` and the inner loop stops at
 `c`. Single-row, single-column, and single-cell cases should still run the
 body once.
+
+When emitting row/column data in a different traversal order, first determine
+the row and column bounds. To emit a column-oriented view of row-oriented
+input, scan each row, find the `col`th token within that row, parse it, and
+emit with a `first` flag. This avoids storing a full integer table in byte
+buffers. For computations that combine rows and columns, parse dimensions
+early and carry the loop coordinates and accumulator explicitly, such as `i`,
+`j`, `k`, `acc`, `rows`, `inner`, and `cols`. When the inner coordinate
+reaches its bound, return the accumulator.
+
+For traversal over a byte grid with visited state, mutate the input buffer
+itself when it is safe to destroy the original marks. For ASCII bit grids, the
+byte for `1` is `49` and the byte for `0` is `48`. A traversal helper should
+stop when the position is out of range or the byte is not the active mark;
+otherwise set that byte to the inactive mark and recurse to neighboring
+positions. For space-separated grids, horizontal neighbors may be two bytes
+away and vertical neighbors are one row stride away, where `stride` is the
+first line length plus one.
 
 ### Debugging Generated Tacit
 
@@ -1554,8 +1718,9 @@ transformation is in-place and safe.
 Do not infer features that are intentionally absent. No list syntax, no
 implicit string iteration, no Python-style slicing, no automatic stdout
 printing, no mutable locals except through explicit buffers, no heap
-allocation, and no hidden standard library. If the task needs a table, encode
-the needed state directly with buffers or integers. If the task needs a
-string operation, use byte buffers and the primitives listed in this primer.
+allocation, and no hidden standard library. If the program needs a table,
+encode the needed state directly with buffers or integers. If the program
+needs a string operation, use byte buffers and the primitives listed in this
+primer.
 If a shorter solution would need a missing abstraction, write the explicit
 one.
