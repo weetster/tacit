@@ -609,7 +609,7 @@ def _run_tacit_compile(
 
 
 def _compare_test_output(
-    proc: subprocess.CompletedProcess[str],
+    proc: subprocess.CompletedProcess[bytes],
     test: dict[str, str],
     *,
     sealed: bool,
@@ -620,7 +620,8 @@ def _compare_test_output(
             if sealed
             else f"nonzero exit {proc.returncode}; stderr={proc.stderr!r}"
         )
-    if proc.stdout != test["stdout"]:
+    expected_stdout = test["stdout"].encode("utf-8")
+    if proc.stdout != expected_stdout:
         if sealed:
             return False, "stdout mismatch"
         return (
@@ -663,9 +664,9 @@ def grade_source(
     for test in tests:
         proc = subprocess.run(
             [str(binary_path)],
-            input=test["stdin"],
+            input=test["stdin"].encode("utf-8"),
             capture_output=True,
-            text=True,
+            text=False,
             timeout=30,
         )
         ok, message = _compare_test_output(proc, test, sealed=task.sealed)

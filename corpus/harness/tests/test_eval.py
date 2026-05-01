@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import subprocess
 from datetime import UTC, datetime, timedelta
 
 import tiktoken
@@ -42,6 +43,24 @@ def test_extract_tacit_source_rejects_truncation() -> None:
     assert out.source is None
     assert out.diagnostics is not None
     assert "max_tokens" in out.diagnostics["errors"][0]["message"]
+
+
+def test_compare_test_output_handles_non_utf8_stdout() -> None:
+    proc = subprocess.CompletedProcess(
+        args=["ref"],
+        returncode=0,
+        stdout=b"\xa9",
+        stderr=b"",
+    )
+
+    ok, message = corpus_eval._compare_test_output(
+        proc,
+        {"name": "sample", "stdout": ""},
+        sealed=False,
+    )
+
+    assert not ok
+    assert "b'\\xa9'" in message
 
 
 def test_primary_aggregates_are_primer_inclusive() -> None:

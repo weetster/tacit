@@ -1,0 +1,1627 @@
+{
+  "aggregates": {
+    "full": {
+      "compile_pass_rate": 0.5319148936170213,
+      "primer_amortized_total": 32695,
+      "python_tokens_total": 4584,
+      "tacit_tokens_total": 518961,
+      "task_count": 47,
+      "tests_pass_rate": 0.3829787234042553,
+      "tests_pass_total": 133,
+      "tests_total_total": 162,
+      "token_delta": 112.21138743455498,
+      "typecheck_pass_rate": 0.6170212765957447
+    },
+    "non_stdlib_dominated": {
+      "compile_pass_rate": 0.5434782608695652,
+      "primer_amortized_total": 31896,
+      "python_tokens_total": 4466,
+      "tacit_tokens_total": 507591,
+      "task_count": 46,
+      "tests_pass_rate": 0.391304347826087,
+      "tests_pass_total": 133,
+      "tests_total_total": 162,
+      "token_delta": 112.65673981191223,
+      "typecheck_pass_rate": 0.6304347826086957
+    },
+    "stdlib_dominated": {
+      "compile_pass_rate": 0.0,
+      "primer_amortized_total": 11370,
+      "python_tokens_total": 118,
+      "tacit_tokens_total": 11370,
+      "task_count": 1,
+      "tests_pass_rate": 0.0,
+      "tests_pass_total": 0,
+      "tests_total_total": 0,
+      "token_delta": 95.35593220338983,
+      "typecheck_pass_rate": 0.0
+    }
+  },
+  "gates": {
+    "passed_overall": false,
+    "primary_pass_rate_gate": {
+      "applies": true,
+      "metric": "tests_pass_rate",
+      "passed": false,
+      "scope": "full",
+      "threshold": 0.7,
+      "value": 0.3829787234042553
+    },
+    "primary_token_gate_full": {
+      "applies": true,
+      "metric": "token_delta",
+      "passed": false,
+      "scope": "full",
+      "threshold": -0.3,
+      "value": 112.21138743455498
+    },
+    "primary_token_gate_non_stdlib": {
+      "applies": true,
+      "metric": "token_delta",
+      "passed": false,
+      "scope": "non_stdlib_dominated",
+      "threshold": -0.3,
+      "value": 112.65673981191223
+    }
+  },
+  "model": {
+    "id": "claude-sonnet-4-6",
+    "primer_hash": "c9a1523342741799b98e6c6cb428bcab42d5e961cb9c495c4406bd83ee3682b9",
+    "primer_tokens": 10571,
+    "provider": "anthropic"
+  },
+  "run_id": "019de19a-25d3-786e-8deb-f2c264eaec55",
+  "schema_version": "p3.0",
+  "scope": "open",
+  "tasks": [
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "duration_ms": 3393,
+      "generation_tokens": 105,
+      "python_baseline_tokens": 60,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "arithmetic/001-sum-to-n",
+      "tests_pass": 5,
+      "tests_total": 5,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "duration_ms": 3822,
+      "generation_tokens": 121,
+      "python_baseline_tokens": 72,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "arithmetic/003-factorial",
+      "tests_pass": 5,
+      "tests_total": 5,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "duration_ms": 4629,
+      "generation_tokens": 160,
+      "python_baseline_tokens": 51,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "arithmetic/004-gcd",
+      "tests_pass": 10,
+      "tests_total": 10,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "duration_ms": 6167,
+      "generation_tokens": 271,
+      "python_baseline_tokens": 125,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "arithmetic/005-is-prime",
+      "tests_pass": 10,
+      "tests_total": 10,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "duration_ms": 3953,
+      "generation_tokens": 149,
+      "python_baseline_tokens": 57,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "arithmetic/006-digit-sum",
+      "tests_pass": 7,
+      "tests_total": 7,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "test-failure",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "stdout mismatch for basic: expected '1010\\n', got b'0101\\n'; stdout mismatch for power-of-two: expected '10000\\n', got b'00001\\n'; stdout mismatch for large: expected '10000000000\\n', got b'00000000001\\n'",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 6399,
+      "generation_tokens": 276,
+      "python_baseline_tokens": 90,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "arithmetic/007-to-binary",
+      "tests_pass": 3,
+      "tests_total": 6,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": {
+              "sym": "Int"
+            },
+            "expected": {
+              "fn-ty": {
+                "arg": {
+                  "sym": "Int"
+                },
+                "eff": [],
+                "ret": {
+                  "meta": 4
+                }
+              }
+            },
+            "fix": null,
+            "kind": "type-mismatch",
+            "location": {
+              "ast_path": [
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 2
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 0
+                }
+              ],
+              "source_span": null
+            },
+            "message": "type mismatch: expected Int -> ?4 / {}, got Int",
+            "related": [],
+            "severity": "error"
+          },
+          {
+            "actual": {
+              "sym": "Int"
+            },
+            "expected": {
+              "fn-ty": {
+                "arg": {
+                  "sym": "Int"
+                },
+                "eff": [],
+                "ret": {
+                  "meta": 5
+                }
+              }
+            },
+            "fix": null,
+            "kind": "type-mismatch",
+            "location": {
+              "ast_path": [
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 2
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                }
+              ],
+              "source_span": null
+            },
+            "message": "type mismatch: expected Int -> ?5 / {}, got Int",
+            "related": [],
+            "severity": "error"
+          },
+          {
+            "actual": {
+              "sym": "Int"
+            },
+            "expected": {
+              "fn-ty": {
+                "arg": {
+                  "sym": "Int"
+                },
+                "eff": [],
+                "ret": {
+                  "meta": 6
+                }
+              }
+            },
+            "fix": null,
+            "kind": "type-mismatch",
+            "location": {
+              "ast_path": [
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 0
+                }
+              ],
+              "source_span": null
+            },
+            "message": "type mismatch: expected Int -> ?6 / {}, got Int",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 8152,
+      "generation_tokens": 376,
+      "python_baseline_tokens": 145,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "arithmetic/009-divisors",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "duration_ms": 4527,
+      "generation_tokens": 175,
+      "python_baseline_tokens": 88,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "arithmetic/010-power",
+      "tests_pass": 7,
+      "tests_total": 7,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "test-failure",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "stdout mismatch for unicode: expected '\u00e9fac\\n', got b'\\xa9\\xc3fac\\n'",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 4399,
+      "generation_tokens": 163,
+      "python_baseline_tokens": 37,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "strings/011-reverse-string",
+      "tests_pass": 5,
+      "tests_total": 6,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "typecheck-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: /tmp/tmp59b3o0iq/generated.tac: expected 'else' but got RBrace",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 5327,
+      "generation_tokens": 271,
+      "python_baseline_tokens": 60,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "strings/012-count-vowels",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": {
+              "sym": "Int"
+            },
+            "expected": {
+              "fn-ty": {
+                "arg": {
+                  "sym": "Int"
+                },
+                "eff": [],
+                "ret": {
+                  "meta": 2
+                }
+              }
+            },
+            "fix": null,
+            "kind": "type-mismatch",
+            "location": {
+              "ast_path": [
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 0
+                }
+              ],
+              "source_span": null
+            },
+            "message": "type mismatch: expected Int -> ?2 / {}, got Int",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 6320,
+      "generation_tokens": 295,
+      "python_baseline_tokens": 65,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "strings/013-is-palindrome",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "typecheck-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: /tmp/tmpp6yxx9r0/generated.tac: expected 'else' but got RBrace",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 7659,
+      "generation_tokens": 461,
+      "python_baseline_tokens": 63,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "strings/015-title-case",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "duration_ms": 9670,
+      "generation_tokens": 584,
+      "python_baseline_tokens": 89,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "strings/016-longest-word",
+      "tests_pass": 6,
+      "tests_total": 6,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "duration_ms": 6487,
+      "generation_tokens": 279,
+      "python_baseline_tokens": 123,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "strings/017-common-prefix",
+      "tests_pass": 6,
+      "tests_total": 6,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "duration_ms": 7043,
+      "generation_tokens": 331,
+      "python_baseline_tokens": 137,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "strings/018-run-length-encode",
+      "tests_pass": 7,
+      "tests_total": 7,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "duration_ms": 10359,
+      "generation_tokens": 594,
+      "python_baseline_tokens": 103,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "strings/020-is-anagram",
+      "tests_pass": 10,
+      "tests_total": 10,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "unbound-name",
+            "location": {
+              "ast_path": [
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 2
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 2
+                },
+                {
+                  "child": 2
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 2
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 2
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 2
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 2
+                },
+                {
+                  "child": 2
+                },
+                {
+                  "child": 0
+                }
+              ],
+              "source_span": null
+            },
+            "message": "identifier 'skip' not in scope",
+            "related": [],
+            "severity": "error"
+          },
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "unbound-name",
+            "location": {
+              "ast_path": [
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 2
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 2
+                },
+                {
+                  "child": 2
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 2
+                },
+                {
+                  "child": 2
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 2
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 2
+                },
+                {
+                  "child": 2
+                },
+                {
+                  "child": 0
+                }
+              ],
+              "source_span": null
+            },
+            "message": "identifier 'skip2' not in scope",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 21316,
+      "generation_tokens": 1435,
+      "python_baseline_tokens": 111,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "collections/021-unique-in-order",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "duration_ms": 8005,
+      "generation_tokens": 371,
+      "python_baseline_tokens": 60,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "collections/023-flatten-one-level",
+      "tests_pass": 7,
+      "tests_total": 7,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "typecheck-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: /tmp/tmpr4o_uss9/generated.tac: expected 'else' but got RBrace",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 13105,
+      "generation_tokens": 791,
+      "python_baseline_tokens": 100,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "collections/025-partition-eo",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "extraction-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "model response stopped at max_tokens",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 106363,
+      "generation_tokens": 0,
+      "python_baseline_tokens": 103,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "collections/026-group-counts",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "typecheck-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: /tmp/tmpbyt_rp10/generated.tac: expected 'else' but got RBrace",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 29352,
+      "generation_tokens": 2144,
+      "python_baseline_tokens": 113,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "collections/027-rotate-left",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "test-failure",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "stdout mismatch for basic: expected '1 2\\n3 4\\n5\\n', got b'1  2\\n3  4\\n5\\n'; stdout mismatch for exact-fit: expected '1 2 3\\n', got b'1  2  3\\n'; stdout mismatch for size-two-even: expected '1 2\\n3 4\\n', got b'1  2\\n3  4\\n'",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 10318,
+      "generation_tokens": 499,
+      "python_baseline_tokens": 123,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "collections/028-chunks",
+      "tests_pass": 2,
+      "tests_total": 5,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "test-failure",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "stdout mismatch for basic: expected '1 4\\n2 5\\n3 6\\n', got b'1 4\\n2 5\\n'; stdout mismatch for tall: expected '1 3 5\\n2 4 6\\n', got b'1 3 5\\n'; stdout mismatch for single-cell: expected '7\\n', got b''; 3 more failure(s)",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 14533,
+      "generation_tokens": 869,
+      "python_baseline_tokens": 68,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "collections/030-transpose-matrix",
+      "tests_pass": 0,
+      "tests_total": 6,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "typecheck-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: /tmp/tmp89wemhmg/generated.tac: expected 'else' but got RBrace",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 13410,
+      "generation_tokens": 799,
+      "python_baseline_tokens": 118,
+      "retries": 0,
+      "stdlib_dominated": true,
+      "task_id": "algorithms/031-binary-search",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "duration_ms": 7227,
+      "generation_tokens": 287,
+      "python_baseline_tokens": 109,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/032-fizzbuzz",
+      "tests_pass": 4,
+      "tests_total": 4,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "compile-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: free variable in lambda: DeBruijn index 3",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 12558,
+      "generation_tokens": 663,
+      "python_baseline_tokens": 152,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/033-two-sum",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "compile-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: free variable in lambda: DeBruijn index 3",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 20525,
+      "generation_tokens": 1435,
+      "python_baseline_tokens": 141,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/035-bubble-sort",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "extraction-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "model response stopped at max_tokens",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 103641,
+      "generation_tokens": 0,
+      "python_baseline_tokens": 143,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/036-quicksort",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "extraction-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "model response stopped at max_tokens",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 119733,
+      "generation_tokens": 0,
+      "python_baseline_tokens": 201,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/037-merge-sort",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "duration_ms": 6580,
+      "generation_tokens": 261,
+      "python_baseline_tokens": 111,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/038-linear-search",
+      "tests_pass": 6,
+      "tests_total": 6,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "duration_ms": 5328,
+      "generation_tokens": 195,
+      "python_baseline_tokens": 105,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/040-josephus",
+      "tests_pass": 7,
+      "tests_total": 7,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "duration_ms": 8367,
+      "generation_tokens": 429,
+      "python_baseline_tokens": 125,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/041-rle-decode",
+      "tests_pass": 6,
+      "tests_total": 6,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "duration_ms": 10585,
+      "generation_tokens": 555,
+      "python_baseline_tokens": 92,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/042-valid-sudoku-row",
+      "tests_pass": 8,
+      "tests_total": 8,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "typecheck-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: /tmp/tmp96kzt9hc/generated.tac: trailing tokens after position 248",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 12745,
+      "generation_tokens": 799,
+      "python_baseline_tokens": 280,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/044-count-islands",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "duration_ms": 8268,
+      "generation_tokens": 360,
+      "python_baseline_tokens": 48,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/045-reverse-words",
+      "tests_pass": 5,
+      "tests_total": 5,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "typecheck-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: /tmp/tmplgqmozln/generated.tac: expected 'else' but got RBrace",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 10324,
+      "generation_tokens": 569,
+      "python_baseline_tokens": 95,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/046-max-subarray",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "extraction-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "model response stopped at max_tokens",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 107473,
+      "generation_tokens": 0,
+      "python_baseline_tokens": 83,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/047-stable-sort-pairs",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "typecheck-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: /tmp/tmpxe1mfu45/generated.tac: expected 'else' but got RBrace",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 17172,
+      "generation_tokens": 1082,
+      "python_baseline_tokens": 243,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/049-matrix-multiply",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "duration_ms": 11237,
+      "generation_tokens": 578,
+      "python_baseline_tokens": 119,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/050-longest-run",
+      "tests_pass": 7,
+      "tests_total": 7,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "test-failure",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "nonzero exit 3; stderr=b''; stdout mismatch for empty: expected '0\\n', got b''; nonzero exit 1; stderr=b''; 2 more failure(s)",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 4719,
+      "generation_tokens": 182,
+      "python_baseline_tokens": 66,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "io/051-line-count",
+      "tests_pass": 0,
+      "tests_total": 5,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "test-failure",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "nonzero exit -11; stderr=b''; nonzero exit -11; stderr=b''; nonzero exit -11; stderr=b''; 3 more failure(s)",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 6715,
+      "generation_tokens": 293,
+      "python_baseline_tokens": 40,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "io/052-sum-numbers",
+      "tests_pass": 0,
+      "tests_total": 6,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "test-failure",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "stdout mismatch for basic: expected 'the quick brown fox\\nthe fox trot\\n', got b'fox\\nthe quick brown\\n'; stdout mismatch for no-match: expected '', got b'xyz\\nhello w\\n'; stdout mismatch for all-match: expected 'cat\\nbat\\nhat\\n', got b'a\\nc\\n'; 2 more failure(s)",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 7156,
+      "generation_tokens": 278,
+      "python_baseline_tokens": 56,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "io/054-grep-substring",
+      "tests_pass": 0,
+      "tests_total": 5,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "typecheck-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: /tmp/tmp4cxqj3ur/generated.tac: expected 'else' but got RBrace",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 20203,
+      "generation_tokens": 1441,
+      "python_baseline_tokens": 41,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "io/055-sort-lines",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "compile-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: rec group lowering failed at member 0: Phase 1 codegen does not yet support buffer argument must be a @buf-alloc / @buf-alloc-dyn binding",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 15722,
+      "generation_tokens": 409,
+      "python_baseline_tokens": 38,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "io/056-unique-lines",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "typecheck-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: /tmp/tmp95rf4f5h/generated.tac: expected 'else' but got RBrace",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 5903,
+      "generation_tokens": 272,
+      "python_baseline_tokens": 30,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "io/057-word-count",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "extraction-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "model response contained multiple ```tacit fenced blocks",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 96392,
+      "generation_tokens": 0,
+      "python_baseline_tokens": 41,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "io/059-echo-reverse",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "compile-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: LLVM error: Referring to an instruction in another function!\n  %call = call i64 @tacit_fn_1_rec(i64 %1, i64 %4, i64 %rd, ptr %buf_ptr)\nReferring to an instruction in another function!\n  %call7 = call i64 @tacit_fn_1_rec(i64 %2, i64 %3, i64 %rd, ptr %buf_ptr)",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 8355,
+      "generation_tokens": 517,
+      "python_baseline_tokens": 64,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "io/060-longest-line",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": true
+    }
+  ],
+  "track": "primary"
+}
