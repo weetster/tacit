@@ -11,8 +11,10 @@ primitive surface and finish the one block. If an implementation is growing
 too long, switch to a smaller complete algorithm before writing the block; a
 finished simple program is better than a partial elaborate program.
 Never show scratch work before the block. Never open a second block to revise
-the first one. The final answer starts with ```` ```tacit ```` and ends with
-the matching closing fence.
+the first one. Do not discuss feasibility, constraints, memory estimates, or
+alternative approaches outside the block. If you need to revise while
+thinking, do it silently and return only the final program. The final answer
+starts with ```` ```tacit ```` and ends with the matching closing fence.
 
 ## 1. Semantic Summary
 
@@ -454,6 +456,72 @@ Primitive names should remain primitive names. A wrapper like `let plus =
 lambda x. lambda y. @add x y in ...` is useful only when it participates in a
 larger abstraction. It is not useful as a synonym for `@add`.
 
+### Executable Helper Shapes
+
+Executable programs support direct helper calls, not general function values.
+This distinction matters most in larger tasks.
+
+Safe shapes:
+
+```text
+let pure = lambda x. lambda y. @add x y in pure 1 2
+
+let buf = @buf-alloc 64 in
+let n = @read 0 buf 64 in
+rec {scan = lambda i. if @ge i n then 0 else scan (@add i 1)} in scan 0
+```
+
+The first helper is closed: it uses only its parameters and primitives. The
+second helper is a `rec` member, so it may use runtime values bound before the
+`rec`, such as `buf` and `n`.
+
+Unsafe shapes:
+
+```text
+let skip = rec {skip = lambda i. ...} in skip in ...
+```
+
+Do not bind a recursive function itself as a value. Put `skip` in the same
+`rec` group as the helpers that call it.
+
+```text
+let write_partition = lambda parity.
+  rec {loop = lambda i. ... parity ... loop next_i} in loop 0
+in write_partition 0
+```
+
+Do not create a helper factory. There are no closures that remember `parity`.
+Make `parity` an ordinary parameter of the recursive helper:
+
+```text
+rec {loop = lambda parity. lambda i. ... loop parity next_i} in
+let _ = loop 0 0 in
+loop 1 0
+```
+
+```text
+rec {outer = lambda i.
+  rec {inner = lambda j. ... i ... inner next_j} in inner 0
+} in outer 0
+```
+
+Do not put a fresh `rec` inside a helper when the inner helper uses the outer
+helper's parameters. Lift the inner helper into the same group and pass the
+outer state explicitly:
+
+```text
+rec {
+  inner = lambda i. lambda j. ... inner i next_j;
+  outer = lambda i. let _ = inner i 0 in outer next_i
+} in outer 0
+```
+
+For token parsers, this usually means one `rec` group containing `skip`,
+`tok_end`, `count`, `process`, and `emit`. If a helper needs `buf`, `n`,
+`line_end`, a pattern length, or a mode flag, either make it a `rec` member
+that reads the earlier binding directly, or add the value as an explicit
+parameter. Do not hide that value inside a returned lambda.
+
 ### Branch Syntax Traps
 
 Every `if` is an expression and must have both `then` and `else`. There is no
@@ -488,6 +556,17 @@ else
   (if other then a else b)
 ```
 
+Do not write `else if` as though it were a separate keyword. Use an explicit
+nested expression:
+
+```text
+if a then x else (if b then y else z)
+```
+
+When a `rec` member contains nested conditionals, prefer parentheses even when
+the branch looks short. The semicolon after a `rec` member ends that member;
+it does not repair a missing `else`, missing `in`, or too-wide branch.
+
 ### Choosing Between `if` And `match`
 
 Use `if` when there is one condition and two outcomes. Use `match` when the
@@ -515,11 +594,29 @@ prefer one of these shapes: rescan the input to find the nth token, store byte
 offsets into the original input using multiple buffer cells per offset, or
 carry the few needed integer values in recursive state.
 
+Fresh buffers are not guaranteed to contain zeroes. If you later read a cell,
+write that cell first. This is especially important for flags such as
+`seen`, `used`, `visited`, and `order`: initialize the byte range you will
+inspect before the main algorithm. If initialization would be large, avoid
+read-before-write by carrying a `first` flag, a logical length, or an explicit
+sentinel in recursive state.
+
+Avoid giant stack-sized buffers. A buffer such as `@buf-alloc 16777216` can
+crash before the algorithm starts. Prefer the smallest practical bound for the
+task shape: 32 bytes for one formatted integer, a few thousand bytes for tiny
+examples, 65536 bytes for many line-oriented tasks, and at most about one
+megabyte unless the task's tests clearly require more. Dynamic allocation is
+still local scratch storage, so it is not a reason to allocate hundreds of
+megabytes.
+
 For recursive scans over a buffer, allocate the buffer outside the `rec` group
 and refer to that buffer by name inside the helper. Use source-level helper
 parameters for changing integer state: offsets, lengths, counters, flags, and
 accumulators. Do not make the buffer itself a lambda parameter in a recursive
-helper.
+helper. A source-level helper parameter is an integer parameter; shapes such
+as `lambda mat. @buf-get mat i` are not the right executable pattern. If you
+need the same logic for two buffers, duplicate the small helper or use
+separate helpers named for each buffer.
 
 ```text
 let buf = @buf-alloc-dyn n in
@@ -576,9 +673,9 @@ rec {sum = lambda n. if n then @add n (sum (@sub n 1)) else 0} in sum 5
 
 Put sibling recursive helpers in one `rec` group instead of creating a fresh
 `rec` inside a recursive helper body. A nested helper that needs `i`, `end`,
-or another changing value should usually become a sibling and receive that
-value as a parameter. This keeps parsing simple and keeps every changing part
-visible at the call site.
+`cnt`, `parity`, or another changing value must become a sibling and receive
+that value as a parameter. This keeps parsing simple, keeps every changing
+part visible at the call site, and avoids unsupported closure-like shapes.
 
 Use `if` for two branches selected by a comparison or truthy integer.
 
@@ -641,7 +738,10 @@ as `(expr:@Type)`.
 When a recursive helper needs an outer value that was bound before the `rec`
 group, refer to that value by name. Keep explicit parameters for state that
 changes on each call. Do not hide changing loop state inside a nested helper;
-pass it as `loop i acc best flag` or as a sibling helper argument.
+pass it as `loop i acc best flag` or as a sibling helper argument. This
+outer-value rule is for `rec` members. A non-recursive `let name = lambda ...`
+helper should be closed and should not read `buf`, `n`, or other runtime
+values from the surrounding expression.
 
 ```tacit
 let base = 40 in
@@ -792,8 +892,9 @@ in declarations, use the stable alphabetic order: `Alloc`, `Div`, `IO`, `Mut`.
 
 Partial application matters. `@write 1` is just a pure function value waiting
 for the buffer and length. The `IO` effect appears only at the fully applied
-call. This is why helper construction can remain pure even if calling the
-helper later performs IO.
+call. In executable programs, do not bind or return that partial value; call
+the primitive with all of its arguments at the point where the work should
+happen.
 
 `let` joins the effect of its right-hand side with the effect of its body.
 `if` joins the condition, then branch, and else branch. `match` joins the
@@ -1090,6 +1191,13 @@ Keep offsets and lengths explicit. `@scan-byte` returns the absolute found
 offset, so the next byte after a found newline is `@add end 1`, not `@add
 start (@add end 1)`.
 
+Substring filtering: when the first input line is the pattern, the pattern
+slice is `[0, pat_end)` and the text begins at `pat_end + 1`. A line contains
+the pattern if some absolute candidate offset `p` in that line satisfies
+`@buf-eq buf 0 buf p pat_len`. Do not compare the line against itself by
+using the line start as the pattern offset. The candidate loop stops when
+`p + pat_len > line_end`. If `pat_len` is zero, every line matches.
+
 When scanning bytes read from stdin, treat the byte count returned by `@read`
 as the exclusive upper bound. A helper with state `i` should inspect
 `@buf-get buf i` only while `i < n`; when `i == n`, return the EOF result.
@@ -1115,6 +1223,22 @@ newlines. `token_end pos` stops at space, newline, or EOF. `parse_at p` calls
 `@parse-i64 input p (@sub (token_end p) p)`. This handles negative signs
 without hand-scanning digits and avoids corrupting full integers in byte
 buffers.
+
+If you hand-scan signed integers, maintain `cur`, `acc`, `in_num`, and `neg`.
+On a digit byte, set `cur = cur * 10 + (byte - 48)` and mark `in_num = 1`.
+On `45` before digits, set `neg = 1`. On any separator, flush only when
+`in_num` is true, adding `cur` or `-cur` to `acc`, then reset `cur`,
+`in_num`, and `neg`. At EOF, run the same flush once. Do not allocate a huge
+input buffer just because the statement gives a large theoretical maximum.
+
+Proper divisors in ascending order: factor-pair enumeration does not emit
+sorted output if you print `i` and `n / i` together. For `n = 1`, print only
+the trailing newline. For `n > 1`, `1` is always a proper divisor. Then scan
+`i` upward from `2` while `i * i <= n`, emitting small divisors in ascending
+order. To emit large complements in ascending order, do a second scan
+downward from the largest tested `i` to `2` and emit `n / i` when `i` divides
+`n`, excluding `n` itself and excluding the square-root duplicate. A `first`
+flag is the safest separator rule.
 
 Longest-word and common-prefix tasks: keep byte offsets and lengths into the
 input, not a packed integer encoding of the word. For longest word, carry
@@ -1202,6 +1326,17 @@ If a program uses an unsupported executable shape, simplify toward the
 executable subset. Records and projections can typecheck but are not the best
 shape for portable executable programs. Prefer integer state, buffers, `let`,
 `if`, `match`, `lambda`, `rec`, and primitive calls.
+
+If an executable rejects a function value, look for one of these shapes:
+binding `rec {f = ...} in f` as a value, returning a lambda from another
+lambda, partially applying a helper, or putting a nested `rec` inside a
+helper while using the outer helper's parameters. Lift helpers into one
+`rec` group and pass all changing state explicitly.
+
+If a program crashes with no diagnostic, inspect buffer allocation size and
+read-before-write. A giant buffer can overflow local storage. A flags buffer
+that was never initialized can make every item look already used, which often
+leads to offset `-1` and an invalid buffer access.
 
 If tests fail but compile and typecheck pass, reason from input bytes. Most
 wrong outputs are one of: off-by-one length,
@@ -1330,6 +1465,38 @@ To detect whitespace in small tasks, compare against the explicit bytes the
 task permits, commonly space and newline. Tacit-Lite has no Unicode
 normalization surface.
 
+For UTF-8 code point work, treat continuation bytes as part of the same
+character. A continuation byte satisfies `128 <= byte < 192`. A leading byte
+determines the code point length: `<128` is 1 byte, `<224` is 2, `<240` is 3,
+otherwise 4. Input tasks promise valid UTF-8 when they ask for Unicode code
+points, so you only need to preserve these byte spans.
+
+To reverse UTF-8 by code point, use a helper `prev_start end` where `end` is
+an exclusive byte offset. Start at `end - 1` and move left while the byte is a
+continuation byte; the result is the first byte of the previous code point.
+The reverse loop is:
+
+```text
+rev end out_off =
+  if end <= 0 then out_off
+  else start = prev_start end
+       len = end - start
+       copy input[start, len] to output[out_off]
+       rev start (out_off + len)
+```
+
+Do not add a special base case that copies byte zero after the recursive
+loop; that duplicates the first character. When `end` reaches zero, every
+code point has already been copied.
+
+For UTF-8 palindrome checks, compare code point spans, not single bytes. Keep
+`left` as an inclusive start offset and `right_end` as an exclusive end
+offset. Compute `left_len` from the leading byte at `left`. Compute
+`right_start = prev_start right_end` and `right_len = right_end -
+right_start`. If lengths differ, the code points differ. If lengths match,
+compare with `@buf-eq buf left buf right_start left_len`. Then recurse with
+`left + left_len` and `right_start`. Stop when `left >= right_end`.
+
 When constructing output, always maintain an output offset. A common pattern
 is: write a byte with `@buf-set out off byte`, then recurse with `@add off
 1`. If writing a multi-byte formatted integer, use the length returned by
@@ -1350,6 +1517,13 @@ For matrix-like tasks, compute row and column offsets manually and keep the
 dimension variables named. For dynamic programming tasks, be wary: if the
 state table would be large, the task may be dominated by missing standard
 library support and the explicit Tacit version will be longer.
+
+For matrix-like integer tasks, avoid generic helpers that take a buffer
+parameter such as `get_val mat idx` or `set_val mat idx value`. Use separate
+helpers for each concrete buffer, for example `get_a`, `get_b`, `set_c`, or
+inline the few reads and writes. If values can exceed one byte, either rescan
+the input to parse the needed value or pack each integer into several bytes
+with concrete `get_a`/`set_a` helpers that read a known buffer.
 
 For nested row/column loops, use the bounds literally. If rows are `0..r` and
 columns are `0..c`, the outer loop stops at `r` and the inner loop stops at
