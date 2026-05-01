@@ -1,0 +1,1115 @@
+{
+  "aggregates": {
+    "full": {
+      "compile_pass_rate": 0.6595744680851063,
+      "primer_amortized_total": 34012,
+      "python_tokens_total": 4584,
+      "tacit_tokens_total": 549258,
+      "task_count": 47,
+      "tests_pass_rate": 0.46808510638297873,
+      "tests_pass_total": 174,
+      "tests_total_total": 215,
+      "token_delta": 118.82068062827226,
+      "typecheck_pass_rate": 0.8085106382978723
+    },
+    "non_stdlib_dominated": {
+      "compile_pass_rate": 0.6521739130434783,
+      "primer_amortized_total": 33585,
+      "python_tokens_total": 4466,
+      "tacit_tokens_total": 537630,
+      "task_count": 46,
+      "tests_pass_rate": 0.4782608695652174,
+      "tests_pass_total": 174,
+      "tests_total_total": 207,
+      "token_delta": 119.38289296909987,
+      "typecheck_pass_rate": 0.8043478260869565
+    },
+    "stdlib_dominated": {
+      "compile_pass_rate": 1.0,
+      "primer_amortized_total": 11628,
+      "python_tokens_total": 118,
+      "tacit_tokens_total": 11628,
+      "task_count": 1,
+      "tests_pass_rate": 0.0,
+      "tests_pass_total": 0,
+      "tests_total_total": 8,
+      "token_delta": 97.54237288135593,
+      "typecheck_pass_rate": 1.0
+    }
+  },
+  "gates": {
+    "passed_overall": false,
+    "primary_pass_rate_gate": {
+      "applies": true,
+      "metric": "tests_pass_rate",
+      "passed": false,
+      "scope": "full",
+      "threshold": 0.7,
+      "value": 0.46808510638297873
+    },
+    "primary_token_gate_full": {
+      "applies": true,
+      "metric": "token_delta",
+      "passed": false,
+      "scope": "full",
+      "threshold": -0.3,
+      "value": 118.82068062827226
+    },
+    "primary_token_gate_non_stdlib": {
+      "applies": true,
+      "metric": "token_delta",
+      "passed": false,
+      "scope": "non_stdlib_dominated",
+      "threshold": -0.3,
+      "value": 119.38289296909987
+    }
+  },
+  "model": {
+    "id": "claude-sonnet-4-6",
+    "primer_hash": "7459a4b9258ee14d91484ee3df1d2fd27c6338b1f3ac78934eba2ef5da0bb4ea",
+    "primer_tokens": 11201,
+    "provider": "anthropic"
+  },
+  "run_id": "019de1b6-7f56-744f-9c01-28cbd3419a03",
+  "schema_version": "p3.0",
+  "scope": "open",
+  "tasks": [
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "duration_ms": 2320,
+      "generation_tokens": 105,
+      "python_baseline_tokens": 60,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "arithmetic/001-sum-to-n",
+      "tests_pass": 5,
+      "tests_total": 5,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "duration_ms": 2991,
+      "generation_tokens": 121,
+      "python_baseline_tokens": 72,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "arithmetic/003-factorial",
+      "tests_pass": 5,
+      "tests_total": 5,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "duration_ms": 4035,
+      "generation_tokens": 162,
+      "python_baseline_tokens": 51,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "arithmetic/004-gcd",
+      "tests_pass": 10,
+      "tests_total": 10,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "duration_ms": 6806,
+      "generation_tokens": 379,
+      "python_baseline_tokens": 125,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "arithmetic/005-is-prime",
+      "tests_pass": 10,
+      "tests_total": 10,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "duration_ms": 3271,
+      "generation_tokens": 149,
+      "python_baseline_tokens": 57,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "arithmetic/006-digit-sum",
+      "tests_pass": 7,
+      "tests_total": 7,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "duration_ms": 4721,
+      "generation_tokens": 198,
+      "python_baseline_tokens": 90,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "arithmetic/007-to-binary",
+      "tests_pass": 6,
+      "tests_total": 6,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "extraction-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "model response contained multiple ```tacit fenced blocks",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 33073,
+      "generation_tokens": 0,
+      "python_baseline_tokens": 145,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "arithmetic/009-divisors",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "duration_ms": 3420,
+      "generation_tokens": 178,
+      "python_baseline_tokens": 88,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "arithmetic/010-power",
+      "tests_pass": 7,
+      "tests_total": 7,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "extraction-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "model response contained multiple ```tacit fenced blocks",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 21286,
+      "generation_tokens": 0,
+      "python_baseline_tokens": 37,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "strings/011-reverse-string",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "duration_ms": 4547,
+      "generation_tokens": 272,
+      "python_baseline_tokens": 60,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "strings/012-count-vowels",
+      "tests_pass": 6,
+      "tests_total": 6,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "test-failure",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "stdout mismatch for unicode: expected 'yes\\n', got b'no\\n'",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 5405,
+      "generation_tokens": 292,
+      "python_baseline_tokens": 65,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "strings/013-is-palindrome",
+      "tests_pass": 7,
+      "tests_total": 8,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "duration_ms": 6279,
+      "generation_tokens": 465,
+      "python_baseline_tokens": 63,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "strings/015-title-case",
+      "tests_pass": 8,
+      "tests_total": 8,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "test-failure",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "stdout mismatch for tie-first: expected 'cat\\n', got b'hat\\n\\n'; stdout mismatch for two-word-tie: expected 'hello\\n', got b'world\\n\\n'; stdout mismatch for single: expected 'programming\\n', got b'programming\\n\\n'; 1 more failure(s)",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 6548,
+      "generation_tokens": 316,
+      "python_baseline_tokens": 89,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "strings/016-longest-word",
+      "tests_pass": 2,
+      "tests_total": 6,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "typecheck-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: /tmp/tmpce3hirpy/generated.tac: expected 'in' but got RParen",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 5951,
+      "generation_tokens": 281,
+      "python_baseline_tokens": 123,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "strings/017-common-prefix",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "duration_ms": 5916,
+      "generation_tokens": 336,
+      "python_baseline_tokens": 137,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "strings/018-run-length-encode",
+      "tests_pass": 7,
+      "tests_total": 7,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "duration_ms": 8017,
+      "generation_tokens": 530,
+      "python_baseline_tokens": 103,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "strings/020-is-anagram",
+      "tests_pass": 10,
+      "tests_total": 10,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "compile-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: LLVM error: Referring to an argument in another function!\n  %call = call i64 @tacit_fn_0_rec(i64 %add, i64 %add1, i64 0, i64 0, i64 1, ptr %5, i64 %6, ptr %7)",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 13585,
+      "generation_tokens": 1031,
+      "python_baseline_tokens": 111,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "collections/021-unique-in-order",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "compile-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: LLVM error: Referring to an argument in another function!\n  %call17 = call i64 @tacit_fn_0_rec(i64 %0, i64 %add16, i64 0, ptr %3, i64 %4, ptr %5)\nReferring to an argument in another function!\n  %call95 = call i64 @tacit_fn_0_rec(i64 %0, i64 %add94, i64 0, ptr %3, i64 %4, ptr %5)",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 6831,
+      "generation_tokens": 394,
+      "python_baseline_tokens": 60,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "collections/023-flatten-one-level",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "typecheck-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: /tmp/tmpgj6dmkt2/generated.tac: expected 'in' but got RParen",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 14522,
+      "generation_tokens": 1055,
+      "python_baseline_tokens": 100,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "collections/025-partition-eo",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "duration_ms": 22739,
+      "generation_tokens": 821,
+      "python_baseline_tokens": 103,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "collections/026-group-counts",
+      "tests_pass": 5,
+      "tests_total": 5,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "compile-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: free variable in lambda: DeBruijn index 9",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 18125,
+      "generation_tokens": 1576,
+      "python_baseline_tokens": 113,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "collections/027-rotate-left",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "test-failure",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "stdout mismatch for basic: expected '1 2\\n3 4\\n5\\n', got b'1 2 3 4 5\\n'; stdout mismatch for size-two-even: expected '1 2\\n3 4\\n', got b'1 2 3 4\\n'",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 6994,
+      "generation_tokens": 421,
+      "python_baseline_tokens": 123,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "collections/028-chunks",
+      "tests_pass": 3,
+      "tests_total": 5,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "compile-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: rec group lowering failed at member 2: integer literal out of i64 range: 18446744073709551616",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 20149,
+      "generation_tokens": 1829,
+      "python_baseline_tokens": 68,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "collections/030-transpose-matrix",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "test-failure",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "nonzero exit -11; stderr=b''; nonzero exit -11; stderr=b''; nonzero exit -11; stderr=b''; 5 more failure(s)",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 7789,
+      "generation_tokens": 427,
+      "python_baseline_tokens": 118,
+      "retries": 0,
+      "stdlib_dominated": true,
+      "task_id": "algorithms/031-binary-search",
+      "tests_pass": 0,
+      "tests_total": 8,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "duration_ms": 5177,
+      "generation_tokens": 296,
+      "python_baseline_tokens": 109,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/032-fizzbuzz",
+      "tests_pass": 4,
+      "tests_total": 4,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "typecheck-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: /tmp/tmp60ggk7qi/generated.tac: expected '}' but got RParen",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 19527,
+      "generation_tokens": 1620,
+      "python_baseline_tokens": 152,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/033-two-sum",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "test-failure",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "stdout mismatch for negatives: expected '-3 -1 0 1 2\\n', got b'0 1 2 227 229\\n'",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 10178,
+      "generation_tokens": 680,
+      "python_baseline_tokens": 141,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/035-bubble-sort",
+      "tests_pass": 7,
+      "tests_total": 8,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "extraction-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "model response stopped at max_tokens",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 232219,
+      "generation_tokens": 0,
+      "python_baseline_tokens": 143,
+      "retries": 1,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/036-quicksort",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "extraction-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "model response contained multiple ```tacit fenced blocks",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 27547,
+      "generation_tokens": 0,
+      "python_baseline_tokens": 201,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/037-merge-sort",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "duration_ms": 4727,
+      "generation_tokens": 247,
+      "python_baseline_tokens": 111,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/038-linear-search",
+      "tests_pass": 6,
+      "tests_total": 6,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "duration_ms": 4274,
+      "generation_tokens": 192,
+      "python_baseline_tokens": 105,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/040-josephus",
+      "tests_pass": 7,
+      "tests_total": 7,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "duration_ms": 5963,
+      "generation_tokens": 336,
+      "python_baseline_tokens": 125,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/041-rle-decode",
+      "tests_pass": 6,
+      "tests_total": 6,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "duration_ms": 7270,
+      "generation_tokens": 566,
+      "python_baseline_tokens": 92,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/042-valid-sudoku-row",
+      "tests_pass": 8,
+      "tests_total": 8,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "duration_ms": 20544,
+      "generation_tokens": 877,
+      "python_baseline_tokens": 280,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/044-count-islands",
+      "tests_pass": 8,
+      "tests_total": 8,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "duration_ms": 7551,
+      "generation_tokens": 363,
+      "python_baseline_tokens": 48,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/045-reverse-words",
+      "tests_pass": 5,
+      "tests_total": 5,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "test-failure",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "nonzero exit -11; stderr=b''; nonzero exit -11; stderr=b''; nonzero exit -11; stderr=b''; 7 more failure(s)",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 11953,
+      "generation_tokens": 852,
+      "python_baseline_tokens": 95,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/046-max-subarray",
+      "tests_pass": 0,
+      "tests_total": 10,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "test-failure",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "stdout mismatch for basic: expected '1 bar\\n2 qux\\n3 foo\\n3 baz\\n', got b'1 bar\\n1\\x00bar\\n1\\x00bar\\n1\\x00bar\\n'; stdout mismatch for all-same-key: expected '1 a\\n1 b\\n1 c\\n', got b'1 a\\n1\\x00a\\n1\\x00a\\n'; stdout mismatch for already-sorted: expected '1 x\\n2 y\\n3 z\\n', got b'1 x\\n1\\x00x\\n1\\x00x\\n'; 2 more failure(s)",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 12087,
+      "generation_tokens": 803,
+      "python_baseline_tokens": 83,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/047-stable-sort-pairs",
+      "tests_pass": 2,
+      "tests_total": 7,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "compile-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: LLVM error: Referring to an instruction in another function!\n  %call = call i64 @tacit_fn_3_rec(i64 %0, i64 %1, i64 0, i64 0, i64 %call100, i64 %call99, i64 %call, i64 %add98, ptr %buf_dyn97, ptr %buf_dyn96, ptr %buf_dyn, i64 %mul95, i64 %mul94, i64 %mul, i64 %pi_final93, i64 %add60, i64 %pi_final59, i64 %sb_res27, i64 %add, i64 %pi_final, i64 %sb_res13, i64 %sb_res, i64 0, i64 %rd, ptr %buf_ptr)",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 13377,
+      "generation_tokens": 1020,
+      "python_baseline_tokens": 243,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/049-matrix-multiply",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "duration_ms": 9673,
+      "generation_tokens": 635,
+      "python_baseline_tokens": 119,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/050-longest-run",
+      "tests_pass": 7,
+      "tests_total": 7,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "compile-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: LLVM error: Referring to an argument in another function!\n  %call = call i64 @tacit_fn_0_rec(i64 0, i64 %add, i64 %2, ptr %3)\nReferring to an argument in another function!\n  %call = call i64 @tacit_fn_2_rec(i64 %add, i64 %2, ptr %2)",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 6883,
+      "generation_tokens": 367,
+      "python_baseline_tokens": 66,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "io/051-line-count",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "test-failure",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "nonzero exit -11; stderr=b''; nonzero exit -11; stderr=b''; nonzero exit -11; stderr=b''; 3 more failure(s)",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 5331,
+      "generation_tokens": 324,
+      "python_baseline_tokens": 40,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "io/052-sum-numbers",
+      "tests_pass": 0,
+      "tests_total": 6,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "test-failure",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "stdout mismatch for basic: expected 'the quick brown fox\\nthe fox trot\\n', got b'the quick brown fox\\njum\\ned over the lazy dog\\nthe fox trot\\n\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\n'; stdout mismatch for all-match: expected 'cat\\nbat\\nhat\\n', got b'cat\\nb\\n'; stdout mismatch for pattern-at-start: expected 'hello\\nhey\\n', got b'hello\\nwo\\nld\\nhey\\n\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\n'; 1 more failure(s)",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 6547,
+      "generation_tokens": 272,
+      "python_baseline_tokens": 56,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "io/054-grep-substring",
+      "tests_pass": 1,
+      "tests_total": 5,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "compile-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: free variable in lambda: DeBruijn index 3",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 17314,
+      "generation_tokens": 1342,
+      "python_baseline_tokens": 41,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "io/055-sort-lines",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "duration_ms": 14202,
+      "generation_tokens": 397,
+      "python_baseline_tokens": 38,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "io/056-unique-lines",
+      "tests_pass": 8,
+      "tests_total": 8,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "duration_ms": 5554,
+      "generation_tokens": 284,
+      "python_baseline_tokens": 30,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "io/057-word-count",
+      "tests_pass": 7,
+      "tests_total": 7,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "extraction-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "model response contained multiple ```tacit fenced blocks",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 21393,
+      "generation_tokens": 0,
+      "python_baseline_tokens": 41,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "io/059-echo-reverse",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "extraction-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "model response contained multiple ```tacit fenced blocks",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "duration_ms": 17714,
+      "generation_tokens": 0,
+      "python_baseline_tokens": 64,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "io/060-longest-line",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "typecheck_pass": false
+    }
+  ],
+  "track": "primary"
+}
