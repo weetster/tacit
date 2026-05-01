@@ -1,10 +1,19 @@
 # Tacit-Lite Primer
 
+## Output Contract
+
+When asked for a fenced Tacit-Lite program, return exactly one fenced block
+tagged `tacit`, with only Tacit-Lite source inside it. Do not write a plan,
+explanation, checklist, second candidate, corrected version, tests, comments,
+or any other Markdown. Multiple `tacit` blocks and unfinished responses are
+hard failures. If uncertain, choose the simplest implementation that fits the
+primitive surface and finish the one block.
+
 ## 1. Semantic Summary
 
 Tacit-Lite is a small expression language whose durable identity is a
-content-addressed AST. Humans and models write the authoring view: `let`,
-`lambda`, `rec`, `if`, `match`, records, and `@name` primitive calls. The
+content-addressed AST. Authors write the authoring view: `let`, `lambda`,
+`rec`, `if`, `match`, records, and `@name` primitive calls. The
 compiler parses that view to the AST, typechecks it, emits native code, and
 can render it back while preserving author-facing names.
 
@@ -15,20 +24,20 @@ helpers use `rec {name = lambda ...; ...} in body`. A `rec` group is the
 only way a function can call itself or a sibling helper.
 
 Type inference is local. Standalone examples in this primer rely on
-inference. Some file-based workflows also keep a separate metadata file that
-records the expected top-level type and effect set; that metadata is not part
-of the Tacit source a model writes. The base runtime values are `Int`,
-`Bool`, `Str`, `Buf`, records, constructors, lambdas, and holes. The effect
-lattice has four atoms: `Alloc`, `Mut`, `IO`, and `Div`. Pure code has `{}`.
+inference. The base runtime values are `Int`, `Bool`, `Str`, `Buf`, records,
+constructors, lambdas, and holes. The effect lattice has four atoms: `Alloc`,
+`Mut`, `IO`, and `Div`. Pure code has `{}`.
 Allocation of stack buffers adds `Alloc`; buffer writes and integer
 formatting add `Mut`; `@read`, `@write`, and `@exit` add `IO`; recursive
 calls and division-like primitives can add `Div`.
 
 There is no implicit mutable state. Mutation is explicit through `Buf`
-primitives. There is no general heap buffer, hash map, object system, type
-class, effect handler, or user-defined effect in the current early-stage
-implementation of Tacit. If a task wants those, write the direct Tacit-Lite
-shape with the available primitives.
+primitives. A `Buf` is a byte buffer: each `@buf-get` reads one byte-sized
+integer. Keep counters, offsets, indexes, and other large `Int` values in
+lambda parameters or `let` bindings, not in buffer cells. There is no general
+heap buffer, hash map, object system, type class, effect handler, or
+user-defined effect in Tacit-Lite. If a task wants those, write the direct
+Tacit-Lite shape with the available primitives.
 
 ## 2. Progressive Python/Rust/Tacit Pairs
 
@@ -283,8 +292,8 @@ let _ = @buf-set buf 1 2 in
 @add (@buf-get buf 0) (@buf-get buf 1)
 ```
 
-`Buf` is the current implementation's mutable byte/int buffer. Bind writes
-to `_` when only the mutation matters.
+`Buf` is Tacit-Lite's mutable byte buffer. Bind writes to `_` when only the
+mutation matters.
 
 ### Pair 10: Parse Bytes as an Integer
 
@@ -381,23 +390,38 @@ bytes read.
 When translating a small Python or Rust solution to Tacit-Lite, do the work
 in this order:
 
-1. Identify the value that the whole program returns. In the current
-   early-stage implementation this is almost always an `Int`, often after
-   printing bytes to stdout.
+1. Identify the value that the whole program returns. In typical executable
+   Tacit-Lite programs this is an `Int`, often after printing bytes to stdout.
 2. Pull named helper functions out before writing the main expression. A
    helper that calls itself or another helper in its group goes in `rec`; a
    helper that does not recurse is a `let`.
 3. Replace loops with recursive helpers or with a fixed sequence of buffer
-   operations when the size is static. The current early-stage implementation
-   has no `while` or `for` keyword.
-4. Replace Python lists, bytearrays, and Rust arrays with `Buf` where the
-   values are integer bytes or small integer slots. Use explicit offsets.
+   operations when the size is static. Tacit-Lite has no `while` or `for`
+   keyword.
+4. Replace Python lists, bytearrays, and Rust arrays with `Buf` only when the
+   stored values are bytes or small flags. Use explicit offsets. Keep full
+   `Int` values in recursive state or local bindings.
 5. Replace standard-library parsing and formatting with `@parse-i64` and
    `@fmt-i64`. Do not hand-roll those unless the task is specifically about
    parsing or formatting internals.
 6. Check the effect story last. If the program reads or writes, it has `IO`.
    If it allocates a buffer, it has `Alloc`. If it writes to a buffer, it has
    `Mut`. If it recurses or divides, it may have `Div`.
+
+For structured stdin, prefer one `@read` into a buffer and parse by offsets.
+`@read` is a byte read, not a line reader or token reader. Calling `@read`
+twice usually consumes whatever remains after the first call; it does not mean
+"read line 1, then read line 2". For two input lines, read once and find the
+newline:
+
+```tacit
+let buf = @buf-alloc 64 in
+let n = @read 0 buf 64 in
+let nl = @scan-byte buf 0 n 10 in
+let a = @parse-i64 buf 0 nl in
+let b = @parse-i64 buf (@add nl 1) (@sub n (@add nl 1)) in
+@add a b
+```
 
 Tacit code is densest when it keeps the computation in expression form. A
 long chain of `let`s is normal and readable. Avoid translating statement for
@@ -418,6 +442,29 @@ Primitive names should remain primitive names. A wrapper like `let plus =
 lambda x. lambda y. @add x y in ...` is useful only when it participates in a
 larger abstraction. It is not useful as a synonym for `@add`.
 
+### Branch Syntax Traps
+
+Every `if` is an expression and must have both `then` and `else`. There is no
+brace block syntax. The expression immediately after `then` must be an atom or
+application; if the then-branch begins with `let`, `if`, `rec`, `match`, or
+`lambda`, wrap that whole branch in parentheses. The `else` branch may be a
+full expression, but parenthesizing compound branches on both sides is often
+clearer.
+
+Correct compound then-branch:
+
+```tacit
+let out = @buf-alloc 2 in
+let _ = if @eq 1 1 then
+  (let _ = @buf-set out 0 65 in
+   @buf-set out 1 10)
+else 0 in
+@buf-get out 0
+```
+
+Wrong shape: `if cond then let x = ... in ... else ...`. The parser reads the
+`then` branch too narrowly and later reports `expected 'else'`.
+
 ### Choosing Between `if` And `match`
 
 Use `if` when there is one condition and two outcomes. Use `match` when the
@@ -426,17 +473,19 @@ integer matching is useful for sentinels, parser states, and compact
 zero/non-zero cases where the branch names are clearer than nested
 comparisons.
 
-### Buffer Mental Model
+### Buffer Rules
 
 Treat `Buf` as a capability-like handle scoped by `let`. A buffer is created
 by `@buf-alloc` or `@buf-alloc-dyn`, then passed explicitly to every read or
 write primitive. There is no implicit current buffer and no indexing sugar.
-The index is always an integer argument. Because the buffer handle is not a
-general heap object in the current implementation, keep it inside the
-expression that owns it; do not try to return a closure that stores a buffer
-for later use.
+The index is always an integer argument. A buffer cell stores a byte value,
+not a full arbitrary `Int`; use buffers for input bytes, output bytes, and
+small flags, and use recursive parameters for large numeric state. Because
+the buffer handle is not a general heap object, keep it inside the expression
+that owns it; do not try to return a closure that stores a buffer for later
+use.
 
-### Output Mental Model
+### Output Rules
 
 Tacit output is explicit byte output. To print an integer, allocate a buffer,
 format into it, write exactly the returned byte count, and optionally write a
@@ -486,7 +535,7 @@ let n = 9 in if @gt n 3 then @sub n 3 else 0
 ```
 
 Use `match` when the shape is a pattern. Integer patterns and `_` are the
-most common uses in the current implementation.
+most common executable uses.
 
 ```tacit
 match 0 with | 0 => 42 | _ => 1
@@ -538,7 +587,7 @@ as `(expr:@Type)`.
 ```
 
 When a recursive helper needs an outer value, close over it normally. The
-current compiler lowers that closed value as a hidden direct-call parameter.
+compiler lowers that closed value as a hidden direct-call parameter.
 
 ```tacit
 let base = 40 in
@@ -547,11 +596,15 @@ rec {plus_base = lambda x. @add x base} in plus_base 2
 
 ### Names
 
-Names are display metadata, but they matter for model fluency. Prefer names
+Names are display information, but they matter for readability. Prefer names
 that describe the local role: `n`, `i`, `len`, `buf`, `out`, `w`, `loop`,
 `state`, `acc`, `head`, `tail`, `left`, `right`. Do not rename only to shave
 tokens. The compiler's round-trip machinery can preserve authoring names, so
-a model should write names it can reason about when it repairs the program.
+write names that are easy to reason about during repair.
+Local identifiers use letters, digits, and underscores. Do not put hyphens in
+local names: write `find_newline`, not `find-newline`. Hyphens are valid in
+primitive names after `@`, such as `@parse-i64`, and in negative integer
+literals such as `-1`.
 
 ### Local State Encoding
 
@@ -570,21 +623,20 @@ This is `text` because `done`, `next_i`, and `next_acc` are placeholders.
 
 ### Records And Projection
 
-Records are useful for pure grouping, but the current native-code compiler is
+Records are useful for pure grouping, but the native-code compiler is
 not designed around a large record-heavy style. Use records when a function
 naturally returns a small bundle that is consumed immediately. Field order in
-canonical form is sorted; authoring order is display metadata. If you project
-a field, make sure the inferred record type actually contains that field.
+canonical form is sorted; authoring order is not semantic. If you project a
+field, make sure the inferred record type actually contains that field.
 
 ### Constructors And Patterns
 
 Capitalized identifiers are constructors. `True` and `False` are known
 nullary boolean constructors. Other constructors can appear in parsed syntax
-and patterns, but executable programs in the current early-stage
-implementation should usually avoid algebraic data construction at runtime
-because the native-code subset is intentionally small. For integer-heavy
-tasks, prefer `match` with integer patterns or `if` with comparison
-primitives.
+and patterns, but executable programs should usually avoid algebraic data
+construction at runtime because the native-code subset is intentionally small.
+For integer-heavy tasks, prefer `match` with integer patterns or `if` with
+comparison primitives.
 
 ### Primitive Surface
 
@@ -605,22 +657,12 @@ The primitive call shape is part of the language contract. For example,
 `@buf-copy dst dst_off src src_off len` mutates `dst` and returns an `Int`;
 `@buf-eq a a_off b b_off len` is pure and returns an `Int` flag.
 
-### Metadata Boundary
+### Program Boundary
 
-The model-facing program is authoring-view Tacit source. Some tooling may
-keep a separate metadata file next to a Tacit file to record the expected
-top-level type and effect set. That metadata is not part of the generated
-Tacit program. If a file's metadata says:
-
-```toml
-[types.main]
-type = "Int"
-effects = ["Alloc", "IO", "Mut"]
-```
-
-then the source expression must infer `Int` with exactly those effects. If it
-prints but the metadata lists only `["Alloc", "Mut"]`, the checker reports
-an effect violation.
+The program is authoring-view Tacit source. If a surrounding declaration says
+the program returns `Int` with effects `{Alloc, IO, Mut}`, then the source
+expression must infer `Int` with those effects. If the program prints but the
+declaration omits `IO`, the checker reports an effect violation.
 
 ## 4. Effect Reasoning
 
@@ -632,8 +674,8 @@ let square = lambda x. @mul x x in square 6
 ```
 
 This example is pure because `@mul` is pure and calling `square` does not use
-any effectful primitive. A metadata entry for the top-level program would use
-`effects = []`.
+any effectful primitive. A boundary declaration for this expression would use
+the empty effect set.
 
 Allocation is an effect even if the program later returns an integer.
 
@@ -655,8 +697,8 @@ let n = @read 0 buf 1 in
 @add n (@buf-get buf 0)
 ```
 
-The full set is `{Alloc, IO, Mut}`. If a workflow records top-level effect
-metadata for this kind of program, it must include all three atoms.
+The full set is `{Alloc, IO, Mut}`. Any declaration for this program must
+include all three atoms.
 
 Formatting an integer mutates the output buffer but does not itself perform
 IO. Writing the formatted bytes performs IO.
@@ -678,14 +720,14 @@ diverge under bad operands.
 @div 84 2
 ```
 
-A recursive helper carries `Div` through its call effect. The compiler does
-not prove termination in the current early-stage implementation.
+A recursive helper carries `Div` through its call effect. Tacit-Lite does not
+prove termination.
 
 ```tacit
 rec {count = lambda n. if n then count (@sub n 1) else 0} in count 3
 ```
 
-Effect errors usually mean the metadata or annotation under-declared the
+Effect errors usually mean the declaration or annotation under-declared the
 effect set. The fix is to include the inferred atoms, not to hide the
 primitive call.
 
@@ -693,7 +735,7 @@ primitive call.
 
 Effects join by union. If one part of a program is `{Alloc}` and a later part
 is `{Mut}`, the whole expression has `{Alloc, Mut}`. When effects are written
-in metadata, use the stable alphabetic order: `Alloc`, `Div`, `IO`, `Mut`.
+in declarations, use the stable alphabetic order: `Alloc`, `Div`, `IO`, `Mut`.
 
 Partial application matters. `@write 1` is just a pure function value waiting
 for the buffer and length. The `IO` effect appears only at the fully applied
@@ -704,8 +746,7 @@ helper later performs IO.
 `if` joins the condition, then branch, and else branch. `match` joins the
 scrutinee and every arm body. A lambda expression itself is pure to create;
 the effect is attached to the function call. A recursive function's call
-effect includes `Div` because the current implementation does not prove the
-recursion terminates.
+effect includes `Div` because Tacit-Lite does not prove recursion terminates.
 
 ### Common Effect Predictions
 
@@ -729,9 +770,10 @@ recursion terminates.
 ### Repairing Effect Violations
 
 When the checker says the inferred effect set is not a subset of the declared
-set, do not delete useful work to satisfy metadata. The declared effects are
-the boundary claim. The source decides the truth. Add missing effects to the
-metadata or to the annotation if the program is otherwise correct.
+set, do not delete useful work to satisfy a too-small declaration. The
+declared effects are the boundary claim. The source decides the truth. Add
+missing effects to the declaration or annotation if the program is otherwise
+correct.
 
 When an effect appears surprising, find the innermost primitive that creates
 it. `Mut` usually comes from `@buf-set`, `@buf-copy`, `@fmt-i64`, or
@@ -863,9 +905,8 @@ Unknown primitive-like symbol:
 @frobnicate 1
 ```
 
-Diagnostic kind: `unresolved-type`. Fix: use a primitive from the current
-implementation's primitive surface, or bind a lowercase helper name before
-using it.
+Diagnostic kind: `unresolved-type`. Fix: use a primitive from Tacit-Lite's
+primitive surface, or bind a lowercase helper name before using it.
 
 ```tacit
 @add 1 0
@@ -896,9 +937,9 @@ check emits an empty error list. A failing check emits one or more entries:
 
 The exact `location.ast_path` depends on where the error appears in the AST.
 The important repair signals are `kind`, `message`, `expected`, and `actual`.
-For model repair, read the first error, fix the smallest local expression that
-can cause it, then rerun the checker. Later errors may disappear after the
-first hole or type mismatch is fixed.
+For repair, read the first error, fix the smallest local expression that can
+cause it, then rerun the checker. Later errors may disappear after the first
+hole or type mismatch is fixed.
 
 ### Negative Example Reading Order
 
@@ -908,7 +949,7 @@ inferred. If either side is `Unknown`, a previous diagnostic probably hid the
 real source.
 
 For `operator-overload-failure`, keep the operator and fix the operands.
-Arithmetic operators want integer operands in the current implementation.
+Arithmetic operators want integer operands.
 Comparison operators also compare integers and return booleans.
 
 For parser-recovery diagnostics such as `unexpected-token` and
@@ -928,7 +969,7 @@ Usually fix the argument, branch, annotation, or primitive call site.
 
 `operator-overload-failure`: an arithmetic or comparison operator received
 operands that cannot share the required numeric type. Keep both operands as
-integers in the current implementation.
+integers.
 
 `unresolved-type`: a type name, constructor, field projection, or unknown
 primitive-like symbol is not known to the typechecker. Use a known base type,
@@ -939,19 +980,19 @@ In authoring-view examples, avoid raw type variables unless the surrounding
 type expression binds them.
 
 `type-arity-mismatch`: a type constructor was applied to the wrong number of
-arguments. Programs for the current implementation are usually monomorphic;
+arguments. Tacit-Lite programs are usually monomorphic;
 avoid unnecessary type application.
 
 `module-missing-annotation`: an exported module binding lacks a type/effect
-signature. This is a warning. If your workflow uses metadata files, add the
-`[types.<binding>]` metadata entry for programs that ship as files.
+signature. This is a warning. Add the missing signature where modules are
+used.
 
 `effect-violation`: an inferred effect set is not a subset of the declared
 effect set. Add the missing atoms, commonly `Alloc`, `Mut`, `IO`, or `Div`.
 
 `unbound-effect-variable`: an `eff-var` appears without an enclosing
-effect-polymorphic `forall`. Programs for the current implementation should
-usually use concrete effect sets instead.
+effect-polymorphic `forall`. Tacit-Lite programs should usually use concrete
+effect sets instead.
 
 `buf-escape`: a buffer handle is used outside the scope where the checker can
 prove it is valid. Keep buffer use inside the `let` body that owns it.
@@ -962,17 +1003,13 @@ recovery holes. The parser still produces an AST, but the hole flows through
 typechecking as an error. Fix the local syntax first; later diagnostics may
 be consequences of the hole.
 
-`test-failure` is not emitted by the typechecker. It is a testing-layer
-diagnostic meaning a generated program compiled and ran but failed one or
-more behavior tests. Fix the algorithm, not the type signature.
-
 ### Repair Checklist
 
 When a generated program fails, use this sequence:
 
 1. Parse error or hole diagnostic: fix the local authoring syntax.
 2. Unknown name or primitive: bind the lowercase name, capitalize a real
-   constructor, or use a primitive from the current implementation's surface.
+   constructor, or use a primitive from Tacit-Lite's surface.
 3. Type mismatch at a primitive: check argument order. Buffer primitives are
    strict about `buf`, `offset`, `length`, and `value` positions.
 4. Branch mismatch: make both branches return the same type.
@@ -1037,8 +1074,8 @@ for false.
 Tacit-Lite has no implicit command-line argument parser. Portable programs
 receive input on stdin and write bytes to stdout. A generated program should
 not assume environment variables, files by path, or a process argument vector
-unless the caller explicitly provides such a primitive. In the current
-early-stage implementation, the portable pattern is:
+unless the caller explicitly provides such a primitive. The portable pattern
+is:
 
 ```text
 read stdin bytes -> parse or scan -> compute Int/Buf result -> format/write
@@ -1046,6 +1083,13 @@ read stdin bytes -> parse or scan -> compute Int/Buf result -> format/write
 
 The final expression should normally be `0` after successful output. If the
 task asks for an exit code, return that code or call `@exit`.
+
+For multi-value input, read once when practical and parse slices. Use
+`@scan-byte buf off len 10` to find a newline and `@scan-byte buf off len 32`
+to find a space. The result is the found absolute offset, or `off + len` when
+the byte is absent. Parse `@parse-i64 buf start (@sub end start)`. This avoids
+the common bug where the first large `@read` consumes both lines and a second
+`@read` sees EOF.
 
 ### Maintaining Round-Trip Stability
 
@@ -1066,7 +1110,7 @@ Keep branch bodies local. A long `if` branch should usually bind a value with
 `let` before returning it, instead of embedding several nested calls directly
 inside the branch expression.
 
-Keep recursive state explicit. A repair model can change `acc` or `i` more
+Keep recursive state explicit. A repair pass can change `acc` or `i` more
 reliably than it can decode a packed arithmetic state. Pack state only when
 the program is otherwise too awkward under the current surface.
 
@@ -1093,7 +1137,7 @@ shape for current executable programs. Prefer integer state, buffers, `let`,
 `if`, `match`, `lambda`, `rec`, and primitive calls.
 
 If tests fail but compile and typecheck pass, reason from input bytes. Most
-wrong outputs in this implementation are one of: off-by-one length,
+wrong outputs are one of: off-by-one length,
 forgetting to flush the last number at EOF, writing the whole output buffer
 instead of `w` bytes, mixing destination and source in `@buf-copy`, or using
 ASCII byte values without subtracting `48` for digits.
@@ -1135,13 +1179,13 @@ Buffer lengths: write and compare exactly the logical length, not the
 allocated capacity. Allocating 32 bytes for formatting does not mean all 32
 bytes are valid output.
 
-### Model Output Format
+### Output Format
 
-When asked to produce a Tacit-Lite program, output only the Tacit-Lite source
-unless the caller explicitly asks for explanation. Do not include metadata
-TOML in the generated answer; the model-facing artifact is the authoring-view
-program. Do not wrap the program in Markdown unless the caller asks for a
-fenced block.
+When asked to produce a Tacit-Lite program, output only the requested program.
+If the caller asks for a fenced block, return exactly one `tacit` fenced block
+and nothing else. Do not include reasoning, prose, auxiliary declarations,
+tests, or an alternate implementation before or after the block. Do not open a
+second `tacit` block. Do not leave the block unfinished.
 
 The safest generated program shape is:
 
@@ -1161,21 +1205,20 @@ transformed bytes, compute the output buffer and logical length, then write
 that buffer and length directly. Do not format a buffer as an integer unless
 the required output is numeric.
 
-### Working Without Tests In Context
+### Checking Edge Cases
 
-The model does not receive hidden tests. Use the task statement to infer edge
-cases. If the statement says lines, handle empty input and trailing newline.
-If it says integers, handle zero, one value, and negative signs when the
-equivalent Python or Rust solution would. If it says sorted output, preserve
-duplicates unless the statement says unique. If it says first occurrence, do
-not update the answer after finding an equal later occurrence.
+Use the problem statement to infer edge cases. If the statement says lines,
+handle empty input and trailing newline. If it says integers, handle zero, one
+value, and negative signs when the equivalent Python or Rust solution would.
+If it says sorted output, preserve duplicates unless the statement says
+unique. If it says first occurrence, do not update the answer after finding an
+equal later occurrence.
 
 Because the compiler can only check syntax, types, effects, and native-code
-backend support, most semantic bugs survive until test execution. Before
-finalizing a program, mentally run it on: empty input, one token, two tokens,
-already sorted input, reverse sorted input, duplicated values, and a final
-token without newline. These cases cover most early-stage Tacit task
-failures.
+backend support, most semantic bugs survive until execution. Before finalizing
+a program, mentally run it on: empty input, one token, two tokens, already
+sorted input, reverse sorted input, duplicated values, and a final token
+without newline.
 
 ### Choosing A Recursion State
 
@@ -1191,8 +1234,8 @@ carry a `first` flag so the branch can decide whether to write the separator.
 
 When a state has more than two values, nested lambdas are often clearer than
 packing. A helper can be called as `loop i acc best flag`. The compiler
-lowers closed multi-argument helpers directly in the current implementation;
-you do not need to avoid this style for performance.
+lowers closed multi-argument helpers directly; you do not need to avoid this
+style for performance.
 
 ### Byte-Oriented String Work
 
@@ -1204,8 +1247,8 @@ values. ASCII lowercase letters are `97` through `122`; uppercase letters are
 To lowercase an ASCII uppercase byte, check `@ge byte 65` and `@le byte 90`,
 then add `32`. To detect a digit, check `@ge byte 48` and `@le byte 57`.
 To detect whitespace in small tasks, compare against the explicit bytes the
-task permits, commonly space and newline. There is no Unicode normalization
-surface in the current implementation.
+task permits, commonly space and newline. Tacit-Lite has no Unicode
+normalization surface.
 
 When constructing output, always maintain an output offset. A common pattern
 is: write a byte with `@buf-set out off byte`, then recurse with `@add off
@@ -1217,8 +1260,8 @@ is: write a byte with `@buf-set out off byte`, then recurse with `@add off
 Prefer the simplest algorithm that fits the primitive surface. For small
 input sizes and byte buffers, quadratic algorithms are often acceptable and
 clear. A clever asymptotic improvement that needs a hash map, heap, or
-general list library is not a win in the current implementation because
-those abstractions are not available.
+general list library is not a win because those abstractions are not
+available.
 
 For search tasks, linear scan is the default unless the task explicitly gives
 sorted input and asks for binary search. For grouping tasks, sorted or
@@ -1246,19 +1289,6 @@ capacity and output length. `@buf-alloc 32` is enough for one formatted i64,
 not for an arbitrary output string. For output that grows with input, allocate
 based on an input-size estimate or reuse the input buffer when the
 transformation is in-place and safe.
-
-### Result Reporting
-
-Some automated graders wrap compiler and runtime outcomes in JSON. A compile
-or typecheck failure can store the same `p2.0` diagnostic envelope shown
-above. A runtime test failure may store a synthetic diagnostic with kind
-`test-failure`. Treat that as a behavior failure: the program parsed,
-typechecked, and ran, but did not produce the required output.
-
-When token counts are reported, they usually separate fixed prompt tokens
-from generated Tacit source tokens. For writing code, the practical rule is
-simple: keep the generated program idiomatic and compact, but never make it
-harder to repair just to save a few tokens.
 
 ### What Not To Infer
 
