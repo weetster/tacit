@@ -7,7 +7,9 @@ tagged `tacit`, with only Tacit-Lite source inside it. Do not write a plan,
 explanation, checklist, second candidate, corrected version, tests, comments,
 or any other Markdown. Multiple `tacit` blocks and unfinished responses are
 hard failures. If uncertain, choose the simplest implementation that fits the
-primitive surface and finish the one block.
+primitive surface and finish the one block. If an implementation is growing
+too long, switch to a smaller complete algorithm before writing the block; a
+finished simple program is better than a partial elaborate program.
 
 ## 1. Semantic Summary
 
@@ -21,7 +23,10 @@ A Tacit program is usually one expression. A binding extends only the body
 after `in`. A lambda has exactly one parameter, so multi-argument functions
 are curried: `lambda x. lambda y. ...`, then called as `f a b`. Recursive
 helpers use `rec {name = lambda ...; ...} in body`. A `rec` group is the
-only way a function can call itself or a sibling helper.
+only way a function can call itself or a sibling helper. A helper must be
+called with all of its source-level arguments at each executable call site:
+`loop next_i next_acc`, not `loop next_i`, when the helper was defined as
+`lambda i. lambda acc. ...`.
 
 Type inference is local. Standalone examples in this primer rely on
 inference. The base runtime values are `Int`, `Bool`, `Str`, `Buf`, records,
@@ -434,9 +439,9 @@ depending on which shape is clearer.
 
 Application has no comma syntax. Read `f a b c` as `(((f a) b) c)`.
 Parentheses are only needed when an argument is itself a compound expression,
-as in `@mul n (fact (@sub n 1))`. If the compiler backend reports an arity
-problem, first check whether a missing argument left a primitive partially
-applied.
+as in `@mul n (fact (@sub n 1))`. If a call is rejected because an `Int` was
+expected but a function was found, first check for a missing final argument.
+This is common in recursive helpers with two or more state values.
 
 Primitive names should remain primitive names. A wrapper like `let plus =
 lambda x. lambda y. @add x y in ...` is useful only when it participates in a
@@ -449,7 +454,9 @@ brace block syntax. The expression immediately after `then` must be an atom or
 application; if the then-branch begins with `let`, `if`, `rec`, `match`, or
 `lambda`, wrap that whole branch in parentheses. The `else` branch may be a
 full expression, but parenthesizing compound branches on both sides is often
-clearer.
+clearer. Do not rely on indentation or line breaks to group a branch. Every
+inner `if` must have its own `else` before the surrounding `let`, `rec`, or
+match arm closes.
 
 Correct compound then-branch:
 
@@ -464,6 +471,15 @@ else 0 in
 
 Wrong shape: `if cond then let x = ... in ... else ...`. The parser reads the
 `then` branch too narrowly and later reports `expected 'else'`.
+
+Safer branch rule: when either side is compound, parenthesize both sides.
+
+```text
+if cond then
+  (let x = value in result)
+else
+  (if other then a else b)
+```
 
 ### Choosing Between `if` And `match`
 
@@ -484,6 +500,17 @@ small flags, and use recursive parameters for large numeric state. Because
 the buffer handle is not a general heap object, keep it inside the expression
 that owns it; do not try to return a closure that stores a buffer for later
 use.
+
+For recursive scans over a buffer, allocate the buffer outside the `rec` group
+and refer to that buffer by name inside the helper. Use source-level helper
+parameters for changing integer state: offsets, lengths, counters, flags, and
+accumulators. Do not make the buffer itself a lambda parameter in a recursive
+helper.
+
+```text
+let buf = @buf-alloc-dyn n in
+rec {scan = lambda i. lambda acc. ... @buf-get buf i ... scan next_i next_acc} in scan 0 0
+```
 
 ### Output Rules
 
@@ -586,8 +613,8 @@ as `(expr:@Type)`.
 (5:@Int)
 ```
 
-When a recursive helper needs an outer value, close over it normally. The
-compiler lowers that closed value as a hidden direct-call parameter.
+When a recursive helper needs an outer value, refer to that value by name.
+Keep the explicit parameters for the state that changes on each call.
 
 ```tacit
 let base = 40 in
@@ -623,7 +650,7 @@ This is `text` because `done`, `next_i`, and `next_acc` are placeholders.
 
 ### Records And Projection
 
-Records are useful for pure grouping, but the native-code compiler is
+Records are useful for pure grouping, but executable programs are
 not designed around a large record-heavy style. Use records when a function
 naturally returns a small bundle that is consumed immediately. Field order in
 canonical form is sorted; authoring order is not semantic. If you project a
@@ -634,7 +661,7 @@ field, make sure the inferred record type actually contains that field.
 Capitalized identifiers are constructors. `True` and `False` are known
 nullary boolean constructors. Other constructors can appear in parsed syntax
 and patterns, but executable programs should usually avoid algebraic data
-construction at runtime because the native-code subset is intentionally small.
+construction at runtime because the executable subset is intentionally small.
 For integer-heavy tasks, prefer `match` with integer patterns or `if` with
 comparison primitives.
 
@@ -1005,7 +1032,7 @@ be consequences of the hole.
 
 ### Repair Checklist
 
-When a generated program fails, use this sequence:
+When a program fails, use this sequence:
 
 1. Parse error or hole diagnostic: fix the local authoring syntax.
 2. Unknown name or primitive: bind the lowercase name, capitalize a real
@@ -1014,9 +1041,9 @@ When a generated program fails, use this sequence:
    strict about `buf`, `offset`, `length`, and `value` positions.
 4. Branch mismatch: make both branches return the same type.
 5. Effect violation: update the boundary effect set to match source behavior.
-6. Native-code backend unsupported: rewrite toward the executable subset:
-   integer result, closed lambdas, `rec`, `if`, `match`, `let`, and supported
-   primitives.
+6. Unsupported executable shape: rewrite toward the executable subset:
+   integer result, direct helper calls, `rec`, `if`, `match`, `let`, and
+   supported primitives.
 7. Test failure after compile success: keep the type/effect shape and debug
    the algorithm with smaller input.
 
@@ -1049,10 +1076,19 @@ Formatting several integers: reuse one output buffer. For each integer, call
 newline string if the required output is line-oriented. Each `@fmt-i64`
 mutates; each `@write` performs IO.
 
+For separated output, choose one separator rule and use it consistently:
+write a separator before every item except the first, or after every item
+except the last. Do not do both. A `first` flag or column index is often the
+cleanest way to avoid doubled spaces.
+
 Searching a buffer: prefer `@scan-byte` for a byte target and `@buf-eq` for a
 slice equality check. Hand-written recursive scans are acceptable when the
 predicate is richer than equality, but they are longer and more error-prone.
 Keep offsets and lengths explicit.
+
+When scanning bytes read from stdin, treat the byte count returned by `@read`
+as the exclusive upper bound. A helper with state `i` should inspect
+`@buf-get buf i` only while `i < n`; when `i == n`, return the EOF result.
 
 Copying a slice: use `@buf-copy dst dst_off src src_off len`. Remember that
 the first buffer is the destination. Many wrong answers reverse `dst` and
@@ -1064,6 +1100,11 @@ recursive outer loop and inner loop, or choose a simple algorithm whose state
 fits cleanly in integers and buffers. Prefer correctness over clever token
 packing.
 
+For large-output transforms such as sorting lines or grouping items, prefer a
+simple complete quadratic pass over a clever partial divide-and-conquer shape.
+Direct recursion with explicit indexes is easier to finish and repair than a
+program that needs lists, heaps, or a dictionary.
+
 Comparing flags: comparison primitives return `Bool`, while integer
 truthiness is also accepted in conditions. Arithmetic expects integers. If
 you need to add a flag, convert through an `if`: return `1` for true and `0`
@@ -1072,7 +1113,7 @@ for false.
 ### Input/Output Discipline
 
 Tacit-Lite has no implicit command-line argument parser. Portable programs
-receive input on stdin and write bytes to stdout. A generated program should
+receive input on stdin and write bytes to stdout. A program should
 not assume environment variables, files by path, or a process argument vector
 unless the caller explicitly provides such a primitive. The portable pattern
 is:
@@ -1131,9 +1172,9 @@ probably turned an unbound variable into a hole or the typechecker saw an
 unknown primitive. Bind the name with `let`, move it into lambda scope, or use
 one of the allowed primitive names.
 
-If the native-code backend reports an unsupported node, simplify toward the
+If a program uses an unsupported executable shape, simplify toward the
 executable subset. Records and projections can typecheck but are not the best
-shape for current executable programs. Prefer integer state, buffers, `let`,
+shape for portable executable programs. Prefer integer state, buffers, `let`,
 `if`, `match`, `lambda`, `rec`, and primitive calls.
 
 If tests fail but compile and typecheck pass, reason from input bytes. Most
@@ -1141,6 +1182,11 @@ wrong outputs are one of: off-by-one length,
 forgetting to flush the last number at EOF, writing the whole output buffer
 instead of `w` bytes, mixing destination and source in `@buf-copy`, or using
 ASCII byte values without subtracting `48` for digits.
+
+For base conversion, the first digit computed by repeated division is usually
+the least significant digit. If the output expects most-significant first,
+either fill an output buffer from right to left or do a second pass that emits
+the temporary digits in reverse order.
 
 ### Token-Aware Writing
 
@@ -1171,6 +1217,10 @@ line counts. Follow the task statement, not a generic Python habit.
 ASCII digits: byte `48` is digit zero and byte `57` is digit nine. Convert a
 digit byte with `@sub byte 48`. Convert back for output either with
 `@fmt-i64` for whole integers or by adding `48` for a single digit byte.
+
+UTF-8 text: byte loops are correct for ASCII tasks. If a task is explicitly
+about characters and may include non-ASCII input, do not reverse or split the
+middle bytes of a multi-byte sequence. Copy each UTF-8 sequence as a unit.
 
 Negative numbers: `@parse-i64` handles the primitive contract for integer
 text. If hand-scanning bytes, account for a leading minus sign explicitly.
@@ -1214,9 +1264,9 @@ If it says sorted output, preserve duplicates unless the statement says
 unique. If it says first occurrence, do not update the answer after finding an
 equal later occurrence.
 
-Because the compiler can only check syntax, types, effects, and native-code
-backend support, most semantic bugs survive until execution. Before finalizing
-a program, mentally run it on: empty input, one token, two tokens, already
+Because static checks cover syntax, types, effects, and executable-shape
+support, most semantic bugs survive until execution. Before finalizing a
+program, mentally run it on: empty input, one token, two tokens, already
 sorted input, reverse sorted input, duplicated values, and a final token
 without newline.
 
@@ -1271,6 +1321,11 @@ dimension variables named. For dynamic programming tasks, be wary: if the
 state table would be large, the task may be dominated by missing standard
 library support and the explicit Tacit version will be longer.
 
+For nested row/column loops, use the bounds literally. If rows are `0..r` and
+columns are `0..c`, the outer loop stops at `r` and the inner loop stops at
+`c`. Single-row, single-column, and single-cell cases should still run the
+body once.
+
 ### Debugging Generated Tacit
 
 If a program fails to parse, reduce the nearest expression. Parentheses are
@@ -1278,7 +1333,7 @@ needed around compound arguments, especially recursive calls and nested
 `if`s. A `let` right-hand side extends until `in`, so missing `in` often
 makes the parser recover far away from the actual mistake.
 
-If a program typechecks but the native-code backend fails, remove surface
+If a program typechecks but cannot run as an executable, remove surface
 features that are type-level only or not in the executable subset. Favor
 `Int` results, buffers, primitive calls, and direct helper calls. Avoid
 returning records, functions, or constructors from the final expression in
