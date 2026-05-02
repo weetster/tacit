@@ -1,8 +1,9 @@
-//! Type and effect signatures for built-in @name primitives (ADR 0028, 0030, 0042, 0047).
+//! Type and effect signatures for built-in @name primitives (ADR 0028, 0030, 0042, 0047, 0061).
 //!
 //! Effect sets mirror `stdlib/libc-effects.toml` (ADR 0025, consumed in Stage 3).
 //! The canonical source for primitive effects is that TOML file; values here match it.
 //! Phase 3 additions (ADR 0047): PARSE, FORMAT, MEM categories, STACK-ALLOC extension.
+//! Library-mediated additions (ADR 0061): I64Vec allocation and element operations.
 
 use crate::ty::{EffAtom, EffSet, FnEff, Ty};
 
@@ -37,6 +38,16 @@ pub fn prim_type(name: &str) -> Option<Ty> {
         "parse-i64" => fn3_pure(Ty::Buf, Ty::Int, Ty::Int, Ty::Int),
         // FORMAT: fmt-i64(buf: Buf, off: Int, val: Int) -> Int  / {Mut}
         "fmt-i64" => fn3_mut(Ty::Buf, Ty::Int, Ty::Int, Ty::Int),
+        // I64VEC-ALLOC: i64-alloc(count: Int) -> I64Vec / {Alloc}
+        "i64-alloc" => fn1_alloc(Ty::Int, Ty::I64Vec),
+        // I64VEC: i64-get(vec: I64Vec, index: Int) -> Int (pure)
+        "i64-get" => fn2_pure(Ty::I64Vec, Ty::Int, Ty::Int),
+        // I64VEC: i64-set(vec: I64Vec, index: Int, value: Int) -> Int / {Mut}
+        "i64-set" => fn3_mut(Ty::I64Vec, Ty::Int, Ty::Int, Ty::Int),
+        // I64VEC: i64-swap(vec: I64Vec, i: Int, j: Int) -> Int / {Mut}
+        "i64-swap" => fn3_mut(Ty::I64Vec, Ty::Int, Ty::Int, Ty::Int),
+        // I64VEC: i64-copy(dst, dst-index, src, src-index, count) -> Int / {Mut}
+        "i64-copy" => fn5_mut(Ty::I64Vec, Ty::Int, Ty::I64Vec, Ty::Int, Ty::Int, Ty::Int),
         // ARITH: Int → Int → Int (pure)
         "add" | "sub" | "mul" | "div" | "mod" => fn2_pure(Ty::Int, Ty::Int, Ty::Int),
         // CMP: Int → Int → Bool (pure, ADR 0042)
@@ -62,12 +73,15 @@ pub fn is_io_prim(name: &str) -> bool {
 
 /// True if `name` is an Alloc-producing primitive.
 pub fn is_alloc_prim(name: &str) -> bool {
-    matches!(name, "buf-alloc" | "buf-alloc-dyn")
+    matches!(name, "buf-alloc" | "buf-alloc-dyn" | "i64-alloc")
 }
 
 /// True if `name` is a Mut-producing primitive (ADR 0047).
 pub fn is_mut_prim(name: &str) -> bool {
-    matches!(name, "buf-set" | "buf-copy" | "fmt-i64")
+    matches!(
+        name,
+        "buf-set" | "buf-copy" | "fmt-i64" | "i64-set" | "i64-swap" | "i64-copy"
+    )
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -439,5 +453,80 @@ mod tests {
             innermost_eff(&t),
             FnEff::from_set(EffSet::of([EffAtom::Mut]))
         );
+    }
+
+    #[test]
+    fn i64_alloc_type() {
+        let t = prim_type("i64-alloc").unwrap();
+        match &t {
+            Ty::Fn(a, r, eff) => {
+                assert_eq!(a.as_ref(), &Ty::Int);
+                assert_eq!(r.as_ref(), &Ty::I64Vec);
+                assert_eq!(eff, &FnEff::from_set(EffSet::of([EffAtom::Alloc])));
+            }
+            _ => panic!("expected Fn"),
+        }
+    }
+
+    #[test]
+    fn i64_get_is_pure() {
+        let t = prim_type("i64-get").unwrap();
+        match &t {
+            Ty::Fn(a, mid, e1) => {
+                assert_eq!(a.as_ref(), &Ty::I64Vec);
+                assert_eq!(e1, &FnEff::pure_());
+                match mid.as_ref() {
+                    Ty::Fn(b, r, e2) => {
+                        assert_eq!(b.as_ref(), &Ty::Int);
+                        assert_eq!(r.as_ref(), &Ty::Int);
+                        assert_eq!(e2, &FnEff::pure_());
+                    }
+                    _ => panic!("expected inner Fn"),
+                }
+            }
+            _ => panic!("expected Fn"),
+        }
+    }
+
+    #[test]
+    fn i64_set_and_swap_have_mut() {
+        for name in ["i64-set", "i64-swap"] {
+            let t = prim_type(name).unwrap();
+            if let Ty::Fn(a, mid, _) = &t {
+                assert_eq!(a.as_ref(), &Ty::I64Vec);
+                if let Ty::Fn(_, inner, _) = mid.as_ref() {
+                    if let Ty::Fn(_, _, eff) = inner.as_ref() {
+                        assert_eq!(eff, &FnEff::from_set(EffSet::of([EffAtom::Mut])));
+                        continue;
+                    }
+                }
+            }
+            panic!("unexpected type shape for {name}");
+        }
+    }
+
+    #[test]
+    fn i64_copy_has_expected_shape_and_mut() {
+        let t = prim_type("i64-copy").unwrap();
+        fn args_and_eff(t: &Ty, args: &mut Vec<Ty>) -> FnEff {
+            match t {
+                Ty::Fn(a, b, eff) => {
+                    args.push(a.as_ref().clone());
+                    if matches!(b.as_ref(), Ty::Fn(_, _, _)) {
+                        args_and_eff(b, args)
+                    } else {
+                        eff.clone()
+                    }
+                }
+                _ => panic!("not a Fn"),
+            }
+        }
+        let mut args = Vec::new();
+        let eff = args_and_eff(&t, &mut args);
+        assert_eq!(
+            args,
+            vec![Ty::I64Vec, Ty::Int, Ty::I64Vec, Ty::Int, Ty::Int]
+        );
+        assert_eq!(eff, FnEff::from_set(EffSet::of([EffAtom::Mut])));
     }
 }

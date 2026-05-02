@@ -55,6 +55,13 @@ fn expect_error(diags: &[tacit_typecheck::Diagnostic], kind: &str) {
     );
 }
 
+fn expect_authoring_error(src: &str, kind: &str) {
+    let (ast, _) = tacit_views::authoring::parse_authoring(src.as_bytes())
+        .unwrap_or_else(|e| panic!("parse failed for {src:?}: {e}"));
+    let diags = infer_module(&ast).expect_err("expected typecheck error");
+    expect_error(&diags, kind);
+}
+
 // ── type-mismatch ─────────────────────────────────────────────────────────────
 
 /// `ann` check: annotating an Int expression with Str type.
@@ -306,4 +313,39 @@ fn neg_unbound_effect_variable() {
         "expected unbound-effect-variable, got: {:?}",
         diags.iter().map(|d| &d.kind).collect::<Vec<_>>()
     );
+}
+
+// ── I64Vec / Buf mixups ──────────────────────────────────────────────────────
+
+#[test]
+fn neg_i64_get_rejects_byte_buffer() {
+    expect_authoring_error("let buf = @buf-alloc 8 in @i64-get buf 0", "type-mismatch");
+}
+
+#[test]
+fn neg_buf_get_rejects_i64_vector() {
+    expect_authoring_error("let xs = @i64-alloc 1 in @buf-get xs 0", "type-mismatch");
+}
+
+#[test]
+fn neg_read_rejects_i64_vector() {
+    expect_authoring_error("let xs = @i64-alloc 1 in @read 0 xs 1", "type-mismatch");
+}
+
+#[test]
+fn neg_write_rejects_i64_vector() {
+    expect_authoring_error("let xs = @i64-alloc 1 in @write 1 xs 1", "type-mismatch");
+}
+
+#[test]
+fn neg_parse_i64_rejects_i64_vector() {
+    expect_authoring_error(
+        "let xs = @i64-alloc 1 in @parse-i64 xs 0 1",
+        "type-mismatch",
+    );
+}
+
+#[test]
+fn neg_fmt_i64_rejects_i64_vector() {
+    expect_authoring_error("let xs = @i64-alloc 1 in @fmt-i64 xs 0 42", "type-mismatch");
 }

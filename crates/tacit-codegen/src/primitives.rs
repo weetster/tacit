@@ -1,4 +1,4 @@
-//! `@name` primitive allowlist and classification (ADR 0028, 0030, 0038, 0047).
+//! `@name` primitive allowlist and classification (ADR 0028, 0030, 0038, 0047, 0061).
 //!
 //! Categories per ADR 0028 + 0030 + 0038 + 0047:
 //! - LIBC: external libc call (`write`, `read`, `exit`).
@@ -8,6 +8,8 @@
 //! - MEM: inline byte-level buffer operations (ADR 0047).
 //! - PARSE: inline decimal integer parsing (ADR 0047).
 //! - FORMAT: inline decimal integer formatting (ADR 0047).
+//! - I64VEC-ALLOC: `@i64-alloc` (runtime i64 element count, ADR 0061).
+//! - I64VEC: inline i64 vector operations (ADR 0061).
 //!
 //! Codegen pattern-matches an `App` left-spine whose head is `Sym(name)`,
 //! looks up `name` here, collects right-spine args, and emits accordingly.
@@ -38,6 +40,16 @@ pub enum PrimKind {
     ParseI64,
     /// Inline decimal integer format (ADR 0047): `buf off val → i64` (bytes written).
     FmtI64,
+    /// Stack-allocate an i64 vector (ADR 0061): `count → I64Vec`.
+    I64Alloc,
+    /// Load an i64 vector element (ADR 0061): `vec index → i64`.
+    I64Get,
+    /// Store an i64 vector element (ADR 0061): `vec index value → i64` (returns 0).
+    I64Set,
+    /// Swap two i64 vector elements (ADR 0061): `vec i j → i64` (returns 0).
+    I64Swap,
+    /// Overlap-safe i64 element copy (ADR 0061): `dst dst-index src src-index count → i64`.
+    I64Copy,
     /// Binary `i64 → i64 → i64` arithmetic, lowering as a single LLVM op.
     Arith(ArithOp),
     /// Binary `i64 → i64 → i64` comparison: emits `icmp` + `zext`.
@@ -78,6 +90,11 @@ impl PrimKind {
             "scan-byte" => PrimKind::ScanByte,
             "parse-i64" => PrimKind::ParseI64,
             "fmt-i64" => PrimKind::FmtI64,
+            "i64-alloc" => PrimKind::I64Alloc,
+            "i64-get" => PrimKind::I64Get,
+            "i64-set" => PrimKind::I64Set,
+            "i64-swap" => PrimKind::I64Swap,
+            "i64-copy" => PrimKind::I64Copy,
             "add" => PrimKind::Arith(ArithOp::Add),
             "sub" => PrimKind::Arith(ArithOp::Sub),
             "mul" => PrimKind::Arith(ArithOp::Mul),
@@ -97,11 +114,15 @@ impl PrimKind {
     pub fn arity(self) -> usize {
         match self {
             PrimKind::Write | PrimKind::Read => 3,
-            PrimKind::Exit | PrimKind::BufAlloc | PrimKind::BufAllocDyn => 1,
-            PrimKind::BufGet => 2,
-            PrimKind::BufSet | PrimKind::ParseI64 | PrimKind::FmtI64 => 3,
+            PrimKind::Exit | PrimKind::BufAlloc | PrimKind::BufAllocDyn | PrimKind::I64Alloc => 1,
+            PrimKind::BufGet | PrimKind::I64Get => 2,
+            PrimKind::BufSet
+            | PrimKind::ParseI64
+            | PrimKind::FmtI64
+            | PrimKind::I64Set
+            | PrimKind::I64Swap => 3,
             PrimKind::ScanByte => 4,
-            PrimKind::BufCopy | PrimKind::BufEq => 5,
+            PrimKind::BufCopy | PrimKind::BufEq | PrimKind::I64Copy => 5,
             PrimKind::Arith(_) | PrimKind::Cmp(_) => 2,
         }
     }
@@ -161,6 +182,11 @@ mod tests {
         assert_eq!(PrimKind::lookup("scan-byte"), Some(PrimKind::ScanByte));
         assert_eq!(PrimKind::lookup("parse-i64"), Some(PrimKind::ParseI64));
         assert_eq!(PrimKind::lookup("fmt-i64"), Some(PrimKind::FmtI64));
+        assert_eq!(PrimKind::lookup("i64-alloc"), Some(PrimKind::I64Alloc));
+        assert_eq!(PrimKind::lookup("i64-get"), Some(PrimKind::I64Get));
+        assert_eq!(PrimKind::lookup("i64-set"), Some(PrimKind::I64Set));
+        assert_eq!(PrimKind::lookup("i64-swap"), Some(PrimKind::I64Swap));
+        assert_eq!(PrimKind::lookup("i64-copy"), Some(PrimKind::I64Copy));
     }
 
     #[test]
@@ -176,6 +202,11 @@ mod tests {
         assert_eq!(PrimKind::ScanByte.arity(), 4);
         assert_eq!(PrimKind::ParseI64.arity(), 3);
         assert_eq!(PrimKind::FmtI64.arity(), 3);
+        assert_eq!(PrimKind::I64Alloc.arity(), 1);
+        assert_eq!(PrimKind::I64Get.arity(), 2);
+        assert_eq!(PrimKind::I64Set.arity(), 3);
+        assert_eq!(PrimKind::I64Swap.arity(), 3);
+        assert_eq!(PrimKind::I64Copy.arity(), 5);
         assert_eq!(PrimKind::Arith(ArithOp::Add).arity(), 2);
         assert_eq!(PrimKind::Cmp(CmpOp::Lt).arity(), 2);
     }

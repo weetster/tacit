@@ -108,9 +108,18 @@ enum Binding<'ctx> {
     /// A top-level function reference. Only callable at `App` head;
     /// reading the binding outside head position is `FirstClassFunction`.
     Function(FunctionBinding<'ctx>),
-    /// A stack-allocated byte buffer (from `@buf-alloc N`). Only valid as
-    /// a buffer argument to `@read` / `@write`; not a first-class value (ADR 0038).
-    Ptr(PointerValue<'ctx>),
+    /// A stack-allocated buffer-like handle. Handles are valid only as
+    /// primitive arguments for their own family; they are not first-class values.
+    Ptr {
+        ptr: PointerValue<'ctx>,
+        kind: PtrKind,
+    },
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PtrKind {
+    Buf,
+    I64Vec,
 }
 
 #[derive(Clone)]
@@ -227,8 +236,8 @@ impl<'ctx> Compiler<'ctx> {
                 match entry {
                     Binding::Value(v) => Ok(*v),
                     Binding::Function(_) => Err(CodegenError::FirstClassFunction),
-                    Binding::Ptr(_) => Err(CodegenError::Unsupported(
-                        "buffer pointer used in integer-value position",
+                    Binding::Ptr { .. } => Err(CodegenError::Unsupported(
+                        "buffer-like handle used in integer-value position",
                     )),
                 }
             }
@@ -316,7 +325,13 @@ impl<'ctx> Compiler<'ctx> {
                         }
                         .map_err(|e| CodegenError::Llvm(e.to_string()))?;
                         let mut new_env = env.to_vec();
-                        new_env.insert(0, Binding::Ptr(buf_ptr));
+                        new_env.insert(
+                            0,
+                            Binding::Ptr {
+                                ptr: buf_ptr,
+                                kind: PtrKind::Buf,
+                            },
+                        );
                         return self.compile_expr(body, &new_env, cur_fn);
                     }
                 }
@@ -329,7 +344,31 @@ impl<'ctx> Compiler<'ctx> {
                         .build_array_alloca(i8_t, size_val, "buf_dyn")
                         .map_err(|e| CodegenError::Llvm(e.to_string()))?;
                     let mut new_env = env.to_vec();
-                    new_env.insert(0, Binding::Ptr(buf_ptr));
+                    new_env.insert(
+                        0,
+                        Binding::Ptr {
+                            ptr: buf_ptr,
+                            kind: PtrKind::Buf,
+                        },
+                    );
+                    return self.compile_expr(body, &new_env, cur_fn);
+                }
+                if name == "i64-alloc" && args.len() == 1 {
+                    // Runtime-sized stack allocation: alloca i64, %n (ADR 0061).
+                    let count_val = self.compile_expr(args[0], env, cur_fn)?;
+                    let i64_t = self.context.i64_type();
+                    let vec_ptr = self
+                        .builder
+                        .build_array_alloca(i64_t, count_val, "i64_vec")
+                        .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+                    let mut new_env = env.to_vec();
+                    new_env.insert(
+                        0,
+                        Binding::Ptr {
+                            ptr: vec_ptr,
+                            kind: PtrKind::I64Vec,
+                        },
+                    );
                     return self.compile_expr(body, &new_env, cur_fn);
                 }
             }
@@ -430,7 +469,7 @@ impl<'ctx> Compiler<'ctx> {
                         let arg_vals = self.compile_call_args(&args, env, cur_fn)?;
                         self.call_function(fn_val, &arg_vals)
                     }
-                    Binding::Value(_) | Binding::Ptr(_) => Err(CodegenError::AppNonFunction),
+                    Binding::Value(_) | Binding::Ptr { .. } => Err(CodegenError::AppNonFunction),
                 }
             }
             _ => Err(CodegenError::AppNonFunction),
@@ -463,7 +502,9 @@ impl<'ctx> Compiler<'ctx> {
         for capture in &fn_binding.captures {
             match capture {
                 Binding::Value(v) => call_args.push(BasicMetadataValueEnum::IntValue(*v)),
-                Binding::Ptr(p) => call_args.push(BasicMetadataValueEnum::PointerValue(*p)),
+                Binding::Ptr { ptr, .. } => {
+                    call_args.push(BasicMetadataValueEnum::PointerValue(*ptr))
+                }
                 Binding::Function(_) => {}
             }
         }
@@ -517,6 +558,9 @@ impl<'ctx> Compiler<'ctx> {
             PrimKind::BufAllocDyn => Err(CodegenError::Unsupported(
                 "@buf-alloc-dyn must appear as the direct RHS of a `let` binding",
             )),
+            PrimKind::I64Alloc => Err(CodegenError::Unsupported(
+                "@i64-alloc must appear as the direct RHS of a `let` binding",
+            )),
             PrimKind::BufGet => self.emit_buf_get(args, env, cur_fn),
             PrimKind::BufSet => self.emit_buf_set(args, env, cur_fn),
             PrimKind::BufCopy => self.emit_buf_copy(args, env, cur_fn),
@@ -524,6 +568,10 @@ impl<'ctx> Compiler<'ctx> {
             PrimKind::ScanByte => self.emit_scan_byte(args, env, cur_fn),
             PrimKind::ParseI64 => self.emit_parse_i64(args, env, cur_fn),
             PrimKind::FmtI64 => self.emit_fmt_i64(args, env, cur_fn),
+            PrimKind::I64Get => self.emit_i64_get(args, env, cur_fn),
+            PrimKind::I64Set => self.emit_i64_set(args, env, cur_fn),
+            PrimKind::I64Swap => self.emit_i64_swap(args, env, cur_fn),
+            PrimKind::I64Copy => self.emit_i64_copy(args, env, cur_fn),
         }
     }
 
@@ -727,7 +775,7 @@ impl<'ctx> Compiler<'ctx> {
 
     /// Lower a buffer argument for `@write` / `@read`.
     /// Accepts either a string literal (→ private global) or a `Var` resolving
-    /// to a `Binding::Ptr` (→ stack buffer from `@buf-alloc`, ADR 0038).
+    /// to a byte-buffer `Binding::Ptr` (→ stack buffer from `@buf-alloc`, ADR 0038).
     fn compile_buffer_arg(
         &mut self,
         node: &Node,
@@ -757,11 +805,14 @@ impl<'ctx> Compiler<'ctx> {
                 };
                 ptr.map_err(|e| CodegenError::Llvm(e.to_string()))
             }
-            // `Var` may resolve to a `Binding::Ptr` produced by `@buf-alloc` (ADR 0038).
+            // `Var` may resolve to a byte-buffer pointer produced by `@buf-alloc` (ADR 0038).
             Node::Var { index } => {
                 let binding = lookup_var(env, *index)?;
                 match binding {
-                    Binding::Ptr(ptr) => Ok(*ptr),
+                    Binding::Ptr {
+                        ptr,
+                        kind: PtrKind::Buf,
+                    } => Ok(*ptr),
                     _ => Err(CodegenError::Unsupported(
                         "buffer argument must be a string literal or @buf-alloc binding",
                     )),
@@ -775,26 +826,50 @@ impl<'ctx> Compiler<'ctx> {
 
     // ── Phase 3 primitive helpers (ADR 0047) ────────────────────────────────────
 
-    /// Resolve a buffer argument to a `PointerValue` (must be a `Var` → `Binding::Ptr`).
+    /// Resolve a buffer-like primitive argument to a `PointerValue`.
     fn compile_ptr_arg<'a>(
         &self,
         node: &Node,
         env: &'a [Binding<'ctx>],
+        expected: PtrKind,
+        expected_name: &'static str,
     ) -> Result<PointerValue<'ctx>> {
         match node {
             Node::Var { index } => {
                 let binding = lookup_var(env, *index)?;
                 match binding {
-                    Binding::Ptr(ptr) => Ok(*ptr),
-                    _ => Err(CodegenError::Unsupported(
-                        "buffer argument must be a @buf-alloc / @buf-alloc-dyn binding",
-                    )),
+                    Binding::Ptr { ptr, kind } if *kind == expected => Ok(*ptr),
+                    _ => Err(CodegenError::Unsupported(expected_name)),
                 }
             }
-            _ => Err(CodegenError::Unsupported(
-                "buffer argument must be a variable referencing a buffer binding",
-            )),
+            _ => Err(CodegenError::Unsupported(expected_name)),
         }
+    }
+
+    fn compile_buf_ptr_arg(
+        &self,
+        node: &Node,
+        env: &[Binding<'ctx>],
+    ) -> Result<PointerValue<'ctx>> {
+        self.compile_ptr_arg(
+            node,
+            env,
+            PtrKind::Buf,
+            "buffer argument must be a variable referencing a byte buffer binding",
+        )
+    }
+
+    fn compile_i64_vec_arg(
+        &self,
+        node: &Node,
+        env: &[Binding<'ctx>],
+    ) -> Result<PointerValue<'ctx>> {
+        self.compile_ptr_arg(
+            node,
+            env,
+            PtrKind::I64Vec,
+            "i64 vector argument must be a variable referencing an @i64-alloc binding",
+        )
     }
 
     /// GEP to `buf_ptr[off]` (element type `i8`).
@@ -869,7 +944,69 @@ impl<'ctx> Compiler<'ctx> {
         self.module.add_function(name, fn_ty, None)
     }
 
-    // ── Phase 3 emit functions (ADR 0047) ────────────────────────────────────────
+    /// Declare (or retrieve) the `llvm.memmove.p0.p0.i64` intrinsic (ADR 0061).
+    fn llvm_memmove(&self) -> FunctionValue<'ctx> {
+        let name = "llvm.memmove.p0.p0.i64";
+        if let Some(f) = self.module.get_function(name) {
+            return f;
+        }
+        let ptr_t = self.context.ptr_type(AddressSpace::default());
+        let i64_t = self.context.i64_type();
+        let i1_t = self.context.bool_type();
+        let void_t = self.context.void_type();
+        let fn_ty = void_t.fn_type(
+            &[
+                BasicMetadataTypeEnum::PointerType(ptr_t),
+                BasicMetadataTypeEnum::PointerType(ptr_t),
+                BasicMetadataTypeEnum::IntType(i64_t),
+                BasicMetadataTypeEnum::IntType(i1_t),
+            ],
+            false,
+        );
+        self.module.add_function(name, fn_ty, None)
+    }
+
+    /// GEP to `vec[index]` (element type `i64`).
+    fn i64_ptr_at(
+        &mut self,
+        vec_ptr: PointerValue<'ctx>,
+        index: IntValue<'ctx>,
+        name: &str,
+    ) -> Result<PointerValue<'ctx>> {
+        let i64_t = self.context.i64_type();
+        unsafe { self.builder.build_gep(i64_t, vec_ptr, &[index], name) }
+            .map_err(|e| CodegenError::Llvm(e.to_string()))
+    }
+
+    fn load_i64(
+        &mut self,
+        vec_ptr: PointerValue<'ctx>,
+        index: IntValue<'ctx>,
+        name: &str,
+    ) -> Result<IntValue<'ctx>> {
+        let i64_t = self.context.i64_type();
+        let ptr = self.i64_ptr_at(vec_ptr, index, name)?;
+        let value = self
+            .builder
+            .build_load(i64_t, ptr, name)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        Ok(value.into_int_value())
+    }
+
+    fn store_i64(
+        &mut self,
+        vec_ptr: PointerValue<'ctx>,
+        index: IntValue<'ctx>,
+        value: IntValue<'ctx>,
+    ) -> Result<()> {
+        let ptr = self.i64_ptr_at(vec_ptr, index, "i64_store_ptr")?;
+        self.builder
+            .build_store(ptr, value)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        Ok(())
+    }
+
+    // ── Phase 3 emit functions (ADR 0047, ADR 0061) ──────────────────────────────
 
     /// `@buf-get buf off` → load `buf[off]` as `i64`.
     fn emit_buf_get(
@@ -878,7 +1015,7 @@ impl<'ctx> Compiler<'ctx> {
         env: &[Binding<'ctx>],
         cur_fn: FunctionValue<'ctx>,
     ) -> Result<IntValue<'ctx>> {
-        let buf = self.compile_ptr_arg(args[0], env)?;
+        let buf = self.compile_buf_ptr_arg(args[0], env)?;
         let off = self.compile_expr(args[1], env, cur_fn)?;
         self.load_byte(buf, off, "bg")
     }
@@ -890,7 +1027,7 @@ impl<'ctx> Compiler<'ctx> {
         env: &[Binding<'ctx>],
         cur_fn: FunctionValue<'ctx>,
     ) -> Result<IntValue<'ctx>> {
-        let buf = self.compile_ptr_arg(args[0], env)?;
+        let buf = self.compile_buf_ptr_arg(args[0], env)?;
         let off = self.compile_expr(args[1], env, cur_fn)?;
         let byte = self.compile_expr(args[2], env, cur_fn)?;
         self.store_byte(buf, off, byte)?;
@@ -904,9 +1041,9 @@ impl<'ctx> Compiler<'ctx> {
         env: &[Binding<'ctx>],
         cur_fn: FunctionValue<'ctx>,
     ) -> Result<IntValue<'ctx>> {
-        let dst = self.compile_ptr_arg(args[0], env)?;
+        let dst = self.compile_buf_ptr_arg(args[0], env)?;
         let dst_off = self.compile_expr(args[1], env, cur_fn)?;
-        let src = self.compile_ptr_arg(args[2], env)?;
+        let src = self.compile_buf_ptr_arg(args[2], env)?;
         let src_off = self.compile_expr(args[3], env, cur_fn)?;
         let len = self.compile_expr(args[4], env, cur_fn)?;
 
@@ -930,6 +1067,103 @@ impl<'ctx> Compiler<'ctx> {
         Ok(self.context.i64_type().const_zero())
     }
 
+    /// `@i64-get vec index` → load `vec[index]` as `i64`.
+    fn emit_i64_get(
+        &mut self,
+        args: &[&Node],
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<IntValue<'ctx>> {
+        let vec = self.compile_i64_vec_arg(args[0], env)?;
+        let index = self.compile_expr(args[1], env, cur_fn)?;
+        self.load_i64(vec, index, "i64_get")
+    }
+
+    /// `@i64-set vec index value` → store `value` at `vec[index]`; return 0.
+    fn emit_i64_set(
+        &mut self,
+        args: &[&Node],
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<IntValue<'ctx>> {
+        let vec = self.compile_i64_vec_arg(args[0], env)?;
+        let index = self.compile_expr(args[1], env, cur_fn)?;
+        let value = self.compile_expr(args[2], env, cur_fn)?;
+        self.store_i64(vec, index, value)?;
+        Ok(self.context.i64_type().const_zero())
+    }
+
+    /// `@i64-swap vec i j` → swap `vec[i]` and `vec[j]`; return 0.
+    fn emit_i64_swap(
+        &mut self,
+        args: &[&Node],
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<IntValue<'ctx>> {
+        let vec = self.compile_i64_vec_arg(args[0], env)?;
+        let i = self.compile_expr(args[1], env, cur_fn)?;
+        let j = self.compile_expr(args[2], env, cur_fn)?;
+        let i_ptr = self.i64_ptr_at(vec, i, "i64_swap_i")?;
+        let j_ptr = self.i64_ptr_at(vec, j, "i64_swap_j")?;
+        let i64_t = self.context.i64_type();
+        let a = self
+            .builder
+            .build_load(i64_t, i_ptr, "i64_swap_a")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?
+            .into_int_value();
+        let b = self
+            .builder
+            .build_load(i64_t, j_ptr, "i64_swap_b")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?
+            .into_int_value();
+        self.builder
+            .build_store(i_ptr, b)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_store(j_ptr, a)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        Ok(i64_t.const_zero())
+    }
+
+    /// `@i64-copy dst dst-index src src-index count` → overlap-safe element copy.
+    fn emit_i64_copy(
+        &mut self,
+        args: &[&Node],
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<IntValue<'ctx>> {
+        let dst = self.compile_i64_vec_arg(args[0], env)?;
+        let dst_index = self.compile_expr(args[1], env, cur_fn)?;
+        let src = self.compile_i64_vec_arg(args[2], env)?;
+        let src_index = self.compile_expr(args[3], env, cur_fn)?;
+        let count = self.compile_expr(args[4], env, cur_fn)?;
+
+        let dst_ptr = self.i64_ptr_at(dst, dst_index, "i64_cp_dst")?;
+        let src_ptr = self.i64_ptr_at(src, src_index, "i64_cp_src")?;
+        let i64_t = self.context.i64_type();
+        let elem_size = i64_t.const_int(8, false);
+        let byte_len = self
+            .builder
+            .build_int_mul(count, elem_size, "i64_cp_bytes")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let false_val = self.context.bool_type().const_int(0, false);
+
+        let memmove = self.llvm_memmove();
+        self.builder
+            .build_call(
+                memmove,
+                &[
+                    BasicMetadataValueEnum::PointerValue(dst_ptr),
+                    BasicMetadataValueEnum::PointerValue(src_ptr),
+                    BasicMetadataValueEnum::IntValue(byte_len),
+                    BasicMetadataValueEnum::IntValue(false_val),
+                ],
+                "i64_memmove",
+            )
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        Ok(i64_t.const_zero())
+    }
+
     /// `@buf-eq a a-off b b-off len` → inline byte-compare loop; returns 0 or 1.
     ///
     /// Empty range (len = 0) returns 1 (vacuously equal).
@@ -939,9 +1173,9 @@ impl<'ctx> Compiler<'ctx> {
         env: &[Binding<'ctx>],
         cur_fn: FunctionValue<'ctx>,
     ) -> Result<IntValue<'ctx>> {
-        let a = self.compile_ptr_arg(args[0], env)?;
+        let a = self.compile_buf_ptr_arg(args[0], env)?;
         let a_off = self.compile_expr(args[1], env, cur_fn)?;
-        let b = self.compile_ptr_arg(args[2], env)?;
+        let b = self.compile_buf_ptr_arg(args[2], env)?;
         let b_off = self.compile_expr(args[3], env, cur_fn)?;
         let len = self.compile_expr(args[4], env, cur_fn)?;
 
@@ -1058,7 +1292,7 @@ impl<'ctx> Compiler<'ctx> {
         env: &[Binding<'ctx>],
         cur_fn: FunctionValue<'ctx>,
     ) -> Result<IntValue<'ctx>> {
-        let buf = self.compile_ptr_arg(args[0], env)?;
+        let buf = self.compile_buf_ptr_arg(args[0], env)?;
         let off = self.compile_expr(args[1], env, cur_fn)?;
         let len = self.compile_expr(args[2], env, cur_fn)?;
         let target = self.compile_expr(args[3], env, cur_fn)?;
@@ -1159,7 +1393,7 @@ impl<'ctx> Compiler<'ctx> {
         env: &[Binding<'ctx>],
         cur_fn: FunctionValue<'ctx>,
     ) -> Result<IntValue<'ctx>> {
-        let buf = self.compile_ptr_arg(args[0], env)?;
+        let buf = self.compile_buf_ptr_arg(args[0], env)?;
         let off = self.compile_expr(args[1], env, cur_fn)?;
         let len = self.compile_expr(args[2], env, cur_fn)?;
 
@@ -1365,7 +1599,7 @@ impl<'ctx> Compiler<'ctx> {
         env: &[Binding<'ctx>],
         cur_fn: FunctionValue<'ctx>,
     ) -> Result<IntValue<'ctx>> {
-        let buf = self.compile_ptr_arg(args[0], env)?;
+        let buf = self.compile_buf_ptr_arg(args[0], env)?;
         let off = self.compile_expr(args[1], env, cur_fn)?;
         let val = self.compile_expr(args[2], env, cur_fn)?;
 
@@ -1640,7 +1874,7 @@ impl<'ctx> Compiler<'ctx> {
         for capture in captures {
             match capture {
                 Binding::Value(_) => params.push(BasicMetadataTypeEnum::IntType(i64_t)),
-                Binding::Ptr(_) => params.push(BasicMetadataTypeEnum::PointerType(ptr_t)),
+                Binding::Ptr { .. } => params.push(BasicMetadataTypeEnum::PointerType(ptr_t)),
                 Binding::Function(_) => {}
             }
         }
@@ -1816,7 +2050,7 @@ impl<'ctx> Compiler<'ctx> {
                     captured.push(Binding::Value(param));
                     param_index += 1;
                 }
-                Binding::Ptr(_) => {
+                Binding::Ptr { kind, .. } => {
                     let param = fn_val
                         .get_nth_param(param_index)
                         .ok_or_else(|| {
@@ -1826,7 +2060,10 @@ impl<'ctx> Compiler<'ctx> {
                             ))
                         })?
                         .into_pointer_value();
-                    captured.push(Binding::Ptr(param));
+                    captured.push(Binding::Ptr {
+                        ptr: param,
+                        kind: *kind,
+                    });
                     param_index += 1;
                 }
                 Binding::Function(f) => captured.push(Binding::Function(f.clone())),

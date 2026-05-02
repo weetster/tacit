@@ -16,6 +16,7 @@ fn primitive_lookup_smoke() {
     assert!(PrimKind::lookup("write").is_some());
     assert!(PrimKind::lookup("add").is_some());
     assert!(PrimKind::lookup("lt").is_some());
+    assert!(PrimKind::lookup("i64-get").is_some());
     assert!(PrimKind::lookup("frobnicate").is_none());
 }
 
@@ -141,4 +142,13 @@ fn rec_buffer_capture_lowers_as_hidden_param() {
     let ir = compile_to_ir_string(&node, "rec_buffer_capture").expect("codegen");
     assert!(ir.contains("define private i64 @tacit_fn_0_rec(i64 %0, i64 %1, ptr %2)"));
     assert!(ir.contains("call i64 @tacit_fn_0_rec(i64 1, i64 0, ptr %buf_ptr)"));
+}
+
+#[test]
+fn rec_i64vec_capture_lowers_as_hidden_param() {
+    let src = b"let xs = @i64-alloc 1 in let _ = @i64-set xs 0 41 in rec { get = lambda x. @add x (@i64-get xs 0) } in get 1";
+    let (node, _) = parse_authoring(src).expect("parse");
+    let ir = compile_to_ir_string(&node, "rec_i64vec_capture").expect("codegen");
+    assert!(ir.contains("define private i64 @tacit_fn_0_rec(i64 %0, i64 %1, ptr %2)"));
+    assert!(ir.contains("call i64 @tacit_fn_0_rec(i64 1, i64 0, ptr %i64_vec)"));
 }

@@ -128,6 +128,8 @@ pub enum Ty {
     Str,
     /// Writable buffer handle (ADR 0038).
     Buf,
+    /// Opaque i64 vector handle (ADR 0061).
+    I64Vec,
     /// Function type `arg → ret / eff`.
     Fn(Box<Ty>, Box<Ty>, FnEff),
     Record(BTreeMap<String, Ty>),
@@ -145,7 +147,7 @@ impl Ty {
 
     pub fn is_ground(&self, subst: &Subst) -> bool {
         match subst.apply(self) {
-            Ty::Int | Ty::Bool | Ty::Str | Ty::Buf | Ty::Unknown => true,
+            Ty::Int | Ty::Bool | Ty::Str | Ty::Buf | Ty::I64Vec | Ty::Unknown => true,
             Ty::Fn(a, b, _) => a.is_ground(subst) && b.is_ground(subst),
             Ty::Record(fields) => fields.values().all(|v| v.is_ground(subst)),
             Ty::App(f, a) => f.is_ground(subst) && a.is_ground(subst),
@@ -161,6 +163,7 @@ impl std::fmt::Display for Ty {
             Ty::Bool => write!(f, "Bool"),
             Ty::Str => write!(f, "Str"),
             Ty::Buf => write!(f, "Buf"),
+            Ty::I64Vec => write!(f, "I64Vec"),
             Ty::Fn(a, b, eff) => {
                 let parens = matches!(a.as_ref(), Ty::Fn(_, _, _));
                 if parens {
@@ -292,7 +295,11 @@ pub fn unify(t1: &Ty, t2: &Ty, subst: &mut Subst) -> bool {
 
     match (&t1, &t2) {
         (Ty::Unknown, _) | (_, Ty::Unknown) => true,
-        (Ty::Int, Ty::Int) | (Ty::Bool, Ty::Bool) | (Ty::Str, Ty::Str) | (Ty::Buf, Ty::Buf) => true,
+        (Ty::Int, Ty::Int)
+        | (Ty::Bool, Ty::Bool)
+        | (Ty::Str, Ty::Str)
+        | (Ty::Buf, Ty::Buf)
+        | (Ty::I64Vec, Ty::I64Vec) => true,
         (Ty::Meta(id1), Ty::Meta(id2)) if id1 == id2 => true,
         (Ty::Meta(id), other) => {
             if occurs(*id, other, subst) {

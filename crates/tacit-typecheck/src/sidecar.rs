@@ -159,6 +159,8 @@ fn parse_atom_type(s: &str) -> Result<Ty, String> {
         "Int" => Ok(Ty::Int),
         "Bool" => Ok(Ty::Bool),
         "Str" => Ok(Ty::Str),
+        "Buf" => Ok(Ty::Buf),
+        "I64Vec" => Ok(Ty::I64Vec),
         other if other.starts_with('(') && other.ends_with(')') => {
             parse_fn_type(&other[1..other.len() - 1])
         }
@@ -196,7 +198,11 @@ pub fn parse_effect_list(effects: &[String]) -> EffSet {
 /// Structural type matching ignoring effect annotations (effects are checked separately).
 fn types_match(inferred: &Ty, expected: &Ty) -> bool {
     match (inferred, expected) {
-        (Ty::Int, Ty::Int) | (Ty::Bool, Ty::Bool) | (Ty::Str, Ty::Str) => true,
+        (Ty::Int, Ty::Int)
+        | (Ty::Bool, Ty::Bool)
+        | (Ty::Str, Ty::Str)
+        | (Ty::Buf, Ty::Buf)
+        | (Ty::I64Vec, Ty::I64Vec) => true,
         (Ty::Fn(a1, b1, _), Ty::Fn(a2, b2, _)) => types_match(a1, a2) && types_match(b1, b2),
         (Ty::Unknown, _) | (_, Ty::Unknown) => true,
         _ => false,

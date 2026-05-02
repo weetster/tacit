@@ -272,6 +272,10 @@ fn infer_app(
     path: &[usize],
     diags: &mut Vec<Diagnostic>,
 ) -> (Ty, FnEff) {
+    if let Some(result) = infer_full_primitive_app(ctx, fn_, arg, subst, path, diags) {
+        return result;
+    }
+
     // Detect binary operator pattern: (app (app (sym op) e1) e2)
     if let Node::App {
         fn_: inner_fn,
@@ -327,6 +331,117 @@ fn infer_app(
 
     let total_eff = join_fn_eff(&join_fn_eff(&fn_eff, &arg_eff, subst), &call_eff, subst);
     (ret_ty, total_eff)
+}
+
+fn infer_full_primitive_app(
+    ctx: &[Ty],
+    fn_: &Node,
+    arg: &Node,
+    subst: &mut Subst,
+    path: &[usize],
+    diags: &mut Vec<Diagnostic>,
+) -> Option<(Ty, FnEff)> {
+    let (head, args) = unfold_app_from_parts(fn_, arg);
+    let Node::Sym { name } = head else {
+        return None;
+    };
+
+    match name.as_str() {
+        "write" if args.len() == 3 => Some(infer_write_app(ctx, &args, subst, path, diags)),
+        "read" if args.len() == 3 => Some(infer_read_app(ctx, &args, subst, path, diags)),
+        _ => None,
+    }
+}
+
+fn unfold_app_from_parts<'a>(fn_: &'a Node, arg: &'a Node) -> (&'a Node, Vec<&'a Node>) {
+    let mut args = vec![arg];
+    let mut cur = fn_;
+    loop {
+        match cur {
+            Node::App { fn_, arg } => {
+                args.push(arg.as_ref());
+                cur = fn_.as_ref();
+            }
+            head => {
+                args.reverse();
+                return (head, args);
+            }
+        }
+    }
+}
+
+fn infer_write_app(
+    ctx: &[Ty],
+    args: &[&Node],
+    subst: &mut Subst,
+    path: &[usize],
+    diags: &mut Vec<Diagnostic>,
+) -> (Ty, FnEff) {
+    let (fd_ty, fd_eff) = infer(ctx, args[0], subst, &child_path(path, 0), diags);
+    let (buf_ty, buf_eff) = infer(ctx, args[1], subst, &child_path(path, 1), diags);
+    let (len_ty, len_eff) = infer(ctx, args[2], subst, &child_path(path, 2), diags);
+    expect_type(&child_path(path, 0), &Ty::Int, &fd_ty, subst, diags);
+    expect_write_buffer_arg(&child_path(path, 1), &buf_ty, subst, diags);
+    expect_type(&child_path(path, 2), &Ty::Int, &len_ty, subst, diags);
+    let eval_eff = join_fn_eff(
+        &join_fn_eff(&fd_eff, &buf_eff, subst),
+        &join_fn_eff(&len_eff, &FnEff::from_set(EffSet::of([EffAtom::IO])), subst),
+        subst,
+    );
+    (Ty::Int, eval_eff)
+}
+
+fn infer_read_app(
+    ctx: &[Ty],
+    args: &[&Node],
+    subst: &mut Subst,
+    path: &[usize],
+    diags: &mut Vec<Diagnostic>,
+) -> (Ty, FnEff) {
+    let (fd_ty, fd_eff) = infer(ctx, args[0], subst, &child_path(path, 0), diags);
+    let (buf_ty, buf_eff) = infer(ctx, args[1], subst, &child_path(path, 1), diags);
+    let (len_ty, len_eff) = infer(ctx, args[2], subst, &child_path(path, 2), diags);
+    expect_type(&child_path(path, 0), &Ty::Int, &fd_ty, subst, diags);
+    expect_type(&child_path(path, 1), &Ty::Buf, &buf_ty, subst, diags);
+    expect_type(&child_path(path, 2), &Ty::Int, &len_ty, subst, diags);
+    let eval_eff = join_fn_eff(
+        &join_fn_eff(&fd_eff, &buf_eff, subst),
+        &join_fn_eff(
+            &len_eff,
+            &FnEff::from_set(EffSet::of([EffAtom::IO, EffAtom::Mut])),
+            subst,
+        ),
+        subst,
+    );
+    (Ty::Int, eval_eff)
+}
+
+fn expect_type(
+    path: &[usize],
+    expected: &Ty,
+    actual: &Ty,
+    subst: &mut Subst,
+    diags: &mut Vec<Diagnostic>,
+) {
+    if !unify(expected, actual, subst) {
+        let e = subst.apply(expected);
+        let a = subst.apply(actual);
+        if !e.is_unknown() && !a.is_unknown() {
+            diags.push(Diagnostic::type_mismatch(path, &e, &a));
+        }
+    }
+}
+
+fn expect_write_buffer_arg(
+    path: &[usize],
+    actual: &Ty,
+    subst: &mut Subst,
+    diags: &mut Vec<Diagnostic>,
+) {
+    match subst.apply(actual) {
+        Ty::Buf | Ty::Str | Ty::Unknown | Ty::Meta(_) => {}
+        other => diags.push(Diagnostic::type_mismatch(path, &Ty::Buf, &other)),
+    }
 }
 
 /// Infer a binary operator: `(app (app (sym op) e1) e2)`.

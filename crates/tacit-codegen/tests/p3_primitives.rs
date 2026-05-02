@@ -1,4 +1,4 @@
-//! Phase 3 Stage 2 exit-gate tests (ADR 0047).
+//! Phase 3 primitive exit-gate tests (ADR 0047, ADR 0061).
 //!
 //! Exercises each new Phase 3 primitive end-to-end — authoring view → compile
 //! → link → run.  One positive and one boundary case per primitive.
@@ -198,4 +198,66 @@ fn fmt_i64_zero() {
     let (out, code) = run_p3("p3-fmt-i64-zero");
     assert_eq!(out, b"0");
     assert_eq!(code, 0);
+}
+
+// ── @i64-alloc / @i64-get / @i64-set ─────────────────────────────────────────
+
+#[test]
+fn i64_get_set_positive_zero_negative() {
+    // store positive, zero, and negative values; all equality checks pass → 3
+    let (out, code) = run_p3("p3-i64-get-set");
+    assert!(out.is_empty());
+    assert_eq!(code, 3);
+}
+
+#[test]
+fn i64_alloc_dynamic_count() {
+    // allocate count from runtime expression, set/read index 2 → 44
+    let (out, code) = run_p3("p3-i64-alloc-dyn");
+    assert!(out.is_empty());
+    assert_eq!(code, 44);
+}
+
+// ── @i64-swap ────────────────────────────────────────────────────────────────
+
+#[test]
+fn i64_swap_distinct_indexes() {
+    // [4, 9] swapped → [9, 4] → 94
+    let (out, code) = run_p3("p3-i64-swap");
+    assert!(out.is_empty());
+    assert_eq!(code, 94);
+}
+
+#[test]
+fn i64_swap_same_index() {
+    // swap index 0 with itself leaves the value unchanged
+    let (out, code) = run_p3("p3-i64-swap-same");
+    assert!(out.is_empty());
+    assert_eq!(code, 33);
+}
+
+// ── @i64-copy ────────────────────────────────────────────────────────────────
+
+#[test]
+fn i64_copy_zero_count() {
+    // zero-count copy leaves dst[0] unchanged
+    let (out, code) = run_p3("p3-i64-copy-zero");
+    assert!(out.is_empty());
+    assert_eq!(code, 77);
+}
+
+#[test]
+fn i64_copy_cross_vector() {
+    // copy src[0..2] into dst[1..3], then dst[1] + dst[2] = 33
+    let (out, code) = run_p3("p3-i64-copy-cross");
+    assert!(out.is_empty());
+    assert_eq!(code, 33);
+}
+
+#[test]
+fn i64_copy_overlap_same_vector() {
+    // [1,2,3,4], copy xs[0..3] to xs[1..4] → [1,1,2,3] → 23
+    let (out, code) = run_p3("p3-i64-copy-overlap");
+    assert!(out.is_empty());
+    assert_eq!(code, 23);
 }

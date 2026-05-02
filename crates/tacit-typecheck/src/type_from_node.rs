@@ -83,7 +83,7 @@ pub fn type_from_node(
         Node::App { fn_, arg } => {
             let f_ty = type_from_node(fn_, ty_vars, eff_vars, subst, &child_path(path, 0), diags);
             let a_ty = type_from_node(arg, ty_vars, eff_vars, subst, &child_path(path, 1), diags);
-            if matches!(f_ty, Ty::Int | Ty::Bool | Ty::Str) {
+            if matches!(f_ty, Ty::Int | Ty::Bool | Ty::Str | Ty::Buf | Ty::I64Vec) {
                 let name = match fn_.as_ref() {
                     Node::Sym { name } => name.as_str(),
                     _ => "<type>",
@@ -177,6 +177,8 @@ fn sym_to_ty(name: &str, path: &[usize], diags: &mut Vec<Diagnostic>) -> Ty {
         "Int" => Ty::Int,
         "Bool" => Ty::Bool,
         "Str" => Ty::Str,
+        "Buf" => Ty::Buf,
+        "I64Vec" => Ty::I64Vec,
         other => {
             diags.push(Diagnostic::unresolved_type(path, other));
             Ty::Unknown
@@ -212,6 +214,17 @@ mod tests {
         let (ty, diags) = run_type(&sym("Int"));
         assert_eq!(ty, Ty::Int);
         assert!(diags.is_empty());
+    }
+
+    #[test]
+    fn builtin_handle_syms() {
+        let (buf_ty, buf_diags) = run_type(&sym("Buf"));
+        assert_eq!(buf_ty, Ty::Buf);
+        assert!(buf_diags.is_empty());
+
+        let (vec_ty, vec_diags) = run_type(&sym("I64Vec"));
+        assert_eq!(vec_ty, Ty::I64Vec);
+        assert!(vec_diags.is_empty());
     }
 
     #[test]
