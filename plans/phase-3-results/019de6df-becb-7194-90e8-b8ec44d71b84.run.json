@@ -1,0 +1,34 @@
+{
+  "completed_at": "2026-05-02T04:16:01Z",
+  "corpus_git_sha": "1a5d7fd10b94312e72a4cc40b32ad5521446664d",
+  "dry_run": false,
+  "harness_git_sha": "1a5d7fd10b94312e72a4cc40b32ad5521446664d",
+  "harness_version": "0.2.0",
+  "model_id": "claude-sonnet-4-6",
+  "primer_blake3": "4879fd9a06777f8f86e03ad73a22fe180f75d1b5b8bccf1b69936c65fe6110af",
+  "primer_token_count": 15533,
+  "provider": "anthropic",
+  "repair_turns": 2,
+  "run_id": "019de6df-becb-7194-90e8-b8ec44d71b84",
+  "sampling": {
+    "max_tokens": 8192,
+    "temperature": 0
+  },
+  "started_at": "2026-05-02T04:08:36Z",
+  "task_ids": [
+    "strings/015-title-case",
+    "collections/021-unique-in-order",
+    "collections/026-group-counts",
+    "collections/027-rotate-left",
+    "algorithms/033-two-sum",
+    "algorithms/035-bubble-sort",
+    "algorithms/037-merge-sort",
+    "algorithms/044-count-islands",
+    "algorithms/049-matrix-multiply",
+    "io/054-grep-substring",
+    "io/055-sort-lines",
+    "io/056-unique-lines"
+  ],
+  "tasks_scope": "open",
+  "tiktoken_encoding": "o200k_base"
+}

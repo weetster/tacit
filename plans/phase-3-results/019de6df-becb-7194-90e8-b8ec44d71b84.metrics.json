@@ -1,0 +1,1315 @@
+{
+  "aggregates": {
+    "full": {
+      "compile_pass_rate": 0.4166666666666667,
+      "primer_amortized_total": 23702,
+      "python_tokens_total": 1542,
+      "tacit_tokens_total": 194565,
+      "task_count": 12,
+      "tests_pass_rate": 0.25,
+      "tests_pass_total": 26,
+      "tests_total_total": 36,
+      "token_delta": 125.17704280155642,
+      "typecheck_pass_rate": 0.75
+    },
+    "non_stdlib_dominated": {
+      "compile_pass_rate": 0.4166666666666667,
+      "primer_amortized_total": 23702,
+      "python_tokens_total": 1542,
+      "tacit_tokens_total": 194565,
+      "task_count": 12,
+      "tests_pass_rate": 0.25,
+      "tests_pass_total": 26,
+      "tests_total_total": 36,
+      "token_delta": 125.17704280155642,
+      "typecheck_pass_rate": 0.75
+    },
+    "repair": {
+      "average_model_calls_per_task": 2.4166666666666665,
+      "behavioral_initial_failure_count": 2,
+      "behavioral_recovery_rate": 1.0,
+      "behavioral_repaired_count": 2,
+      "compile_typecheck_initial_failure_count": 6,
+      "compile_typecheck_recovered_count": 5,
+      "compile_typecheck_recovery_rate": 0.8333333333333334,
+      "final_compile_pass_rate": 0.9166666666666666,
+      "final_task_pass_rate": 0.8333333333333334,
+      "final_typecheck_pass_rate": 0.9166666666666666,
+      "initially_failed_count": 9,
+      "invalid_initial_failure_count": 7,
+      "invalid_recovery_rate": 0.7142857142857143,
+      "invalid_repaired_count": 5,
+      "one_shot_task_pass_rate": 0.25,
+      "repair_recovery_rate": 0.7777777777777778,
+      "repair_success_count": 7,
+      "task_count": 12,
+      "total_api_calls": 29,
+      "total_generation_tokens": 20628,
+      "total_model_calls": 29
+    },
+    "stdlib_dominated": {
+      "compile_pass_rate": 0.0,
+      "primer_amortized_total": 0,
+      "python_tokens_total": 0,
+      "tacit_tokens_total": 0,
+      "task_count": 0,
+      "tests_pass_rate": 0.0,
+      "tests_pass_total": 0,
+      "tests_total_total": 0,
+      "token_delta": 0.0,
+      "typecheck_pass_rate": 0.0
+    }
+  },
+  "gates": {
+    "passed_overall": false,
+    "primary_pass_rate_gate": {
+      "applies": true,
+      "metric": "tests_pass_rate",
+      "passed": false,
+      "scope": "full",
+      "threshold": 0.7,
+      "value": 0.25
+    },
+    "primary_token_gate_full": {
+      "applies": true,
+      "metric": "token_delta",
+      "passed": false,
+      "scope": "full",
+      "threshold": -0.3,
+      "value": 125.17704280155642
+    },
+    "primary_token_gate_non_stdlib": {
+      "applies": true,
+      "metric": "token_delta",
+      "passed": false,
+      "scope": "non_stdlib_dominated",
+      "threshold": -0.3,
+      "value": 125.17704280155642
+    }
+  },
+  "model": {
+    "id": "claude-sonnet-4-6",
+    "primer_hash": "4879fd9a06777f8f86e03ad73a22fe180f75d1b5b8bccf1b69936c65fe6110af",
+    "primer_tokens": 15533,
+    "provider": "anthropic"
+  },
+  "run_id": "019de6df-becb-7194-90e8-b8ec44d71b84",
+  "schema_version": "p3.0",
+  "scope": "open",
+  "tasks": [
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "diagnostics_by_turn": {
+        "turn-0": null
+      },
+      "duration_ms": 7197,
+      "failure_stage_by_turn": {
+        "turn-0": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": true,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 487,
+      "generation_tokens_by_turn": {
+        "turn-0": 487
+      },
+      "python_baseline_tokens": 63,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "strings/015-title-case",
+      "tests_pass": 8,
+      "tests_total": 8,
+      "turns_used": 0,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "test-failure",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "nonzero exit 1; stderr=b''; nonzero exit 1; stderr=b''; nonzero exit 1; stderr=b''; 3 more failure(s)",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "diagnostics_by_turn": {
+        "turn-0": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "nonzero exit 1; stderr=b''; nonzero exit 1; stderr=b''; nonzero exit 1; stderr=b''; 3 more failure(s)",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-1": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "nonzero exit 1; stderr=b''; nonzero exit 1; stderr=b''; nonzero exit 1; stderr=b''; 3 more failure(s)",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-2": null
+      },
+      "duration_ms": 14539,
+      "failure_stage_by_turn": {
+        "turn-0": "test",
+        "turn-1": "test",
+        "turn-2": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": false,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 322,
+      "generation_tokens_by_turn": {
+        "turn-0": 322,
+        "turn-1": 362,
+        "turn-2": 371
+      },
+      "python_baseline_tokens": 111,
+      "repair_success": true,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "collections/021-unique-in-order",
+      "tests_pass": 0,
+      "tests_total": 6,
+      "turns_used": 2,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "unbound-name",
+            "location": {
+              "ast_path": [
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 6
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 2
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 0
+                }
+              ],
+              "source_span": null
+            },
+            "message": "identifier 'get_last_best_s' not in scope",
+            "related": [],
+            "severity": "error"
+          },
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "unbound-name",
+            "location": {
+              "ast_path": [
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 6
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 2
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 0
+                }
+              ],
+              "source_span": null
+            },
+            "message": "identifier 'get_last_best_l' not in scope",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "diagnostics_by_turn": {
+        "turn-0": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "unbound-name",
+              "location": {
+                "ast_path": [
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 6
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 2
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 0
+                  }
+                ],
+                "source_span": null
+              },
+              "message": "identifier 'get_last_best_s' not in scope",
+              "related": [],
+              "severity": "error"
+            },
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "unbound-name",
+              "location": {
+                "ast_path": [
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 6
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 2
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 0
+                  }
+                ],
+                "source_span": null
+              },
+              "message": "identifier 'get_last_best_l' not in scope",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-1": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "compile-error",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "error: LLVM error: Referring to an argument in another function!\n  %call8 = call i64 @tacit_fn_0_rec(i64 %0, ptr %2, ptr %3, i64 %4, ptr %5)\nReferring to an argument in another function!\n  %call9 = call i64 @tacit_fn_1_rec(i64 %call8, ptr %2, ptr %3, i64 %4, ptr %5)\nReferring to an argument in another function!\n  %call = call i64 @tacit_fn_6_rec(i64 %1, i64 %2, ptr %2, ptr %3, i64 %4, ptr %5)\nReferring to an argument in another function!\n  %call7 = call i64 @tacit_fn_7_rec(i64 %1, i64 %2, ptr %2, ptr %3, i64 %4, ptr %5)\nReferring to an argument in another function!\n  %call22 = call i64 @tacit_fn_6_rec(i64 %1, i64 %2, ptr %2, ptr %3, i64 %4, ptr %5)\nReferring to an argument in another function!\n  %call23 = call i64 @tacit_fn_7_rec(i64 %1, i64 %2, ptr %2, ptr %3, i64 %4, ptr %5)\nReferring to an argument in another function!\n  %call31 = call i64 @tacit_fn_3_rec(i64 %4, i64 %3, i64 %call8, i64 %sub, ptr %2, ptr %3, i64 %4, ptr %5)\nReferring to an argument in another function!\n  %call38 = call i64 @tacit_fn_2_rec(i64 %4, i64 %3, i64 %call8, i64 %sub, ptr %2, ptr %3, i64 %4, ptr %5)\nReferring to an argument in another function!\n  %call58 = call i64 @tacit_fn_2_rec(i64 %call8, i64 %sub, i64 %1, i64 %2, ptr %2, ptr %3, i64 %4, ptr %5)",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-2": null
+      },
+      "duration_ms": 46022,
+      "failure_stage_by_turn": {
+        "turn-0": "typecheck",
+        "turn-1": "compile",
+        "turn-2": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": false,
+      "first_pass_tests_pass": false,
+      "first_pass_typecheck_pass": false,
+      "generation_tokens": 1526,
+      "generation_tokens_by_turn": {
+        "turn-0": 1526,
+        "turn-1": 898,
+        "turn-2": 900
+      },
+      "python_baseline_tokens": 103,
+      "repair_success": true,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "collections/026-group-counts",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "turns_used": 2,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "compile-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: rec group lowering failed at member 6: Phase 1 codegen does not yet support rec member that is not a lambda",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "diagnostics_by_turn": {
+        "turn-0": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "compile-error",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "error: rec group lowering failed at member 6: Phase 1 codegen does not yet support rec member that is not a lambda",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-1": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "stdout mismatch for negative: expected '5 1 2 3 4\\n', got b' 1 2 3 4\\n'; stdout mismatch for negative-larger: expected '3 1 2\\n', got b' 1 2\\n'",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-2": null
+      },
+      "duration_ms": 27917,
+      "failure_stage_by_turn": {
+        "turn-0": "compile",
+        "turn-1": "test",
+        "turn-2": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": false,
+      "first_pass_tests_pass": false,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 667,
+      "generation_tokens_by_turn": {
+        "turn-0": 667,
+        "turn-1": 609,
+        "turn-2": 613
+      },
+      "python_baseline_tokens": 113,
+      "repair_success": true,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "collections/027-rotate-left",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "turns_used": 2,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "diagnostics_by_turn": {
+        "turn-0": null
+      },
+      "duration_ms": 11523,
+      "failure_stage_by_turn": {
+        "turn-0": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": true,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 652,
+      "generation_tokens_by_turn": {
+        "turn-0": 652
+      },
+      "python_baseline_tokens": 152,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/033-two-sum",
+      "tests_pass": 7,
+      "tests_total": 7,
+      "turns_used": 0,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "compile-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: rec group lowering failed at member 5: Phase 1 codegen does not yet support rec member that is not a lambda",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "diagnostics_by_turn": {
+        "turn-0": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "compile-error",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "error: rec group lowering failed at member 5: Phase 1 codegen does not yet support rec member that is not a lambda",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-1": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "extraction-error",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "model response contained multiple ```tacit fenced blocks",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-2": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "stdout mismatch for empty: expected '\\n', got b'0\\n'; stdout mismatch for negatives: expected '-3 -1 0 1 2\\n', got b'0 1 2 2147483645 2147483647\\n'",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        }
+      },
+      "duration_ms": 101762,
+      "failure_stage_by_turn": {
+        "turn-0": "compile",
+        "turn-1": "extract",
+        "turn-2": "test"
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": false,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": false,
+      "first_pass_tests_pass": false,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 854,
+      "generation_tokens_by_turn": {
+        "turn-0": 854,
+        "turn-1": 0,
+        "turn-2": 997
+      },
+      "python_baseline_tokens": 141,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/035-bubble-sort",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "turns_used": null,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "extraction-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "model response contained multiple ```tacit fenced blocks",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "diagnostics_by_turn": {
+        "turn-0": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "extraction-error",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "model response contained multiple ```tacit fenced blocks",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-1": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "compile-error",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "error: LLVM error: Referring to an argument in another function!\n  %call = call i64 @tacit_fn_6_rec(i64 %1, i64 %4, i64 %5, i64 %6, i64 %7, ptr %8, ptr %9, ptr %10, i64 %11, ptr %12)\nReferring to an argument in another function!\n  %call7 = call i64 @tacit_fn_3_rec(i64 %add, i64 %call, i64 %4, i64 %5, i64 %6, i64 %7, ptr %8, ptr %9, ptr %10, i64 %11, ptr %12)\nReferring to an argument in another function!\n  %call18 = call i64 @tacit_fn_6_rec(i64 %0, i64 %4, i64 %5, i64 %6, i64 %7, ptr %8, ptr %9, ptr %10, i64 %11, ptr %12)\nReferring to an argument in another function!\n  %call19 = call i64 @tacit_fn_3_rec(i64 %add17, i64 %call18, i64 %4, i64 %5, i64 %6, i64 %7, ptr %8, ptr %9, ptr %10, i64 %11, ptr %12)\nReferring to an argument in another function!\n  %call23 = call i64 @tacit_fn_6_rec(i64 %0, i64 %4, i64 %5, i64 %6, i64 %7, ptr %8, ptr %9, ptr %10, i64 %11, ptr %12)\nReferring to an argument in another function!\n  %call24 = call i64 @tacit_fn_6_rec(i64 %1, i64 %4, i64 %5, i64 %6, i64 %7, ptr %8, ptr %9, ptr %10, i64 %11, ptr %12)\nReferring to an argument in another function!\n  %call32 = call i64 @tacit_fn_3_rec(i64 %add31, i64 %call23, i64 %4, i64 %5, i64 %6, i64 %7, ptr %8, ptr %9, ptr %10, i64 %11, ptr %12)\nReferring to an argument in another function!\n  %call37 = call i64 @tacit_fn_3_rec(i64 %add36, i64 %call24, i64 %4, i64 %5, i64 %6, i64 %7, ptr %8, ptr %9, ptr %10, i64 %11, ptr %12)\nReferring to an argument in another function!\n  %call = call i64 @tacit_fn_4_rec(i64 %add, i64 %4, i64 %5, i64 %6, i64 %7, ptr %8, ptr %9, ptr %10, i64 %11, ptr %12)\nReferring to an argument in another function!\n  %call1 = call i64 @tacit_fn_5_rec(i64 %0, i64 %call, i64 %4, i64 %5, i64 %6, i64 %7, ptr %8, ptr %9, ptr %10, i64 %11, ptr %12)",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-2": null
+      },
+      "duration_ms": 66503,
+      "failure_stage_by_turn": {
+        "turn-0": "extract",
+        "turn-1": "compile",
+        "turn-2": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": false,
+      "first_pass_tests_pass": false,
+      "first_pass_typecheck_pass": false,
+      "generation_tokens": 0,
+      "generation_tokens_by_turn": {
+        "turn-0": 0,
+        "turn-1": 1327,
+        "turn-2": 1421
+      },
+      "python_baseline_tokens": 201,
+      "repair_success": true,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/037-merge-sort",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "turns_used": 2,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "compile-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: free variable in lambda: DeBruijn index 4",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "diagnostics_by_turn": {
+        "turn-0": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "compile-error",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "error: free variable in lambda: DeBruijn index 4",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-1": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "stdout mismatch for two-islands: expected '2\\n', got b'1\\n'; stdout mismatch for four-islands: expected '4\\n', got b'2\\n'; stdout mismatch for single-row: expected '3\\n', got b'1\\n'",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-2": null
+      },
+      "duration_ms": 28995,
+      "failure_stage_by_turn": {
+        "turn-0": "compile",
+        "turn-1": "test",
+        "turn-2": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": false,
+      "first_pass_tests_pass": false,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 584,
+      "generation_tokens_by_turn": {
+        "turn-0": 584,
+        "turn-1": 624,
+        "turn-2": 613
+      },
+      "python_baseline_tokens": 280,
+      "repair_success": true,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/044-count-islands",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "turns_used": 2,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "compile-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: free variable in lambda: DeBruijn index 3",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "diagnostics_by_turn": {
+        "turn-0": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "compile-error",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "error: free variable in lambda: DeBruijn index 3",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-1": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "extraction-error",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "model response contained multiple ```tacit fenced blocks",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-2": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "typecheck-error",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "error: /tmp/tmp5cofv4_k/generated.tac: expected 'in' but got RParen",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        }
+      },
+      "duration_ms": 82010,
+      "failure_stage_by_turn": {
+        "turn-0": "compile",
+        "turn-1": "extract",
+        "turn-2": "typecheck"
+      },
+      "final_compile_pass": false,
+      "final_tests_pass": false,
+      "final_typecheck_pass": false,
+      "first_pass_compile_pass": false,
+      "first_pass_tests_pass": false,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 1620,
+      "generation_tokens_by_turn": {
+        "turn-0": 1620,
+        "turn-1": 0,
+        "turn-2": 1453
+      },
+      "python_baseline_tokens": 243,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/049-matrix-multiply",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "turns_used": null,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "unbound-name",
+            "location": {
+              "ast_path": [
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 2
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 1
+                }
+              ],
+              "source_span": null
+            },
+            "message": "identifier 'pat_off' not in scope",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "diagnostics_by_turn": {
+        "turn-0": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "unbound-name",
+              "location": {
+                "ast_path": [
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 2
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 1
+                  }
+                ],
+                "source_span": null
+              },
+              "message": "identifier 'pat_off' not in scope",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-1": null
+      },
+      "duration_ms": 13399,
+      "failure_stage_by_turn": {
+        "turn-0": "typecheck",
+        "turn-1": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": false,
+      "first_pass_tests_pass": false,
+      "first_pass_typecheck_pass": false,
+      "generation_tokens": 333,
+      "generation_tokens_by_turn": {
+        "turn-0": 333,
+        "turn-1": 333
+      },
+      "python_baseline_tokens": 56,
+      "repair_success": true,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "io/054-grep-substring",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "turns_used": 1,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "test-failure",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "stdout mismatch for basic: expected 'a\\nb\\nc\\n', got b'c\\nb\\na\\n'; stdout mismatch for words: expected 'apple\\nbanana\\ncherry\\n', got b'banana\\napple\\ncherry\\n'; stdout mismatch for case-sensitive: expected 'A\\nB\\na\\nb\\n', got b'a\\nB\\nb\\nA\\n'; 1 more failure(s)",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "diagnostics_by_turn": {
+        "turn-0": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "stdout mismatch for basic: expected 'a\\nb\\nc\\n', got b'c\\nb\\na\\n'; stdout mismatch for words: expected 'apple\\nbanana\\ncherry\\n', got b'banana\\napple\\ncherry\\n'; stdout mismatch for case-sensitive: expected 'A\\nB\\na\\nb\\n', got b'a\\nB\\nb\\nA\\n'; 1 more failure(s)",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-1": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "compile-error",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "error: rec group lowering failed at member 1: Phase 1 codegen does not yet support buffer argument must be a @buf-alloc / @buf-alloc-dyn binding",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-2": null
+      },
+      "duration_ms": 37115,
+      "failure_stage_by_turn": {
+        "turn-0": "test",
+        "turn-1": "compile",
+        "turn-2": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": false,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 739,
+      "generation_tokens_by_turn": {
+        "turn-0": 739,
+        "turn-1": 903,
+        "turn-2": 1035
+      },
+      "python_baseline_tokens": 41,
+      "repair_success": true,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "io/055-sort-lines",
+      "tests_pass": 3,
+      "tests_total": 7,
+      "turns_used": 2,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "diagnostics_by_turn": {
+        "turn-0": null
+      },
+      "duration_ms": 7837,
+      "failure_stage_by_turn": {
+        "turn-0": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": true,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 385,
+      "generation_tokens_by_turn": {
+        "turn-0": 385
+      },
+      "python_baseline_tokens": 38,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "io/056-unique-lines",
+      "tests_pass": 8,
+      "tests_total": 8,
+      "turns_used": 0,
+      "typecheck_pass": true
+    }
+  ],
+  "track": "primary"
+}
