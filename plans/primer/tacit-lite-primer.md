@@ -1727,11 +1727,11 @@ one.
 
 ## Stdlib Appendix: I64Vec
 
-For library-mediated runs, use `I64Vec` when a program needs indexed storage
-for full integer values. Byte-oriented buffers still handle raw input/output
-bytes; an `I64Vec` keeps signed and large values intact. Allocate it with a
-count, write cells before reading them, and thread the count separately
-because the handle does not store a length.
+Use `I64Vec` when a program needs indexed storage for full integer values.
+Byte-oriented buffers still handle raw input/output bytes; an `I64Vec` keeps
+signed and large values intact. Allocate it with a count, write cells before
+reading them, and thread the count separately because the handle does not
+store a length.
 
 ```tacit
 let xs = @i64-alloc 3 in
