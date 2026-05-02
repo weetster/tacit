@@ -18,7 +18,7 @@ use tacit_codegen::compile_to_ir_string;
 use tacit_typecheck::infer_module;
 use tacit_views::authoring::parse_authoring;
 
-const STDLIB_APPENDIX_HEADING: &str = "## Stdlib Appendix: I64Vec";
+const STDLIB_APPENDIX_HEADING: &str = "## Stdlib Appendix: Indexed Storage And Text Ranges";
 
 #[derive(Debug)]
 struct Block {
@@ -254,32 +254,43 @@ fn primer_tacit_fences_validate() {
 }
 
 #[test]
-fn primer_stdlib_i64vec_appendix_examples_validate() {
+fn primer_stdlib_appendix_examples_validate() {
     let primer = fs::read_to_string(primer_path()).expect("read primer");
     let appendix = stdlib_appendix(&primer);
     assert!(appendix.contains("`I64Vec`"));
-    for ty in ["`Int`", "`Bool`", "`Str`", "`Buf`"] {
+    assert!(appendix.contains("`@line-index text len table`"));
+    assert!(appendix.contains("`@token-index text off len delim table`"));
+    for repo_term in [
+        "corpus",
+        "canary",
+        "reference.tac",
+        "reference.stdlib",
+        "repository",
+    ] {
         assert!(
-            !appendix.contains(ty),
-            "I64Vec appendix should only mention the new I64Vec type, found {}",
-            ty
+            !appendix.to_lowercase().contains(repo_term),
+            "stdlib appendix should avoid repository-facing term {}",
+            repo_term
         );
     }
 
     let blocks = extract_tacit_blocks(appendix);
     assert_eq!(
         blocks.len(),
-        3,
-        "expected one fixture-checked Tacit block per I64Vec appendix example"
+        5,
+        "expected one fixture-checked Tacit block per stdlib appendix example"
     );
 
     for (idx, block) in blocks.iter().enumerate() {
         assert_eq!(expectation(&block.info), Expectation::Success);
         assert!(
-            block.source.contains("@i64-"),
-            "I64Vec appendix example at line {} should exercise I64Vec primitives",
+            block.source.contains("@i64-")
+                || block.source.contains("@line-index")
+                || block.source.contains("@token-index")
+                || block.source.contains("@range-"),
+            "stdlib appendix example at line {} should exercise stdlib primitives",
             block.line
         );
-        assert_success_block_valid(block, &format!("stdlib_i64vec_appendix_{}", idx));
+        assert_success_block_valid(block, &format!("stdlib_appendix_{}", idx));
     }
 }

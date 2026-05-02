@@ -17,6 +17,16 @@ fn primitive_lookup_smoke() {
     assert!(PrimKind::lookup("add").is_some());
     assert!(PrimKind::lookup("lt").is_some());
     assert!(PrimKind::lookup("i64-get").is_some());
+    assert_eq!(PrimKind::lookup("line-index").map(PrimKind::arity), Some(3));
+    assert_eq!(
+        PrimKind::lookup("token-index").map(PrimKind::arity),
+        Some(5)
+    );
+    assert_eq!(
+        PrimKind::lookup("range-start").map(PrimKind::arity),
+        Some(2)
+    );
+    assert_eq!(PrimKind::lookup("range-len").map(PrimKind::arity), Some(2));
     assert!(PrimKind::lookup("frobnicate").is_none());
 }
 

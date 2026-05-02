@@ -1,9 +1,11 @@
-//! Type and effect signatures for built-in @name primitives (ADR 0028, 0030, 0042, 0047, 0061).
+//! Type and effect signatures for built-in @name primitives (ADR 0028, 0030, 0042, 0047, 0061, 0062).
 //!
 //! Effect sets mirror `stdlib/libc-effects.toml` (ADR 0025, consumed in Stage 3).
 //! The canonical source for primitive effects is that TOML file; values here match it.
 //! Phase 3 additions (ADR 0047): PARSE, FORMAT, MEM categories, STACK-ALLOC extension.
-//! Library-mediated additions (ADR 0061): I64Vec allocation and element operations.
+//! Library-mediated additions:
+//! - ADR 0061: I64Vec allocation and element operations.
+//! - ADR 0062: text indexing into I64Vec range tables.
 
 use crate::ty::{EffAtom, EffSet, FnEff, Ty};
 
@@ -48,6 +50,14 @@ pub fn prim_type(name: &str) -> Option<Ty> {
         "i64-swap" => fn3_mut(Ty::I64Vec, Ty::Int, Ty::Int, Ty::Int),
         // I64VEC: i64-copy(dst, dst-index, src, src-index, count) -> Int / {Mut}
         "i64-copy" => fn5_mut(Ty::I64Vec, Ty::Int, Ty::I64Vec, Ty::Int, Ty::Int, Ty::Int),
+        // TEXT-INDEX: line-index(text: Buf, len: Int, table: I64Vec) -> Int / {Mut}
+        "line-index" => fn3_mut(Ty::Buf, Ty::Int, Ty::I64Vec, Ty::Int),
+        // TEXT-INDEX: token-index(text: Buf, off: Int, len: Int, delim: Int, table: I64Vec) -> Int / {Mut}
+        "token-index" => fn5_mut(Ty::Buf, Ty::Int, Ty::Int, Ty::Int, Ty::I64Vec, Ty::Int),
+        // RANGE-TABLE: range-start(table: I64Vec, index: Int) -> Int (pure)
+        "range-start" => fn2_pure(Ty::I64Vec, Ty::Int, Ty::Int),
+        // RANGE-TABLE: range-len(table: I64Vec, index: Int) -> Int (pure)
+        "range-len" => fn2_pure(Ty::I64Vec, Ty::Int, Ty::Int),
         // ARITH: Int → Int → Int (pure)
         "add" | "sub" | "mul" | "div" | "mod" => fn2_pure(Ty::Int, Ty::Int, Ty::Int),
         // CMP: Int → Int → Bool (pure, ADR 0042)
@@ -80,7 +90,14 @@ pub fn is_alloc_prim(name: &str) -> bool {
 pub fn is_mut_prim(name: &str) -> bool {
     matches!(
         name,
-        "buf-set" | "buf-copy" | "fmt-i64" | "i64-set" | "i64-swap" | "i64-copy"
+        "buf-set"
+            | "buf-copy"
+            | "fmt-i64"
+            | "i64-set"
+            | "i64-swap"
+            | "i64-copy"
+            | "line-index"
+            | "token-index"
     )
 }
 

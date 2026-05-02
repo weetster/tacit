@@ -1,23 +1,11 @@
 let input = @buf-alloc 1000000 in
 let len = @read 0 input 1000000 in
-let spans = @i64-alloc 200002 in
+let spans = @i64-alloc (@add (@mul len 2) 2) in
 let one = @buf-alloc 1 in
-let n = rec {
-  line_end = lambda pos.
-    @scan-byte input pos (@sub len pos) 10;
-  next_line = lambda end.
-    if @ge end len then len else @add end 1;
-  load = lambda pos. lambda i.
-    if @ge pos len then i else
-      let e = line_end pos in
-      let off = @mul i 2 in
-      let _ = @i64-set spans off pos in
-      let _ = @i64-set spans (@add off 1) (@sub e pos) in
-      load (next_line e) (@add i 1)
-} in load 0 0 in
+let n = @line-index input len spans in
 rec {
-  start = lambda i. @i64-get spans (@mul i 2);
-  slen = lambda i. @i64-get spans (@add (@mul i 2) 1);
+  start = lambda i. @range-start spans i;
+  slen = lambda i. @range-len spans i;
   span_lt_loop = lambda ao. lambda al. lambda bo. lambda bl. lambda j.
     if @ge j al then @lt al bl else
     if @ge j bl then @eq 1 0 else

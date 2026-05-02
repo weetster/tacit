@@ -1,4 +1,4 @@
-//! `@name` primitive allowlist and classification (ADR 0028, 0030, 0038, 0047, 0061).
+//! `@name` primitive allowlist and classification (ADR 0028, 0030, 0038, 0047, 0061, 0062).
 //!
 //! Categories per ADR 0028 + 0030 + 0038 + 0047:
 //! - LIBC: external libc call (`write`, `read`, `exit`).
@@ -10,6 +10,8 @@
 //! - FORMAT: inline decimal integer formatting (ADR 0047).
 //! - I64VEC-ALLOC: `@i64-alloc` (runtime i64 element count, ADR 0061).
 //! - I64VEC: inline i64 vector operations (ADR 0061).
+//! - TEXT-INDEX: inline text boundary indexing into I64Vec range tables (ADR 0062).
+//! - RANGE-TABLE: I64Vec start/length pair accessors (ADR 0062).
 //!
 //! Codegen pattern-matches an `App` left-spine whose head is `Sym(name)`,
 //! looks up `name` here, collects right-spine args, and emits accordingly.
@@ -50,6 +52,14 @@ pub enum PrimKind {
     I64Swap,
     /// Overlap-safe i64 element copy (ADR 0061): `dst dst-index src src-index count → i64`.
     I64Copy,
+    /// Index LF-delimited line ranges into an I64Vec pair table (ADR 0062).
+    LineIndex,
+    /// Index delimiter-separated token ranges into an I64Vec pair table (ADR 0062).
+    TokenIndex,
+    /// Load the start field for a range-table row (ADR 0062).
+    RangeStart,
+    /// Load the length field for a range-table row (ADR 0062).
+    RangeLen,
     /// Binary `i64 → i64 → i64` arithmetic, lowering as a single LLVM op.
     Arith(ArithOp),
     /// Binary `i64 → i64 → i64` comparison: emits `icmp` + `zext`.
@@ -95,6 +105,10 @@ impl PrimKind {
             "i64-set" => PrimKind::I64Set,
             "i64-swap" => PrimKind::I64Swap,
             "i64-copy" => PrimKind::I64Copy,
+            "line-index" => PrimKind::LineIndex,
+            "token-index" => PrimKind::TokenIndex,
+            "range-start" => PrimKind::RangeStart,
+            "range-len" => PrimKind::RangeLen,
             "add" => PrimKind::Arith(ArithOp::Add),
             "sub" => PrimKind::Arith(ArithOp::Sub),
             "mul" => PrimKind::Arith(ArithOp::Mul),
@@ -115,14 +129,15 @@ impl PrimKind {
         match self {
             PrimKind::Write | PrimKind::Read => 3,
             PrimKind::Exit | PrimKind::BufAlloc | PrimKind::BufAllocDyn | PrimKind::I64Alloc => 1,
-            PrimKind::BufGet | PrimKind::I64Get => 2,
+            PrimKind::BufGet | PrimKind::I64Get | PrimKind::RangeStart | PrimKind::RangeLen => 2,
             PrimKind::BufSet
             | PrimKind::ParseI64
             | PrimKind::FmtI64
             | PrimKind::I64Set
-            | PrimKind::I64Swap => 3,
+            | PrimKind::I64Swap
+            | PrimKind::LineIndex => 3,
             PrimKind::ScanByte => 4,
-            PrimKind::BufCopy | PrimKind::BufEq | PrimKind::I64Copy => 5,
+            PrimKind::BufCopy | PrimKind::BufEq | PrimKind::I64Copy | PrimKind::TokenIndex => 5,
             PrimKind::Arith(_) | PrimKind::Cmp(_) => 2,
         }
     }
@@ -187,6 +202,10 @@ mod tests {
         assert_eq!(PrimKind::lookup("i64-set"), Some(PrimKind::I64Set));
         assert_eq!(PrimKind::lookup("i64-swap"), Some(PrimKind::I64Swap));
         assert_eq!(PrimKind::lookup("i64-copy"), Some(PrimKind::I64Copy));
+        assert_eq!(PrimKind::lookup("line-index"), Some(PrimKind::LineIndex));
+        assert_eq!(PrimKind::lookup("token-index"), Some(PrimKind::TokenIndex));
+        assert_eq!(PrimKind::lookup("range-start"), Some(PrimKind::RangeStart));
+        assert_eq!(PrimKind::lookup("range-len"), Some(PrimKind::RangeLen));
     }
 
     #[test]
@@ -207,6 +226,10 @@ mod tests {
         assert_eq!(PrimKind::I64Set.arity(), 3);
         assert_eq!(PrimKind::I64Swap.arity(), 3);
         assert_eq!(PrimKind::I64Copy.arity(), 5);
+        assert_eq!(PrimKind::LineIndex.arity(), 3);
+        assert_eq!(PrimKind::TokenIndex.arity(), 5);
+        assert_eq!(PrimKind::RangeStart.arity(), 2);
+        assert_eq!(PrimKind::RangeLen.arity(), 2);
         assert_eq!(PrimKind::Arith(ArithOp::Add).arity(), 2);
         assert_eq!(PrimKind::Cmp(CmpOp::Lt).arity(), 2);
     }

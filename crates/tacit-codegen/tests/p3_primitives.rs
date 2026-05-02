@@ -261,3 +261,52 @@ fn i64_copy_overlap_same_vector() {
     assert!(out.is_empty());
     assert_eq!(code, 23);
 }
+
+// ── @line-index / @token-index / @range-start / @range-len ───────────────────
+
+#[test]
+fn range_accessors_read_pair_fields() {
+    // table rows [(7,4), (9,2)]; row 1 start and row 0 len → 94
+    let (out, code) = run_p3("p3-range-accessors");
+    assert!(out.is_empty());
+    assert_eq!(code, 94);
+}
+
+#[test]
+fn line_index_empty_input_returns_zero_rows() {
+    let (out, code) = run_p3("p3-line-index-empty");
+    assert!(out.is_empty());
+    assert_eq!(code, 0);
+}
+
+#[test]
+fn line_index_no_trailing_lf_emits_final_segment() {
+    // "AB" → one row of length 2; encoded result is 12
+    let (out, code) = run_p3("p3-line-index-basic");
+    assert!(out.is_empty());
+    assert_eq!(code, 12);
+}
+
+#[test]
+fn line_index_preserves_empty_lines_but_not_final_extra_row() {
+    // "\nA\n\n" → rows: "", "A", ""; encoded result is 125
+    let (out, code) = run_p3("p3-line-index-edge");
+    assert!(out.is_empty());
+    assert_eq!(code, 125);
+}
+
+#[test]
+fn token_index_empty_input_returns_zero_rows() {
+    let (out, code) = run_p3("p3-token-index-empty");
+    assert!(out.is_empty());
+    assert_eq!(code, 0);
+}
+
+#[test]
+fn token_index_skips_delims_and_uses_absolute_offsets() {
+    // In "xx a  b yy", indexing text[2..8) with delimiter low byte 32 gives
+    // rows for "a" at 3 and "b" at 6; encoded result is 116.
+    let (out, code) = run_p3("p3-token-index-offset");
+    assert!(out.is_empty());
+    assert_eq!(code, 116);
+}

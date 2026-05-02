@@ -632,9 +632,9 @@ use.
 Do not build an integer array with `@buf-set vals i value` unless `value` is
 known to stay in `0..255`. Negative numbers and values above 255 will not be
 stored as full integers. For sorting or indexed access to parsed integers,
-prefer one of these shapes: rescan the input to find the nth token, store byte
-offsets into the original input using multiple buffer cells per offset, or
-carry the few needed integer values in recursive state.
+use `I64Vec` storage when it is available. For tiny programs, rescanning the
+input or carrying the few needed integer values in recursive state can still
+be simpler.
 
 Fresh buffers are not guaranteed to contain zeroes. If you later read a cell,
 write that cell first. This is especially important for flags such as
@@ -867,16 +867,24 @@ Comparison: `@eq`, `@ne`, `@lt`, `@le`, `@gt`, `@ge`.
 
 IO: `@read`, `@write`, `@exit`.
 
-Allocation: `@buf-alloc`, `@buf-alloc-dyn`.
+Allocation: `@buf-alloc`, `@buf-alloc-dyn`, `@i64-alloc`.
 
 Buffer mutation and inspection: `@buf-get`, `@buf-set`, `@buf-copy`,
 `@buf-eq`, `@scan-byte`.
+
+Integer vector storage: `@i64-get`, `@i64-set`, `@i64-swap`, `@i64-copy`.
+
+Text range indexing: `@line-index`, `@token-index`, `@range-start`,
+`@range-len`.
 
 Parsing and formatting: `@parse-i64`, `@fmt-i64`.
 
 The primitive call shape is part of the language contract. For example,
 `@buf-copy dst dst_off src src_off len` mutates `dst` and returns an `Int`;
 `@buf-eq a a_off b b_off len` is pure and returns an `Int` flag.
+`@line-index text len table` and
+`@token-index text off len delim table` mutate `table` and return the number
+of rows written.
 
 ### Program Boundary
 
@@ -984,6 +992,8 @@ effect includes `Div` because Tacit-Lite does not prove recursion terminates.
 
 `let b = @buf-alloc 32 in @fmt-i64 b 0 42`: `{Alloc, Mut}`.
 
+`let xs = @i64-alloc 2 in @i64-set xs 0 7`: `{Alloc, Mut}`.
+
 `let b = @buf-alloc 32 in let w = @fmt-i64 b 0 42 in @write 1 b w`:
 `{Alloc, IO, Mut}`.
 
@@ -998,9 +1008,10 @@ missing effects to the declaration or annotation if the program is otherwise
 correct.
 
 When an effect appears surprising, find the innermost primitive that creates
-it. `Mut` usually comes from `@buf-set`, `@buf-copy`, `@fmt-i64`, or
-`@read`. `IO` comes from `@read`, `@write`, or `@exit`. `Alloc` comes from a
-buffer allocation primitive. `Div` comes from recursion, division, or modulo.
+it. `Mut` usually comes from `@buf-set`, `@buf-copy`, `@fmt-i64`, `@read`,
+`@i64-set`, `@i64-copy`, `@line-index`, or `@token-index`. `IO` comes from
+`@read`, `@write`, or `@exit`. `Alloc` comes from allocation primitives.
+`Div` comes from recursion, division, or modulo.
 
 ## 5. Negative Examples And Diagnostics
 
@@ -1717,15 +1728,16 @@ transformation is in-place and safe.
 
 Do not infer features that are intentionally absent. No list syntax, no
 implicit string iteration, no Python-style slicing, no automatic stdout
-printing, no mutable locals except through explicit buffers, no heap
-allocation, and no hidden standard library. If the program needs a table,
-encode the needed state directly with buffers or integers. If the program
-needs a string operation, use byte buffers and the primitives listed in this
+printing, no mutable locals except through explicit storage primitives, no
+heap allocation, and no hidden operations beyond the primitives listed here.
+If the program needs a table, encode the needed state directly with byte
+buffers, `I64Vec`, or recursive integer state. If the program needs a string
+operation, use byte buffers, range tables, and the primitives listed in this
 primer.
 If a shorter solution would need a missing abstraction, write the explicit
 one.
 
-## Stdlib Appendix: I64Vec
+## Stdlib Appendix: Indexed Storage And Text Ranges
 
 Use `I64Vec` when a program needs indexed storage for full integer values.
 Byte-oriented buffers still handle raw input/output bytes; an `I64Vec` keeps
@@ -1757,6 +1769,8 @@ rec {fill = lambda i.
 
 To store paired ranges or other two-column data, use two consecutive slots per
 row. For row `i`, the first slot is `2*i` and the second slot is `2*i+1`.
+Use `@range-start` and `@range-len` when those two slots represent a byte
+range.
 
 ```tacit
 let ranges = @i64-alloc 4 in
@@ -1764,10 +1778,36 @@ let _ = @i64-set ranges 0 5 in
 let _ = @i64-set ranges 1 3 in
 let _ = @i64-set ranges 2 12 in
 let _ = @i64-set ranges 3 2 in
-let start = @i64-get ranges (@mul 1 2) in
-let len = @i64-get ranges (@add (@mul 1 2) 1) in
+let start = @range-start ranges 1 in
+let len = @range-len ranges 1 in
 @add start len
 ```
 
 To output a vector element, read it into an integer value, format that value
 into output bytes, then write the byte count returned by formatting.
+
+`@line-index text len table` scans `text[0..len)` into line ranges. A line
+range excludes the LF byte. Empty lines between LF bytes are kept; a final LF
+does not add one more empty row. Allocate two `I64Vec` slots per possible
+row, then use the returned count as the row bound.
+
+```tacit
+let text = @buf-alloc 128 in
+let n = @read 0 text 128 in
+let lines = @i64-alloc (@mul n 2) in
+let line_count = @line-index text n lines in
+if @eq line_count 0 then 0 else @range-len lines 0
+```
+
+`@token-index text off len delim table` scans `text[off..off+len)` into
+non-empty byte runs separated by the low byte of `delim`. Leading, trailing,
+and repeated delimiters are skipped. Stored starts are absolute byte offsets
+into `text`, not offsets relative to `off`.
+
+```tacit
+let text = @buf-alloc 128 in
+let n = @read 0 text 128 in
+let words = @i64-alloc (@mul n 2) in
+let word_count = @token-index text 0 n 32 words in
+word_count
+```

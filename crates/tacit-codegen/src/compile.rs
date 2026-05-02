@@ -572,6 +572,10 @@ impl<'ctx> Compiler<'ctx> {
             PrimKind::I64Set => self.emit_i64_set(args, env, cur_fn),
             PrimKind::I64Swap => self.emit_i64_swap(args, env, cur_fn),
             PrimKind::I64Copy => self.emit_i64_copy(args, env, cur_fn),
+            PrimKind::LineIndex => self.emit_line_index(args, env, cur_fn),
+            PrimKind::TokenIndex => self.emit_token_index(args, env, cur_fn),
+            PrimKind::RangeStart => self.emit_range_start(args, env, cur_fn),
+            PrimKind::RangeLen => self.emit_range_len(args, env, cur_fn),
         }
     }
 
@@ -1006,7 +1010,30 @@ impl<'ctx> Compiler<'ctx> {
         Ok(())
     }
 
-    // ── Phase 3 emit functions (ADR 0047, ADR 0061) ──────────────────────────────
+    fn store_range_pair(
+        &mut self,
+        table: PointerValue<'ctx>,
+        row: IntValue<'ctx>,
+        start: IntValue<'ctx>,
+        len: IntValue<'ctx>,
+    ) -> Result<()> {
+        let i64_t = self.context.i64_type();
+        let two64 = i64_t.const_int(2, false);
+        let one64 = i64_t.const_int(1, false);
+        let base = self
+            .builder
+            .build_int_mul(row, two64, "range_base")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let len_index = self
+            .builder
+            .build_int_add(base, one64, "range_len_index")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.store_i64(table, base, start)?;
+        self.store_i64(table, len_index, len)?;
+        Ok(())
+    }
+
+    // ── Phase 3 emit functions (ADR 0047, ADR 0061, ADR 0062) ────────────────────
 
     /// `@buf-get buf off` → load `buf[off]` as `i64`.
     fn emit_buf_get(
@@ -1162,6 +1189,370 @@ impl<'ctx> Compiler<'ctx> {
             )
             .map_err(|e| CodegenError::Llvm(e.to_string()))?;
         Ok(i64_t.const_zero())
+    }
+
+    /// `@range-start table index` → load `table[2 * index]`.
+    fn emit_range_start(
+        &mut self,
+        args: &[&Node],
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<IntValue<'ctx>> {
+        let table = self.compile_i64_vec_arg(args[0], env)?;
+        let index = self.compile_expr(args[1], env, cur_fn)?;
+        let two64 = self.context.i64_type().const_int(2, false);
+        let field_index = self
+            .builder
+            .build_int_mul(index, two64, "range_start_index")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.load_i64(table, field_index, "range_start")
+    }
+
+    /// `@range-len table index` → load `table[2 * index + 1]`.
+    fn emit_range_len(
+        &mut self,
+        args: &[&Node],
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<IntValue<'ctx>> {
+        let table = self.compile_i64_vec_arg(args[0], env)?;
+        let index = self.compile_expr(args[1], env, cur_fn)?;
+        let i64_t = self.context.i64_type();
+        let two64 = i64_t.const_int(2, false);
+        let one64 = i64_t.const_int(1, false);
+        let base = self
+            .builder
+            .build_int_mul(index, two64, "range_len_base")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let field_index = self
+            .builder
+            .build_int_add(base, one64, "range_len_index")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.load_i64(table, field_index, "range_len")
+    }
+
+    /// `@line-index text len table` → write LF-delimited start/length pairs; return row count.
+    fn emit_line_index(
+        &mut self,
+        args: &[&Node],
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<IntValue<'ctx>> {
+        let text = self.compile_buf_ptr_arg(args[0], env)?;
+        let len = self.compile_expr(args[1], env, cur_fn)?;
+        let table = self.compile_i64_vec_arg(args[2], env)?;
+
+        let i64_t = self.context.i64_type();
+        let zero64 = i64_t.const_zero();
+        let one64 = i64_t.const_int(1, false);
+        let lf64 = i64_t.const_int(10, false);
+
+        let entry_bb = self.builder.get_insert_block().unwrap();
+        let hdr_bb = self.context.append_basic_block(cur_fn, "li_hdr");
+        let check_bb = self.context.append_basic_block(cur_fn, "li_chk");
+        let emit_newline_bb = self.context.append_basic_block(cur_fn, "li_emit_nl");
+        let cont_bb = self.context.append_basic_block(cur_fn, "li_cont");
+        let final_bb = self.context.append_basic_block(cur_fn, "li_final");
+        let emit_final_bb = self.context.append_basic_block(cur_fn, "li_emit_final");
+        let ret_bb = self.context.append_basic_block(cur_fn, "li_ret");
+
+        self.builder
+            .build_unconditional_branch(hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(hdr_bb);
+        let i_phi = self
+            .builder
+            .build_phi(i64_t, "li_i")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let start_phi = self
+            .builder
+            .build_phi(i64_t, "li_start")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let count_phi = self
+            .builder
+            .build_phi(i64_t, "li_count")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let i_val = i_phi.as_basic_value().into_int_value();
+        let start_val = start_phi.as_basic_value().into_int_value();
+        let count_val = count_phi.as_basic_value().into_int_value();
+        let past_end = self
+            .builder
+            .build_int_compare(IntPredicate::SGE, i_val, len, "li_done")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(past_end, final_bb, check_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(check_bb);
+        let byte = self.load_byte(text, i_val, "li_byte")?;
+        let is_lf = self
+            .builder
+            .build_int_compare(IntPredicate::EQ, byte, lf64, "li_is_lf")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(is_lf, emit_newline_bb, cont_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(cont_bb);
+        let i_next_cont = self
+            .builder
+            .build_int_add(i_val, one64, "li_i_next")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_unconditional_branch(hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(emit_newline_bb);
+        let line_len = self
+            .builder
+            .build_int_sub(i_val, start_val, "li_line_len")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.store_range_pair(table, count_val, start_val, line_len)?;
+        let count_next = self
+            .builder
+            .build_int_add(count_val, one64, "li_count_next")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let start_next = self
+            .builder
+            .build_int_add(i_val, one64, "li_start_next")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let i_next_newline = start_next;
+        self.builder
+            .build_unconditional_branch(hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        i_phi.add_incoming(&[
+            (&zero64 as &dyn BasicValue<'ctx>, entry_bb),
+            (&i_next_cont as &dyn BasicValue<'ctx>, cont_bb),
+            (&i_next_newline as &dyn BasicValue<'ctx>, emit_newline_bb),
+        ]);
+        start_phi.add_incoming(&[
+            (&zero64 as &dyn BasicValue<'ctx>, entry_bb),
+            (&start_val as &dyn BasicValue<'ctx>, cont_bb),
+            (&start_next as &dyn BasicValue<'ctx>, emit_newline_bb),
+        ]);
+        count_phi.add_incoming(&[
+            (&zero64 as &dyn BasicValue<'ctx>, entry_bb),
+            (&count_val as &dyn BasicValue<'ctx>, cont_bb),
+            (&count_next as &dyn BasicValue<'ctx>, emit_newline_bb),
+        ]);
+
+        self.builder.position_at_end(final_bb);
+        let has_final = self
+            .builder
+            .build_int_compare(IntPredicate::SLT, start_val, len, "li_has_final")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(has_final, emit_final_bb, ret_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(emit_final_bb);
+        let final_len = self
+            .builder
+            .build_int_sub(len, start_val, "li_final_len")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.store_range_pair(table, count_val, start_val, final_len)?;
+        let final_count = self
+            .builder
+            .build_int_add(count_val, one64, "li_final_count")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_unconditional_branch(ret_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(ret_bb);
+        let ret_phi = self
+            .builder
+            .build_phi(i64_t, "li_ret")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        ret_phi.add_incoming(&[
+            (&count_val as &dyn BasicValue<'ctx>, final_bb),
+            (&final_count as &dyn BasicValue<'ctx>, emit_final_bb),
+        ]);
+        Ok(ret_phi.as_basic_value().into_int_value())
+    }
+
+    /// `@token-index text off len delim table` → write non-empty token ranges; return count.
+    fn emit_token_index(
+        &mut self,
+        args: &[&Node],
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<IntValue<'ctx>> {
+        let text = self.compile_buf_ptr_arg(args[0], env)?;
+        let off = self.compile_expr(args[1], env, cur_fn)?;
+        let len = self.compile_expr(args[2], env, cur_fn)?;
+        let delim = self.compile_expr(args[3], env, cur_fn)?;
+        let table = self.compile_i64_vec_arg(args[4], env)?;
+
+        let i64_t = self.context.i64_type();
+        let i8_t = self.context.i8_type();
+        let zero64 = i64_t.const_zero();
+        let one64 = i64_t.const_int(1, false);
+        let delim8 = self
+            .builder
+            .build_int_truncate(delim, i8_t, "ti_delim8")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let end = self
+            .builder
+            .build_int_add(off, len, "ti_end")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        let entry_bb = self.builder.get_insert_block().unwrap();
+        let skip_hdr_bb = self.context.append_basic_block(cur_fn, "ti_skip_hdr");
+        let skip_check_bb = self.context.append_basic_block(cur_fn, "ti_skip_chk");
+        let skip_delim_bb = self.context.append_basic_block(cur_fn, "ti_skip_delim");
+        let scan_hdr_bb = self.context.append_basic_block(cur_fn, "ti_scan_hdr");
+        let scan_check_bb = self.context.append_basic_block(cur_fn, "ti_scan_chk");
+        let scan_cont_bb = self.context.append_basic_block(cur_fn, "ti_scan_cont");
+        let emit_delim_bb = self.context.append_basic_block(cur_fn, "ti_emit_delim");
+        let emit_eof_bb = self.context.append_basic_block(cur_fn, "ti_emit_eof");
+        let ret_bb = self.context.append_basic_block(cur_fn, "ti_ret");
+
+        self.builder
+            .build_unconditional_branch(skip_hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(skip_hdr_bb);
+        let i_phi = self
+            .builder
+            .build_phi(i64_t, "ti_i")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let count_phi = self
+            .builder
+            .build_phi(i64_t, "ti_count")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let i_val = i_phi.as_basic_value().into_int_value();
+        let count_val = count_phi.as_basic_value().into_int_value();
+        let past_end = self
+            .builder
+            .build_int_compare(IntPredicate::SGE, i_val, end, "ti_done")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(past_end, ret_bb, skip_check_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(skip_check_bb);
+        let skip_ptr = self.ptr_at(text, i_val, "ti_skip_ptr")?;
+        let skip_byte = self
+            .builder
+            .build_load(i8_t, skip_ptr, "ti_skip_byte")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?
+            .into_int_value();
+        let skip_is_delim = self
+            .builder
+            .build_int_compare(IntPredicate::EQ, skip_byte, delim8, "ti_skip_is_delim")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(skip_is_delim, skip_delim_bb, scan_hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(skip_delim_bb);
+        let i_after_delim = self
+            .builder
+            .build_int_add(i_val, one64, "ti_i_after_delim")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_unconditional_branch(skip_hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(scan_hdr_bb);
+        let j_phi = self
+            .builder
+            .build_phi(i64_t, "ti_j")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let j_val = j_phi.as_basic_value().into_int_value();
+        let token_reaches_end = self
+            .builder
+            .build_int_compare(IntPredicate::SGE, j_val, end, "ti_token_done")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(token_reaches_end, emit_eof_bb, scan_check_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(scan_check_bb);
+        let scan_ptr = self.ptr_at(text, j_val, "ti_scan_ptr")?;
+        let scan_byte = self
+            .builder
+            .build_load(i8_t, scan_ptr, "ti_scan_byte")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?
+            .into_int_value();
+        let scan_is_delim = self
+            .builder
+            .build_int_compare(IntPredicate::EQ, scan_byte, delim8, "ti_scan_is_delim")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(scan_is_delim, emit_delim_bb, scan_cont_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(scan_cont_bb);
+        let j_next = self
+            .builder
+            .build_int_add(j_val, one64, "ti_j_next")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_unconditional_branch(scan_hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        j_phi.add_incoming(&[
+            (&i_val as &dyn BasicValue<'ctx>, skip_check_bb),
+            (&j_next as &dyn BasicValue<'ctx>, scan_cont_bb),
+        ]);
+
+        self.builder.position_at_end(emit_delim_bb);
+        let token_len = self
+            .builder
+            .build_int_sub(j_val, i_val, "ti_token_len")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.store_range_pair(table, count_val, i_val, token_len)?;
+        let count_next = self
+            .builder
+            .build_int_add(count_val, one64, "ti_count_next")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let i_after_token = self
+            .builder
+            .build_int_add(j_val, one64, "ti_i_after_token")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_unconditional_branch(skip_hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        i_phi.add_incoming(&[
+            (&off as &dyn BasicValue<'ctx>, entry_bb),
+            (&i_after_delim as &dyn BasicValue<'ctx>, skip_delim_bb),
+            (&i_after_token as &dyn BasicValue<'ctx>, emit_delim_bb),
+        ]);
+        count_phi.add_incoming(&[
+            (&zero64 as &dyn BasicValue<'ctx>, entry_bb),
+            (&count_val as &dyn BasicValue<'ctx>, skip_delim_bb),
+            (&count_next as &dyn BasicValue<'ctx>, emit_delim_bb),
+        ]);
+
+        self.builder.position_at_end(emit_eof_bb);
+        let final_len = self
+            .builder
+            .build_int_sub(end, i_val, "ti_final_len")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.store_range_pair(table, count_val, i_val, final_len)?;
+        let final_count = self
+            .builder
+            .build_int_add(count_val, one64, "ti_final_count")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_unconditional_branch(ret_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(ret_bb);
+        let ret_phi = self
+            .builder
+            .build_phi(i64_t, "ti_ret")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        ret_phi.add_incoming(&[
+            (&count_val as &dyn BasicValue<'ctx>, skip_hdr_bb),
+            (&final_count as &dyn BasicValue<'ctx>, emit_eof_bb),
+        ]);
+        Ok(ret_phi.as_basic_value().into_int_value())
     }
 
     /// `@buf-eq a a-off b b-off len` → inline byte-compare loop; returns 0 or 1.
