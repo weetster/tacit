@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import sys
 import tomllib
+from dataclasses import dataclass
 from pathlib import Path
 
 import tiktoken
@@ -20,6 +21,17 @@ from tacit_corpus._paths import CORPUS_ROOT, iter_task_dirs, rel_to_corpus
 
 DOMINANCE_FILE = CORPUS_ROOT / "stdlib-dominance.toml"
 MISSING = "-"
+LABEL_WIDTH = 56
+
+
+@dataclass(frozen=True)
+class TokenRow:
+    task: str
+    stdlib_dominated: bool
+    python: int
+    tacit: int | None
+    stdlib_tacit: int | None
+    rust: int
 
 
 def load_dominance_map() -> dict[str, bool]:
@@ -32,17 +44,153 @@ def task_key(task_dir: Path) -> str:
     return f"{task_dir.parent.name}/{task_dir.name}"
 
 
-def delta(py_n: int, tacit_n: int | None) -> str:
-    if tacit_n is None:
+def delta(base_n: int | None, candidate_n: int | None) -> str:
+    if base_n is None or candidate_n is None:
         return MISSING
-    if py_n == 0:
+    if base_n == 0:
         return "n/a"
-    pct = ((tacit_n - py_n) / py_n) * 100
+    pct = ((candidate_n - base_n) / base_n) * 100
     return f"{pct:+.0f}%"
 
 
 def fmt_count(value: int | None) -> str:
     return MISSING if value is None else str(value)
+
+
+def build_rows(
+    task_dirs: list[Path],
+    dominance: dict[str, bool],
+    enc: tiktoken.Encoding,
+) -> list[TokenRow]:
+    rows: list[TokenRow] = []
+    for task_dir in task_dirs:
+        rel = rel_to_corpus(task_dir)
+        py = (task_dir / "reference.py").read_text()
+        rs = (task_dir / "reference.rs").read_text()
+        tacit_path = task_dir / "reference.tac"
+        stdlib_tacit_path = task_dir / "reference.stdlib.tac"
+        tacit = tacit_path.read_text() if tacit_path.is_file() else None
+        stdlib_tacit = (
+            stdlib_tacit_path.read_text() if stdlib_tacit_path.is_file() else None
+        )
+        rows.append(
+            TokenRow(
+                task=rel,
+                stdlib_dominated=dominance[task_key(task_dir)],
+                python=len(enc.encode(py)),
+                tacit=len(enc.encode(tacit)) if tacit is not None else None,
+                stdlib_tacit=(
+                    len(enc.encode(stdlib_tacit)) if stdlib_tacit is not None else None
+                ),
+                rust=len(enc.encode(rs)),
+            )
+        )
+    return rows
+
+
+def _total_line(
+    label: str,
+    *,
+    python: int,
+    tacit: int | None = None,
+    stdlib_tacit: int | None = None,
+    rust: int | None = None,
+) -> str:
+    return (
+        f"{label:<{LABEL_WIDTH}} {'':>3} {python:>6} "
+        f"{fmt_count(tacit):>6} {fmt_count(stdlib_tacit):>7} "
+        f"{fmt_count(rust):>6} {delta(python, tacit):>7} "
+        f"{delta(python, stdlib_tacit):>7} {delta(tacit, stdlib_tacit):>8}"
+    )
+
+
+def _scope_rows(rows: list[TokenRow], *, dominated: bool | None = None) -> list[TokenRow]:
+    if dominated is None:
+        return rows
+    return [row for row in rows if row.stdlib_dominated is dominated]
+
+
+def render_report(rows: list[TokenRow], scope: str) -> str:
+    lines = [
+        f"{'task':<{LABEL_WIDTH}} {'dom':>3} {'py':>6} {'tacit':>6} "
+        f"{'stdlib':>7} {'rs':>6} {'tacΔ':>7} {'stdΔ':>7} {'std/tac':>8}",
+        "-" * 118,
+    ]
+
+    for row in rows:
+        flag = "D" if row.stdlib_dominated else "-"
+        lines.append(
+            f"{row.task:<{LABEL_WIDTH}} {flag:>3} {row.python:>6} "
+            f"{fmt_count(row.tacit):>6} {fmt_count(row.stdlib_tacit):>7} "
+            f"{row.rust:>6} {delta(row.python, row.tacit):>7} "
+            f"{delta(row.python, row.stdlib_tacit):>7} "
+            f"{delta(row.tacit, row.stdlib_tacit):>8}"
+        )
+
+    lines.append("-" * 118)
+
+    scopes = [
+        ("all", None),
+        ("stdlib-dominated", True),
+        ("non-stdlib-dominated", False),
+    ]
+
+    for label_suffix, dominated in scopes:
+        bucket = _scope_rows(rows, dominated=dominated)
+        lines.append(
+            _total_line(
+                f"TOTAL ({scope}, Python/Rust {label_suffix})",
+                python=sum(row.python for row in bucket),
+                rust=sum(row.rust for row in bucket),
+            )
+        )
+
+    for label_suffix, dominated in scopes:
+        bucket = [
+            row for row in _scope_rows(rows, dominated=dominated) if row.tacit is not None
+        ]
+        lines.append(
+            _total_line(
+                f"TOTAL ({scope}, Tacit refs {label_suffix}; n={len(bucket)})",
+                python=sum(row.python for row in bucket),
+                tacit=sum(row.tacit for row in bucket if row.tacit is not None),
+            )
+        )
+
+    for label_suffix, dominated in scopes:
+        bucket = [
+            row
+            for row in _scope_rows(rows, dominated=dominated)
+            if row.stdlib_tacit is not None
+        ]
+        lines.append(
+            _total_line(
+                f"TOTAL ({scope}, Stdlib Tacit refs {label_suffix}; n={len(bucket)})",
+                python=sum(row.python for row in bucket),
+                stdlib_tacit=sum(
+                    row.stdlib_tacit for row in bucket if row.stdlib_tacit is not None
+                ),
+            )
+        )
+
+    for label_suffix, dominated in scopes:
+        bucket = [
+            row
+            for row in _scope_rows(rows, dominated=dominated)
+            if row.tacit is not None and row.stdlib_tacit is not None
+        ]
+        lines.append(
+            _total_line(
+                f"TOTAL ({scope}, Stdlib vs Tacit paired {label_suffix}; n={len(bucket)})",
+                python=sum(row.python for row in bucket),
+                tacit=sum(row.tacit for row in bucket if row.tacit is not None),
+                stdlib_tacit=sum(
+                    row.stdlib_tacit for row in bucket if row.stdlib_tacit is not None
+                ),
+            )
+        )
+
+    return "\n".join(lines) + "\n"
 
 
 def main() -> None:
@@ -72,88 +220,8 @@ def main() -> None:
         )
         sys.exit(1)
 
-    rows: list[tuple[str, bool, int, int | None, int]] = []
-    for task_dir in task_dirs:
-        rel = rel_to_corpus(task_dir)
-        dom = dominance[task_key(task_dir)]
-        py = (task_dir / "reference.py").read_text()
-        rs = (task_dir / "reference.rs").read_text()
-        tacit_path = task_dir / "reference.tac"
-        tacit = tacit_path.read_text() if tacit_path.is_file() else None
-        rows.append(
-            (
-                rel,
-                dom,
-                len(enc.encode(py)),
-                len(enc.encode(tacit)) if tacit is not None else None,
-                len(enc.encode(rs)),
-            )
-        )
-
-    print(f"{'task':<44} {'dom':>3} {'py':>6} {'tacit':>6} {'rs':>6} {'delta':>7}")
-    print("-" * 80)
-
-    py_all = rs_all = 0
-    py_dom = rs_dom = 0
-    py_non = rs_non = 0
-    py_tacit_all = tacit_all = 0
-    py_tacit_dom = tacit_dom = 0
-    py_tacit_non = tacit_non = 0
-    tacit_ref_count = 0
-    for task, dom, py_n, tacit_n, rs_n in rows:
-        flag = "D" if dom else "-"
-        print(
-            f"{task:<44} {flag:>3} {py_n:>6} {fmt_count(tacit_n):>6} "
-            f"{rs_n:>6} {delta(py_n, tacit_n):>7}"
-        )
-        py_all += py_n
-        rs_all += rs_n
-        if dom:
-            py_dom += py_n
-            rs_dom += rs_n
-        else:
-            py_non += py_n
-            rs_non += rs_n
-        if tacit_n is not None:
-            tacit_ref_count += 1
-            py_tacit_all += py_n
-            tacit_all += tacit_n
-            if dom:
-                py_tacit_dom += py_n
-                tacit_dom += tacit_n
-            else:
-                py_tacit_non += py_n
-                tacit_non += tacit_n
-
     scope = "open+sealed" if args.include_sealed else "open"
-    print("-" * 80)
-    print(
-        f"{'TOTAL (' + scope + ', Python/Rust all)':<48} "
-        f"{py_all:>6} {MISSING:>6} {rs_all:>6} {MISSING:>7}"
-    )
-    print(
-        f"{'TOTAL (' + scope + ', Python/Rust stdlib-dominated)':<48} "
-        f"{py_dom:>6} {MISSING:>6} {rs_dom:>6} {MISSING:>7}"
-    )
-    print(
-        f"{'TOTAL (' + scope + ', Python/Rust non-stdlib-dominated)':<48} "
-        f"{py_non:>6} {MISSING:>6} {rs_non:>6} {MISSING:>7}"
-    )
-    print(
-        f"{'TOTAL (' + scope + ', Tacit refs all; n=' + str(tacit_ref_count) + ')':<48} "
-        f"{py_tacit_all:>6} {tacit_all:>6} {MISSING:>6} "
-        f"{delta(py_tacit_all, tacit_all):>7}"
-    )
-    print(
-        f"{'TOTAL (' + scope + ', Tacit refs stdlib-dominated)':<48} "
-        f"{py_tacit_dom:>6} {tacit_dom:>6} {MISSING:>6} "
-        f"{delta(py_tacit_dom, tacit_dom):>7}"
-    )
-    print(
-        f"{'TOTAL (' + scope + ', Tacit refs non-stdlib-dominated)':<48} "
-        f"{py_tacit_non:>6} {tacit_non:>6} {MISSING:>6} "
-        f"{delta(py_tacit_non, tacit_non):>7}"
-    )
+    print(render_report(build_rows(task_dirs, dominance, enc), scope), end="")
 
 
 if __name__ == "__main__":

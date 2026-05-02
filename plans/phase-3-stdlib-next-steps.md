@@ -212,6 +212,11 @@ Step 2 implementation note: `corpus-eval` supports
 and metrics, and primary Phase 3 gates are reporting-only for labelled
 library-mediated runs.
 
+Step 5 implementation note: `corpus-tokens` reports `reference.stdlib.tac`
+when present, with per-task `stdlib` / `stdΔ` / `std/tac` columns and aggregate
+rows for stdlib Tacit references plus the paired stdlib-vs-current Tacit
+subset.
+
 ## First Recommendation
 
 Start with Bundle A plus the smallest part of Bundle B needed to represent

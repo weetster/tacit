@@ -143,16 +143,20 @@ print a diff. The CI workflow in
 `corpus-verify-sealed`, `corpus-run`, and `corpus-run-tacit` on every push
 and pull request to `main`.
 
-`corpus-tokens` measures `reference.py`, `reference.tac` when present, and
-`reference.rs` with tiktoken's `o200k_base` encoding per
-[ADR 0001](../decisions/0001-target-tokenizer.md). Three aggregates are
-reported per [ADR 0021](../decisions/0021-corpus-stdlib-dominance-reporting.md):
-full, stdlib-dominated, and non-stdlib-dominated. During Stages 4–6, Tacit
+`corpus-tokens` measures `reference.py`, `reference.tac` when present,
+`reference.stdlib.tac` when present, and `reference.rs` with tiktoken's
+`o200k_base` encoding per [ADR 0001](../decisions/0001-target-tokenizer.md).
+Three aggregates are reported per
+[ADR 0021](../decisions/0021-corpus-stdlib-dominance-reporting.md): full,
+stdlib-dominated, and non-stdlib-dominated. During Stages 4–6, Tacit
 aggregates cover the implemented `reference.tac` subset; once all open
-references exist, those rows become the full Phase 3 Tacit side. The full and
-non-stdlib-dominated aggregates gate Phase 3; the stdlib-dominated aggregate
-is reported but not gated. Every task in scope must have an entry in
-[stdlib-dominance.toml](stdlib-dominance.toml) or the command errors.
+references exist, those rows become the full Phase 3 Tacit side. Stdlib
+Tacit aggregates are reported separately and paired rows compare
+`reference.stdlib.tac` against the corresponding `reference.tac`. The full
+and non-stdlib-dominated aggregates gate Phase 3; stdlib-mediated aggregates
+are reported but do not satisfy the primer-only gate. Every task in scope
+must have an entry in [stdlib-dominance.toml](stdlib-dominance.toml) or the
+command errors.
 
 `corpus-verify-sealed` is the load-bearing integrity check per
 [ADR 0020](../decisions/0020-sealing-held-out-in-repo.md). It walks

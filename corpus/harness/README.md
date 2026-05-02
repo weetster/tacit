@@ -29,9 +29,11 @@ test, `F` per failing test, then a summary with any failure details.
 `corpus-run-tacit` has the same output shape and intentionally runs only
 open tasks with `reference.tac` files.
 
-`corpus-tokens` reports `reference.py`, `reference.tac` when present, and
-`reference.rs` token counts per task and aggregate deltas over the implemented
-Tacit references. The aggregate Python count is the Phase 3 baseline per
+`corpus-tokens` reports `reference.py`, `reference.tac` when present,
+`reference.stdlib.tac` when present, and `reference.rs` token counts per task.
+It prints aggregate deltas for the implemented core-language Tacit references,
+the stdlib-mediated Tacit references, and the paired stdlib-vs-current Tacit
+subset. The aggregate Python count is the Phase 3 baseline per
 [ADR 0019](../../decisions/0019-corpus-idiom-rules.md).
 
 `corpus-eval` drives the Phase 3 model-generation loop and writes paired
