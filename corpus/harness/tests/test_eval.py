@@ -283,7 +283,11 @@ def test_repair_aggregates_report_final_recovery() -> None:
         ),
     )
 
-    aggregates = corpus_eval.repair_aggregates([recovered, first_passed], dry_run=False)
+    aggregates = corpus_eval.repair_aggregates(
+        [recovered, first_passed],
+        dry_run=False,
+        primer_tokens=10,
+    )
 
     assert aggregates["one_shot_task_pass_rate"] == 0.5
     assert aggregates["final_task_pass_rate"] == 1.0
@@ -291,7 +295,27 @@ def test_repair_aggregates_report_final_recovery() -> None:
     assert aggregates["compile_typecheck_recovery_rate"] == 1.0
     assert aggregates["average_model_calls_per_task"] == 1.5
     assert aggregates["total_model_calls"] == 3
+    assert aggregates["total_generation_tokens"] == 12
+    assert aggregates["repair_primer_tokens_total"] == 30
+    assert aggregates["repair_tacit_tokens_total"] == 42
+    assert aggregates["python_tokens_total"] == 40
+    assert aggregates["repair_token_delta"] == 0.05
+    assert aggregates["repair_primer_amortized_total"] == 22
     assert aggregates["total_api_calls"] == 3
+
+    gates = corpus_eval.primary_gates(
+        {
+            "full": {"tests_pass_rate": 0.5, "token_delta": 0.0},
+            "non_stdlib_dominated": {"token_delta": 0.0},
+            "repair": aggregates,
+        }
+    )
+
+    assert not gates["passed_overall"]
+    assert gates["repair_final_pass_rate_gate"]["passed"]
+    assert gates["repair_invalid_recovery_gate"]["passed"]
+    assert not gates["repair_behavioral_recovery_gate"]["passed"]
+    assert not gates["repair_promising_overall"]
 
 
 def test_load_tasks_accepts_numeric_selector() -> None:

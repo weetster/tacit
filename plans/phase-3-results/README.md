@@ -1,26 +1,25 @@
 # Phase 3 Results Note
 
-Status: regrouping note, written after the seventh open-only Sonnet run.
+Status: regrouping note, updated after the open repair-loop run.
 
-This note summarizes the paid Phase 3 primary-track runs currently recorded
-under this directory. It intentionally covers only the open task scope. No
-sealed task contents were read or used while writing this note.
+This note summarizes the paid Phase 3 Sonnet runs currently recorded under
+this directory. It intentionally covers only open task scope. No sealed task
+contents were read or used while writing this note.
 
 ## Scope
 
 - Provider/model: Anthropic `claude-sonnet-4-6`
-- Track: primary
-- Scope: open tasks only, 47 tasks
+- Track: primary, plus explicit repair-loop mode where noted
+- Scope: open tasks only
 - Sampling: temperature `0`, max output `8192`
 - Dates: runs completed between `2026-04-30T23:58:46Z` and
-  `2026-05-02T00:53:17Z`
+  `2026-05-02T04:52:24Z`
 
-No Haiku run and no sealed-scope run is summarized here. The reason is
-practical: the open-only Sonnet runs did not clear the correctness gate, so
-spending additional credits on sealed or weaker-model runs would not change
-the current go/no-go decision.
+No Haiku run and no sealed-scope run is summarized here. The reason remains
+practical: the one-shot open Sonnet result did not clear the correctness or
+token gate, and repair-loop sealed feedback policy is not settled.
 
-## Runs
+## One-Shot Runs
 
 | Run ID | Primer Tokens | Full Task Passes | Task Pass Rate | Compile Pass Rate | Typecheck Pass Rate | Token Delta |
 |---|---:|---:|---:|---:|---:|---:|
@@ -34,76 +33,97 @@ the current go/no-go decision.
 
 The Phase 3 primary correctness gate requires Sonnet to exceed 70% task pass
 rate on the primary corpus. On 47 open tasks, that would require at least
-33 full task passes. The best recorded open-only result is 29 full task
-passes. The latest run regressed to 24.
+33 full task passes. The best recorded standalone one-shot run is 29 full task
+passes. The repair-loop full run's turn 0 produced 30/47 under the same prompt
+shape, still short of the gate.
 
-## Failure Shape
+## Repair-Loop Runs
 
-The best recorded run, `019de600-a048-7beb-85d5-648bccd6fea3`, had:
+Repair-loop mode keeps the same primer and task prompt, then gives the model
+up to two additional turns with compiler/test feedback. These runs are not
+one-shot Phase 3 passes.
 
-- 29 full task passes
-- 10 compile, extraction, or type failures
-- 8 behavioral failures after producing runnable Tacit
+| Run ID | Scope | One-Shot Passes | Final Passes | Repair Successes | Invalid Repaired | Behavioral Repaired | Avg Calls | Repair Token Delta |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| `019de6df-becb-7194-90e8-b8ec44d71b84` | 12-task canary | 3/12 | 10/12 | 7/9 | 5/7 | 2/2 | 2.42 | +30,450.3% |
+| `019de6ef-e75e-70d8-aa52-e98c4c577f7d` | 47-task open | 30/47 | 40/47 | 10/17 | 5/11 | 5/6 | 1.53 | +25,220.5% |
 
-The latest run, `019de625-16f3-7cc7-9cb9-140b822ce02f`, had:
+The full open repair-loop run crossed the original open-task correctness
+threshold after repair: 40/47 final passes, or 85.1%. It did not satisfy every
+repair-loop success criterion from `plans/phase-3-repair-loop-experiment.md`:
+invalid-output recovery was 5/11, just below the "at least half" threshold.
+The result is still a material signal that compiler-in-the-loop feedback is
+useful for Tacit.
 
-- 24 full task passes
-- 11 compile, extraction, or type failures
-- 12 behavioral failures after producing runnable Tacit
+The seven remaining full-open failures were:
 
-This matters for interpretation. The remaining gap is not only missing
-library surface. The model still emits invalid Tacit often enough to be a
-primary failure mode, and valid generated Tacit still fails ordinary edge
-cases often enough to prevent the pass-rate gate from being a near miss.
+- `collections/025-partition-eo`
+- `collections/026-group-counts`
+- `algorithms/035-bubble-sort`
+- `algorithms/036-quicksort`
+- `algorithms/037-merge-sort`
+- `algorithms/049-matrix-multiply`
+- `io/055-sort-lines`
+
+These failures are concentrated in sequence transformation, counting,
+sorting, matrix, and line-processing code. That is the strongest argument for
+a separate library-mediated authoring experiment.
 
 ## Token Gate
 
 All recorded runs fail the current token gate by orders of magnitude. Under
-the current harness and ADR 0051, the primer is counted once per task. As the
-primer grew from 10,202 to 16,194 tokens, the measured token delta worsened
-monotonically.
+ADR 0051, the primer is counted once per model call. In one-shot runs that is
+once per task; in repair-loop runs it is once per generation or repair turn.
 
-For the current decision, the token gate is not the useful discriminant: the
-open-only correctness result already fails the primary gate. However, the
-token data does rule out continuing paid full-corpus runs as a path to a
-Phase 3 pass under the current rules.
+For the full open repair-loop run:
 
-As additional context from the open reference corpus, hand-authored Tacit
-references currently total 20,661 tokens against 4,584 Python tokens. That is
-about +351% before primer cost. This is not a model-generation result, but it
-shows that the current authoring surface and library surface are not yet
-token-competitive with the Python baseline.
+- First-turn primary aggregate: 754,794 Tacit tokens vs 4,584 Python tokens.
+- All-turn repair aggregate: 1,160,690 Tacit tokens vs 4,584 Python tokens.
+- Total model output across all turns: 42,314 generation tokens.
+- Primer tokens paid across all model calls: 1,118,376 tokens.
+
+The token data rules out additional paid full-corpus reruns as a path to a
+Phase 3 pass under the current rules. The open reference corpus also remains
+non-competitive before primer cost: hand-authored Tacit references total
+20,661 tokens against 4,584 Python tokens, about +351%.
 
 ## Interpretation
 
-The primer-only core-language experiment has not cleared the bar.
+The primer-only core-language experiment has not cleared the Phase 3 bar.
+Increasing primer size improved pass rate through the fifth and sixth
+one-shot runs, then regressed on the seventh. More primer-only iteration is
+not the right next move.
 
-Increasing primer size improved pass rate through the fifth and sixth runs,
-then regressed on the seventh. The current data does not support spending more
-credits on full open-only reruns without changing the experiment.
+The repair-loop experiment changes the product direction:
 
-Expanding the standard library remains a plausible language-product direction,
-but it should be treated as a new hypothesis:
+- Tacit is more viable as an agentic write-check-repair workflow than as a
+  one-shot generation target.
+- Compiler and test feedback repaired both invalid outputs and behavioral
+  failures.
+- The remaining failures point to missing reusable library operations and
+  awkward low-level buffer programming.
+
+Expanding the standard library remains plausible, but it is a new hypothesis:
 
 - It may improve task success by letting models compose larger primitives.
-- It does not by itself prove that the model has learned to program core
-  Tacit from the primer.
-- A stdlib-mediated pass should be reported separately from primer-only core
-  fluency.
+- It may reduce generated tokens if library calls replace repeated low-level
+  loops.
+- It does not prove primer-only core-language fluency.
+- A stdlib-mediated pass must be reported separately from both one-shot
+  core-language fluency and repair-loop fluency.
 
 ## Decision
 
 Do not run more paid full-corpus Phase 3 evaluations under the current setup.
-Do not proceed to sealed or Haiku baseline runs until the open-scope Sonnet
-result has a credible path past the correctness gate.
+Do not proceed to sealed, Haiku, or cross-family baselines until the open
+Sonnet path has a clearer interpretation.
 
-Reasonable next experiments are:
+Next work should be:
 
-1. Write a short ADR recording that Phase 3 remains unfrozen because the
-   primer-only open-scope Sonnet result did not clear the correctness gate.
-2. Reframe standard-library expansion as a separate experiment in
-   library-mediated Tacit authoring.
-3. Define a cheap canary before any new paid full run, for example a fixed
-   subset of tasks that previously failed for distinct reasons.
-4. Revisit the token metric only through an ADR, not by ignoring the current
+1. Record the repair-loop outcome as an ADR/result note.
+2. Keep repair-loop accounting explicit in the harness metrics.
+3. Define a sealed-safe repair feedback policy before any sealed repair run.
+4. Open a stdlib-mediated authoring plan with a cheap canary before any full
+   paid rerun.
+5. Revisit the token metric only through an ADR, not by ignoring the current
    harness output.

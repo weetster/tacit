@@ -552,6 +552,11 @@
         "average_model_calls_per_task",
         "total_model_calls",
         "total_generation_tokens",
+        "repair_primer_tokens_total",
+        "repair_tacit_tokens_total",
+        "python_tokens_total",
+        "repair_token_delta",
+        "repair_primer_amortized_total",
         "total_api_calls"
       ],
       "additionalProperties": false,
@@ -615,6 +620,21 @@
           "$ref": "#/$defs/non_negative_integer"
         },
         "total_generation_tokens": {
+          "$ref": "#/$defs/non_negative_integer"
+        },
+        "repair_primer_tokens_total": {
+          "$ref": "#/$defs/non_negative_integer"
+        },
+        "repair_tacit_tokens_total": {
+          "$ref": "#/$defs/non_negative_integer"
+        },
+        "python_tokens_total": {
+          "$ref": "#/$defs/non_negative_integer"
+        },
+        "repair_token_delta": {
+          "type": "number"
+        },
+        "repair_primer_amortized_total": {
           "$ref": "#/$defs/non_negative_integer"
         },
         "total_api_calls": {

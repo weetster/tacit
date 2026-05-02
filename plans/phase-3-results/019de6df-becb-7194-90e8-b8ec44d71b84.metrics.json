@@ -40,8 +40,13 @@
       "invalid_recovery_rate": 0.7142857142857143,
       "invalid_repaired_count": 5,
       "one_shot_task_pass_rate": 0.25,
+      "python_tokens_total": 1542,
+      "repair_primer_amortized_total": 36161,
+      "repair_primer_tokens_total": 450457,
       "repair_recovery_rate": 0.7777777777777778,
       "repair_success_count": 7,
+      "repair_tacit_tokens_total": 471085,
+      "repair_token_delta": 304.50259403372246,
       "task_count": 12,
       "total_api_calls": 29,
       "total_generation_tokens": 20628,
@@ -85,7 +90,32 @@
       "scope": "non_stdlib_dominated",
       "threshold": -0.3,
       "value": 125.17704280155642
-    }
+    },
+    "repair_behavioral_recovery_gate": {
+      "applies": true,
+      "metric": "behavioral_recovery_rate",
+      "passed": true,
+      "scope": "repair",
+      "threshold": 0.3333333333333333,
+      "value": 1.0
+    },
+    "repair_final_pass_rate_gate": {
+      "applies": true,
+      "metric": "final_task_pass_rate",
+      "passed": true,
+      "scope": "repair",
+      "threshold": 0.7,
+      "value": 0.8333333333333334
+    },
+    "repair_invalid_recovery_gate": {
+      "applies": true,
+      "metric": "invalid_recovery_rate",
+      "passed": true,
+      "scope": "repair",
+      "threshold": 0.5,
+      "value": 0.7142857142857143
+    },
+    "repair_promising_overall": true
   },
   "model": {
     "id": "claude-sonnet-4-6",

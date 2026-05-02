@@ -1,6 +1,6 @@
 # Phase 3 Repair-Loop Experiment
 
-**Status:** Proposed
+**Status:** Open-scope run completed; sealed repair policy still deferred
 **Date:** 2026-05-02
 
 ## Summary
@@ -10,6 +10,15 @@ format, but allows the model to repair a failed solution for at most two
 additional turns. This is not a replacement for the Phase 3 one-shot gate.
 It measures whether Tacit becomes viable in an agentic write-check-repair
 workflow.
+
+Outcome: the 12-task canary (`019de6df-becb-7194-90e8-b8ec44d71b84`) improved
+from 3/12 to 10/12 final passes. The full open run
+(`019de6ef-e75e-70d8-aa52-e98c4c577f7d`) improved from 30/47 to 40/47 final
+passes. The full run cleared the final-pass threshold but missed the invalid
+recovery threshold by one task (5/11 recovered, below the required half), so it
+is useful evidence for an agentic direction but not a replacement for the
+one-shot Phase 3 gate. See
+[ADR 0060](../decisions/0060-p3-repair-loop-outcome.md).
 
 ## Motivation
 

@@ -75,3 +75,4 @@ Keep ADRs short. They record the decision, not the full analysis that led to it.
 - [0057 — Expert-agent authorship for Tacit-Lite corpus references](0057-p3-expert-agent-tacit-reference-authorship.md)
 - [0058 — Phase 3 closed multi-argument helper lowering](0058-p3-closed-multi-arg-helper-lowering.md)
 - [0059 — Phase 3 `rec` hidden capture parameters](0059-p3-rec-hidden-captures.md)
+- [0060 — Phase 3 repair-loop outcome and next direction](0060-p3-repair-loop-outcome.md)

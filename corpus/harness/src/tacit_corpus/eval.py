@@ -48,7 +48,7 @@ DEFAULT_TEMPERATURE = 0
 DEFAULT_MAX_TOKENS = 8192
 DEFAULT_TIMEOUT_SECONDS = 120
 DEFAULT_MAX_RETRIES = 3
-HARNESS_VERSION = "0.2.0"
+HARNESS_VERSION = "0.3.0"
 PROMPT_SUFFIX = (
     "Write the solution as a single Tacit-Lite program in a fenced "
     "block: ```tacit ... ```. Do not include any extra files, metadata, "
@@ -1318,7 +1318,12 @@ def primary_aggregates(tasks: list[TaskMetric], primer_tokens: int) -> dict[str,
     }
 
 
-def repair_aggregates(tasks: list[TaskMetric], *, dry_run: bool) -> dict[str, Any]:
+def repair_aggregates(
+    tasks: list[TaskMetric],
+    *,
+    dry_run: bool,
+    primer_tokens: int,
+) -> dict[str, Any]:
     repair_tasks = [task for task in tasks if task.repair is not None]
     task_count = len(repair_tasks)
     initially_failed = [task for task in repair_tasks if not task.repair.first_pass_tests_pass]
@@ -1368,6 +1373,9 @@ def repair_aggregates(tasks: list[TaskMetric], *, dry_run: bool) -> dict[str, An
         for task in repair_tasks
         if task.repair is not None
     )
+    python_total = sum(task.python_baseline_tokens for task in repair_tasks)
+    repair_primer_tokens_total = primer_tokens * model_calls
+    repair_tacit_tokens_total = repair_primer_tokens_total + total_generation_tokens
 
     return {
         "task_count": task_count,
@@ -1392,6 +1400,17 @@ def repair_aggregates(tasks: list[TaskMetric], *, dry_run: bool) -> dict[str, An
         "average_model_calls_per_task": _rate(model_calls, task_count),
         "total_model_calls": model_calls,
         "total_generation_tokens": total_generation_tokens,
+        "repair_primer_tokens_total": repair_primer_tokens_total,
+        "repair_tacit_tokens_total": repair_tacit_tokens_total,
+        "python_tokens_total": python_total,
+        "repair_token_delta": (
+            (repair_tacit_tokens_total - python_total) / python_total
+            if python_total
+            else 0.0
+        ),
+        "repair_primer_amortized_total": (
+            primer_tokens + total_generation_tokens if task_count else 0
+        ),
         "total_api_calls": 0 if dry_run else model_calls + total_retries,
     }
 
@@ -1425,44 +1444,42 @@ def primary_gates(aggregates: dict[str, Any]) -> dict[str, Any]:
             "passed": non_stdlib["token_delta"] <= -0.30,
         },
     }
-    gates["passed_overall"] = all(
-        value["passed"] for value in gates.values() if isinstance(value, dict)
-    )
+    gates["passed_overall"] = all(gate["passed"] for gate in gates.values())
+
+    repair = aggregates.get("repair")
+    if repair is not None:
+        repair_gates = {
+            "repair_final_pass_rate_gate": {
+                "applies": True,
+                "metric": "final_task_pass_rate",
+                "scope": "repair",
+                "threshold": 0.70,
+                "value": repair["final_task_pass_rate"],
+                "passed": repair["final_task_pass_rate"] >= 0.70,
+            },
+            "repair_invalid_recovery_gate": {
+                "applies": True,
+                "metric": "invalid_recovery_rate",
+                "scope": "repair",
+                "threshold": 0.50,
+                "value": repair["invalid_recovery_rate"],
+                "passed": repair["invalid_recovery_rate"] >= 0.50,
+            },
+            "repair_behavioral_recovery_gate": {
+                "applies": True,
+                "metric": "behavioral_recovery_rate",
+                "scope": "repair",
+                "threshold": 1.0 / 3.0,
+                "value": repair["behavioral_recovery_rate"],
+                "passed": repair["behavioral_recovery_rate"] >= 1.0 / 3.0,
+            },
+        }
+        gates.update(repair_gates)
+        gates["repair_promising_overall"] = all(
+            gate["passed"] for gate in repair_gates.values()
+        )
+
     return gates
-
-
-def build_metrics(
-    *,
-    run_id: str,
-    track: Track,
-    scope: Scope,
-    provider: Provider,
-    model_id: str,
-    primer_hash: str,
-    primer_tokens: int,
-    tasks: list[TaskMetric],
-    repair_turns: int = 0,
-    dry_run: bool = False,
-) -> dict[str, Any]:
-    aggregates = primary_aggregates(tasks, primer_tokens)
-    if repair_turns > 0:
-        aggregates["repair"] = repair_aggregates(tasks, dry_run=dry_run)
-    gates = primary_gates(aggregates) if track == "primary" else reporting_only_gates()
-    return {
-        "schema_version": "p3.0",
-        "run_id": run_id,
-        "track": track,
-        "scope": scope,
-        "model": {
-            "provider": provider,
-            "id": model_id,
-            "primer_hash": primer_hash,
-            "primer_tokens": primer_tokens,
-        },
-        "tasks": [task.to_json() for task in tasks],
-        "aggregates": aggregates,
-        "gates": gates,
-    }
 
 
 def reporting_only_gates() -> dict[str, Any]:
@@ -1491,6 +1508,45 @@ def reporting_only_gates() -> dict[str, Any]:
             "value": 0.0,
             "passed": False,
         },
+        "passed_overall": False,
+    }
+
+
+def build_metrics(
+    *,
+    run_id: str,
+    track: Track,
+    scope: Scope,
+    provider: Provider,
+    model_id: str,
+    primer_hash: str,
+    primer_tokens: int,
+    tasks: list[TaskMetric],
+    repair_turns: int = 0,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    aggregates = primary_aggregates(tasks, primer_tokens)
+    if repair_turns > 0:
+        aggregates["repair"] = repair_aggregates(
+            tasks,
+            dry_run=dry_run,
+            primer_tokens=primer_tokens,
+        )
+    gates = primary_gates(aggregates) if track == "primary" else reporting_only_gates()
+    return {
+        "schema_version": "p3.0",
+        "run_id": run_id,
+        "track": track,
+        "scope": scope,
+        "model": {
+            "provider": provider,
+            "id": model_id,
+            "primer_hash": primer_hash,
+            "primer_tokens": primer_tokens,
+        },
+        "tasks": [task.to_json() for task in tasks],
+        "aggregates": aggregates,
+        "gates": gates,
     }
 
 
