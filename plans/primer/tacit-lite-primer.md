@@ -25,15 +25,6 @@ final block: rescan input instead of storing a complex table, use one clear
 quadratic pass instead of a half-written divide-and-conquer routine, and
 prefer direct output over building a large abstract result.
 
-Write one stable program, not a mixture of several half-translations. Before
-returning the block, silently check these local invariants: every helper call
-has all of its source-level arguments, every compound branch is parenthesized,
-every buffer read is guarded by a bound check, every write uses the logical
-length rather than the allocation size, and the final expression has the
-expected result type. If two approaches both fit, prefer the one that uses
-earlier idioms exactly: top-level `let`s, one `rec` group for related loops,
-explicit integer state, concrete buffers, and direct primitive calls.
-
 ## 1. Semantic Summary
 
 Tacit-Lite is a small expression language. Authors write source using `let`,
@@ -441,13 +432,6 @@ in this order:
    If it allocates a buffer, it has `Alloc`. If it writes to a buffer, it has
    `Mut`. If it recurses or divides, it may have `Div`.
 
-Do not change representations halfway through a program. If the input is kept
-as byte spans, keep later helpers in terms of offsets and lengths. If integer
-state is carried in lambda parameters, keep it there instead of moving some of
-it into buffer cells. If a repeated scan is simple and bounded by the input
-size, prefer that complete scan over a partial data-structure emulation.
-Consistency makes the source easier to typecheck, execute, and repair.
-
 For structured stdin, prefer one `@read` into a buffer and parse by offsets.
 `@read` is a byte read, not a line reader or token reader. Calling `@read`
 twice usually consumes whatever remains after the first call; it does not mean
@@ -516,16 +500,16 @@ Do not bind a recursive function itself as a value. Put `skip` in the same
 `rec` group as the helpers that call it.
 
 ```text
-let emit_by_mode = lambda mode.
-  rec {loop = lambda i. ... mode ... loop next_i} in loop 0
-in emit_by_mode 0
+let write_partition = lambda parity.
+  rec {loop = lambda i. ... parity ... loop next_i} in loop 0
+in write_partition 0
 ```
 
-Do not create a helper-maker. There are no closures that remember `mode`.
-Make `mode` an ordinary parameter of the recursive helper:
+Do not create a helper factory. There are no closures that remember `parity`.
+Make `parity` an ordinary parameter of the recursive helper:
 
 ```text
-rec {loop = lambda mode. lambda i. ... loop mode next_i} in
+rec {loop = lambda parity. lambda i. ... loop parity next_i} in
 let _ = loop 0 0 in
 loop 1 0
 ```
@@ -647,7 +631,7 @@ use.
 
 Do not build an integer array with `@buf-set vals i value` unless `value` is
 known to stay in `0..255`. Negative numbers and values above 255 will not be
-stored as full integers. For ordering or indexed access to parsed integers,
+stored as full integers. For sorting or indexed access to parsed integers,
 prefer one of these shapes: rescan the input to find the nth token, store byte
 offsets into the original input using multiple buffer cells per offset, or
 carry the few needed integer values in recursive state.
@@ -1283,15 +1267,6 @@ candidate span against itself. The search loop stops when `p + pat_len` is
 greater than `span_off + span_len`. A zero-length pattern is found at the
 start of every span.
 
-Pairwise scans over parsed values should use positions, not mutable integer
-arrays. Count the values first when a bound is needed. Use an outer position
-`i` and an inner position `j`; parse each value by rescanning or by looking up
-its stored byte span. Decide explicitly whether `j` may equal `i`. If the
-answer is a pair of positions, keep the indexing convention consistent from
-the first value through the output. If no pair satisfies the relation, return
-or emit the requested sentinel shape rather than falling through with stale
-state.
-
 When scanning bytes read from stdin, treat the byte count returned by `@read`
 as the exclusive upper bound. A helper with state `i` should inspect
 `@buf-get buf i` only while `i < n`; when `i == n`, return the EOF result.
@@ -1306,7 +1281,7 @@ recursive outer loop and inner loop, or choose a simple algorithm whose state
 fits cleanly in integers and buffers. Prefer correctness over clever token
 packing.
 
-For integer ordering where values may exceed one byte, order indexes rather
+For integer sorting where values may exceed one byte, sort indexes rather
 than values. Read the input once, count tokens, initialize `idx[i] = i` with
 fixed-width byte packing, and define `value_at want pos cur` to rescan the
 original input until token `want`. A comparison becomes:
@@ -1362,13 +1337,6 @@ has already been emitted. This works for one output stream or for repeated
 passes with different predicates. Do not write a separator after every item;
 that leaves trailing spaces on one-element and short-final-row cases.
 
-Predicate-separated output is safest as two or more complete passes over the
-same input. Each pass decides whether to emit the current item, uses the same
-`emit_int` or `emit_span` helper, and returns the updated separator flag.
-Avoid a helper-maker for each predicate; pass a small mode flag into one
-recursive helper or write two concrete sibling helpers. This preserves source
-order within each pass without requiring a collection of full integer values.
-
 Grouped fixed-width output is a separator problem, not a formatting special
 case. Carry `col` and `seen`. For each emitted integer, pass `@eq col 0` as
 the `first` flag. After incrementing `col`, if it equals the group width,
@@ -1390,16 +1358,9 @@ emit_span = lambda off. lambda slen. lambda i.
 ```
 
 This is the default shape for line-oriented transforms that compare, select,
-deduplicate, reorder, emit in backward order, aggregate, or emit parts of the
-original input. Do not copy the whole remaining input into a small formatting
-buffer, and do not format a byte span as an integer.
-
-Word-boundary byte transforms should carry an explicit state flag such as
-`at_start` or `in_word`. A separator byte updates the flag and is copied as
-itself. An alphabetic byte is transformed according to the flag, then the flag
-changes to the inside-word state. Nonalphabetic, nonseparator bytes should
-follow the input contract; in ASCII-only programs, compare against explicit
-byte ranges instead of assuming a hidden character library.
+deduplicate, reorder, reverse, aggregate, or emit parts of the original input.
+Do not copy the whole remaining input into a small formatting buffer, and do
+not format a byte span as an integer.
 
 If you hand-scan signed integers, maintain `cur`, `acc`, `in_num`, and `neg`.
 On a digit byte, set `cur = cur * 10 + (byte - 48)` and mark `in_num = 1`.
@@ -1408,11 +1369,11 @@ On `45` before digits, set `neg = 1`. On any separator, flush only when
 `in_num`, and `neg`. At EOF, run the same flush once. Do not allocate a huge
 input buffer just because the statement gives a large theoretical maximum.
 
-Paired integer enumeration does not naturally emit ordered output if you print
-`i` and its complement together. When output order matters, make one pass for
-the smaller side of each pair and a second pass for the larger complements.
-Exclude duplicate middle values explicitly. A `first` flag is the safest
-separator rule.
+Factor-pair enumeration does not naturally emit sorted output if you print
+`i` and `n / i` together. When output order matters, make one pass for the
+small side of each pair and a second pass for the large complements. Exclude
+duplicates at square roots explicitly. A `first` flag is the safest separator
+rule.
 
 Selecting spans from text: keep byte offsets and lengths into the input, not
 a packed integer encoding of the span contents. For best-span selection, carry
@@ -1424,10 +1385,7 @@ buffer or emit the span directly.
 Searching ordered token data: count tokens first, then search with a
 half-open interval `[lo, hi)`. Stop when `lo >= hi`. Compute `mid = (lo + hi)
 / 2`, parse the value at token `mid`, then recurse into `[mid + 1, hi)` or
-`[lo, mid)`. A closed interval is easy to get wrong at the empty range. Keep
-the not-found result separate from the found result: either carry a sentinel
-from the caller or return the insertion offset, but do not reuse an old `mid`
-after the loop has crossed.
+`[lo, mid)`. A closed interval is easy to get wrong at the empty range.
 
 Running recurrences over parsed integers: initialize from the first value
 when zero is not a valid identity for all inputs. Carry the current state and
@@ -1522,10 +1480,10 @@ forgetting to flush the last number at EOF, writing the whole output buffer
 instead of `w` bytes, mixing destination and source in `@buf-copy`, or using
 ASCII byte values without subtracting `48` for digits.
 
-For repeated-division digit emission, the first digit computed is usually the
-least significant digit. If the output expects most-significant first, either
-fill an output buffer from right to left or do a second pass that emits the
-temporary digits from the far end back to the front.
+For base conversion, the first digit computed by repeated division is usually
+the least significant digit. If the output expects most-significant first,
+either fill an output buffer from right to left or do a second pass that emits
+the temporary digits in reverse order.
 
 ### Token-Aware Writing
 
@@ -1544,7 +1502,7 @@ programs often need later repair.
 ### Boundary Conditions To Remember
 
 Empty input: `@read` returns zero immediately. Make the EOF branch return the
-right identity value: count zero, sum zero, maximum length zero, or the
+right identity value: count zero, sum zero, longest length zero, or the
 current accumulated value if the last token has no trailing newline.
 
 Single element: ordering, deduplication, selection, and prefix-shaped programs
@@ -1561,8 +1519,8 @@ digit byte with `@sub byte 48`. Convert back for output either with
 UTF-8 text: byte loops are correct for ASCII input. If the required behavior
 is character-based and input may include non-ASCII text, do not reverse or
 split the middle bytes of a multi-byte sequence. Copy each UTF-8 sequence as a
-unit. For symmetric character comparisons, the last byte is not necessarily
-the last character. Move the right pointer left over continuation bytes in
+unit. For character palindrome checks, the last byte is not necessarily the
+last character. Move the right pointer left over continuation bytes in
 `128..191`, compare the whole byte span for the left and right characters,
 then advance by the span lengths.
 
@@ -1620,14 +1578,14 @@ finding an equal later occurrence.
 Because static checks cover syntax, types, effects, and executable-shape
 support, most semantic bugs survive until execution. Before finalizing a
 program, mentally run it on: empty input, one token, two tokens, already
-ordered input, oppositely ordered input, duplicated values, and a final token
+sorted input, reverse sorted input, duplicated values, and a final token
 without newline.
 
 ### Choosing A Recursion State
 
 A good recursive state has a small invariant that can be spoken in one
 sentence. Examples: `i` is the next offset to inspect; `acc` is the sum of
-all complete numbers read so far; `best` is the maximum length seen so far;
+all complete numbers read so far; `best` is the longest length seen so far;
 `out_len` is the number of valid bytes already written to `out`.
 
 Avoid states that require reconstructing history. If a helper needs to know
@@ -1677,8 +1635,8 @@ Do not add a special base case that copies byte zero after the recursive
 loop; that duplicates the first character. When `end` reaches zero, every
 code point has already been copied.
 
-For symmetric UTF-8 comparisons, compare code point spans, not single bytes.
-Keep `left` as an inclusive start offset and `right_end` as an exclusive end
+For UTF-8 palindrome checks, compare code point spans, not single bytes. Keep
+`left` as an inclusive start offset and `right_end` as an exclusive end
 offset. Compute `left_len` from the leading byte at `left`. Compute
 `right_start = prev_start right_end` and `right_len = right_end -
 right_start`. If lengths differ, the code points differ. If lengths match,
@@ -1699,20 +1657,12 @@ general list library is not a win because those abstractions are not
 available.
 
 For search, linear scan is the default unless the input is already ordered and
-the required behavior depends on that ordering. For grouping, ordered or
+the required behavior depends on that ordering. For grouping, sorted or
 stable-order buffer passes are often clearer than inventing a dictionary. For
 row/column data, compute row and column offsets manually and keep the
 dimension variables named. For table-like dynamic programming, be wary: if the
 state table would be large, the explicit Tacit version will be longer because
 there is no general collection library.
-
-For row/column arithmetic that combines one row with one column, avoid storing
-the computed table when output can be streamed. Parse dimensions first. For
-each output coordinate, run an inner helper that scans the shared coordinate,
-parses the needed input values, carries an accumulator, and returns the final
-integer for that coordinate. Format and write that integer immediately, with
-separator and newline decisions carried by column state. This avoids putting
-large computed integers into byte cells.
 
 For row/column integer data, avoid generic helpers that take a buffer
 parameter such as `get_val mat idx` or `set_val mat idx value`. Use separate
