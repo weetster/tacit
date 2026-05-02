@@ -1724,3 +1724,50 @@ needs a string operation, use byte buffers and the primitives listed in this
 primer.
 If a shorter solution would need a missing abstraction, write the explicit
 one.
+
+## Stdlib Appendix: I64Vec
+
+For library-mediated runs, use `I64Vec` when a program needs indexed storage
+for full integer values. Byte-oriented buffers still handle raw input/output
+bytes; an `I64Vec` keeps signed and large values intact. Allocate it with a
+count, write cells before reading them, and thread the count separately
+because the handle does not store a length.
+
+```tacit
+let xs = @i64-alloc 3 in
+let _ = @i64-set xs 0 7 in
+let _ = @i64-set xs 1 -2 in
+let _ = @i64-set xs 2 10 in
+@add (@i64-get xs 0) (@i64-get xs 2)
+```
+
+The handle is scoped like other allocation handles: allocate it in a `let`,
+then use it inside that body. Recursive helpers may read or write the outer
+vector directly when the allocation surrounds the `rec`.
+
+```tacit
+let n = 3 in
+let xs = @i64-alloc n in
+rec {fill = lambda i.
+  if @eq i n then 0 else
+    let _ = @i64-set xs i i in
+    fill (@add i 1)
+} in fill 0
+```
+
+To store paired ranges or other two-column data, use two consecutive slots per
+row. For row `i`, the first slot is `2*i` and the second slot is `2*i+1`.
+
+```tacit
+let ranges = @i64-alloc 4 in
+let _ = @i64-set ranges 0 5 in
+let _ = @i64-set ranges 1 3 in
+let _ = @i64-set ranges 2 12 in
+let _ = @i64-set ranges 3 2 in
+let start = @i64-get ranges (@mul 1 2) in
+let len = @i64-get ranges (@add (@mul 1 2) 1) in
+@add start len
+```
+
+To output a vector element, read it into an integer value, format that value
+into output bytes, then write the byte count returned by formatting.

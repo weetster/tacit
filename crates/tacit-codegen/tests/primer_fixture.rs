@@ -12,10 +12,13 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use tacit_canonical::ast::Node;
 use tacit_codegen::analysis::{check_closed, check_no_holes};
 use tacit_codegen::compile_to_ir_string;
 use tacit_typecheck::infer_module;
 use tacit_views::authoring::parse_authoring;
+
+const STDLIB_APPENDIX_HEADING: &str = "## Stdlib Appendix: I64Vec";
 
 #[derive(Debug)]
 struct Block {
@@ -161,6 +164,38 @@ fn assert_not_corpus_reference(block: &Block, references: &[(PathBuf, String)]) 
     }
 }
 
+fn parse_block(block: &Block) -> Node {
+    let (node, _) = parse_authoring(block.source.as_bytes())
+        .unwrap_or_else(|e| panic!("parse primer block at line {}: {}", block.line, e));
+    node
+}
+
+fn assert_success_node_valid(block: &Block, node: &Node, module_name: &str) {
+    check_no_holes(node).unwrap_or_else(|e| panic!("hole check line {}: {}", block.line, e));
+    check_closed(node, 0).unwrap_or_else(|e| panic!("closed check line {}: {}", block.line, e));
+    infer_module(node).unwrap_or_else(|diags| panic!("typecheck line {}: {:?}", block.line, diags));
+    compile_to_ir_string(node, module_name)
+        .unwrap_or_else(|e| panic!("codegen line {}: {}", block.line, e));
+}
+
+fn assert_success_block_valid(block: &Block, module_name: &str) {
+    let node = parse_block(block);
+    assert_success_node_valid(block, &node, module_name);
+}
+
+fn stdlib_appendix(markdown: &str) -> &str {
+    let start = markdown
+        .find(STDLIB_APPENDIX_HEADING)
+        .expect("missing I64Vec stdlib appendix");
+    let rest = &markdown[start..];
+    let after_heading = &rest[STDLIB_APPENDIX_HEADING.len()..];
+    if let Some(next_heading) = after_heading.find("\n## ") {
+        &rest[..STDLIB_APPENDIX_HEADING.len() + next_heading]
+    } else {
+        rest
+    }
+}
+
 #[test]
 fn primer_tacit_fences_validate() {
     let primer = fs::read_to_string(primer_path()).expect("read primer");
@@ -182,20 +217,12 @@ fn primer_tacit_fences_validate() {
 
     for (idx, block) in blocks.iter().enumerate() {
         assert_not_corpus_reference(block, &references);
-        let (node, _) = parse_authoring(block.source.as_bytes())
-            .unwrap_or_else(|e| panic!("parse primer block at line {}: {}", block.line, e));
+        let node = parse_block(block);
 
         match expectation(&block.info) {
             Expectation::Success => {
                 successes += 1;
-                check_no_holes(&node)
-                    .unwrap_or_else(|e| panic!("hole check line {}: {}", block.line, e));
-                check_closed(&node, 0)
-                    .unwrap_or_else(|e| panic!("closed check line {}: {}", block.line, e));
-                infer_module(&node)
-                    .unwrap_or_else(|diags| panic!("typecheck line {}: {:?}", block.line, diags));
-                compile_to_ir_string(&node, &format!("primer_block_{}", idx))
-                    .unwrap_or_else(|e| panic!("codegen line {}: {}", block.line, e));
+                assert_success_node_valid(block, &node, &format!("primer_block_{}", idx));
             }
             Expectation::Fail(kind) => {
                 failures += 1;
@@ -224,4 +251,35 @@ fn primer_tacit_fences_validate() {
         "expected at least 12 successful Tacit blocks"
     );
     assert!(failures >= 8, "expected at least 8 failing Tacit blocks");
+}
+
+#[test]
+fn primer_stdlib_i64vec_appendix_examples_validate() {
+    let primer = fs::read_to_string(primer_path()).expect("read primer");
+    let appendix = stdlib_appendix(&primer);
+    assert!(appendix.contains("`I64Vec`"));
+    for ty in ["`Int`", "`Bool`", "`Str`", "`Buf`"] {
+        assert!(
+            !appendix.contains(ty),
+            "I64Vec appendix should only mention the new I64Vec type, found {}",
+            ty
+        );
+    }
+
+    let blocks = extract_tacit_blocks(appendix);
+    assert_eq!(
+        blocks.len(),
+        3,
+        "expected one fixture-checked Tacit block per I64Vec appendix example"
+    );
+
+    for (idx, block) in blocks.iter().enumerate() {
+        assert_eq!(expectation(&block.info), Expectation::Success);
+        assert!(
+            block.source.contains("@i64-"),
+            "I64Vec appendix example at line {} should exercise I64Vec primitives",
+            block.line
+        );
+        assert_success_block_valid(block, &format!("stdlib_i64vec_appendix_{}", idx));
+    }
 }
