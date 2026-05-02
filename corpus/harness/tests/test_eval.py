@@ -63,6 +63,129 @@ def test_compare_test_output_handles_non_utf8_stdout() -> None:
     assert "b'\\xa9'" in message
 
 
+def test_repair_prompt_limits_open_test_feedback(tmp_path) -> None:
+    (tmp_path / "task.md").write_text("# Task\n\nDo the thing.\n", encoding="utf-8")
+    previous = corpus_eval.TurnResult(
+        turn_index=0,
+        compile_pass=True,
+        typecheck_pass=True,
+        tests_pass=0,
+        tests_total=3,
+        generation_tokens=12,
+        diagnostics=corpus_eval.diagnostic_envelope("test-failure", "failed"),
+        retries=0,
+        raw_output="```tacit\n0\n```",
+        source="0\n",
+        failure_stage="test",
+        test_failures=(
+            corpus_eval.TestFailureDetail("case-1", "a\n", "A\n", "x\n"),
+            corpus_eval.TestFailureDetail("case-2", "b\n", "B\n", "y\n"),
+            corpus_eval.TestFailureDetail("case-3", "c\n", "C\n", "z\n"),
+        ),
+    )
+
+    prompt = corpus_eval.build_repair_prompt(tmp_path, previous)
+
+    assert "Failure stage: test" in prompt
+    assert "case-1" in prompt
+    assert "case-2" in prompt
+    assert "case-3" not in prompt
+    assert "1 additional failing case(s) omitted" in prompt
+    assert "Do not include the sidecar" in prompt
+
+
+def test_build_repair_metric_records_turns() -> None:
+    first = corpus_eval.TurnResult(
+        turn_index=0,
+        compile_pass=False,
+        typecheck_pass=False,
+        tests_pass=0,
+        tests_total=0,
+        generation_tokens=0,
+        diagnostics=corpus_eval.diagnostic_envelope("extraction-error", "missing block"),
+        retries=0,
+        raw_output="no block",
+        source=None,
+        failure_stage="extract",
+    )
+    second = corpus_eval.TurnResult(
+        turn_index=1,
+        compile_pass=True,
+        typecheck_pass=True,
+        tests_pass=2,
+        tests_total=2,
+        generation_tokens=4,
+        diagnostics=None,
+        retries=0,
+        raw_output="```tacit\n0\n```",
+        source="0\n",
+        failure_stage=None,
+    )
+
+    metric = corpus_eval.build_repair_metric([first, second])
+
+    assert metric.turns_used == 1
+    assert metric.repair_success
+    assert metric.failure_stage_by_turn == {"turn-0": "extract", "turn-1": None}
+    assert metric.generation_tokens_by_turn == {"turn-0": 0, "turn-1": 4}
+    assert metric.diagnostics_by_turn["turn-1"] is None
+
+
+def test_evaluate_turn_captures_repair_failure_in_turn_directory(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    task = corpus_eval.EvalTask(
+        task_id="arithmetic/001-sum-to-n",
+        task_dir=tmp_path,
+        sealed=False,
+        stdlib_dominated=False,
+        python_baseline_tokens=0,
+    )
+
+    def fake_call_model_with_retries(
+        *,
+        provider: corpus_eval.Provider,
+        api_key: str,
+        model: str,
+        primer: str,
+        prompt: str,
+        max_tokens: int,
+        temperature: float,
+        timeout_seconds: int,
+        max_retries: int,
+    ) -> corpus_eval.ModelOutcome:
+        return corpus_eval.ModelOutcome(
+            response=corpus_eval.ModelResponse(text="no fenced block", stop_reason="end_turn"),
+            retries=0,
+        )
+
+    monkeypatch.setattr(corpus_eval, "call_model_with_retries", fake_call_model_with_retries)
+
+    result = corpus_eval.evaluate_turn(
+        task=task,
+        run_id="run",
+        turn_index=0,
+        prompt="prompt",
+        dry_run=False,
+        provider="anthropic",
+        api_key="key",
+        model="claude-sonnet-4-6",
+        primer="primer",
+        enc=tiktoken.get_encoding("o200k_base"),
+        tacit_bin=tmp_path / "tacit",
+        output_dir=tmp_path,
+        retain_outputs=False,
+        max_tokens=10,
+        temperature=0,
+        timeout_seconds=1,
+        max_retries=0,
+        repair_mode=True,
+    )
+
+    assert result.failure_stage == "extract"
+    assert (tmp_path / "failures/run/arithmetic/001-sum-to-n/turn-0/diagnostics.json").is_file()
+
+
 def test_primary_aggregates_are_primer_inclusive() -> None:
     tasks = [
         corpus_eval.TaskMetric(
@@ -101,6 +224,74 @@ def test_primary_aggregates_are_primer_inclusive() -> None:
     assert aggregates["full"]["token_delta"] == -0.4
     assert aggregates["full"]["primer_amortized_total"] == 20
     assert aggregates["non_stdlib_dominated"]["tests_pass_rate"] == 1.0
+
+
+def test_repair_aggregates_report_final_recovery() -> None:
+    recovered = corpus_eval.TaskMetric(
+        task_id="algorithms/035-bubble-sort",
+        stdlib_dominated=False,
+        compile_pass=False,
+        typecheck_pass=True,
+        tests_pass=0,
+        tests_total=0,
+        generation_tokens=3,
+        python_baseline_tokens=20,
+        diagnostics=corpus_eval.diagnostic_envelope("compile-error", "failed"),
+        duration_ms=1,
+        retries=0,
+        repair=corpus_eval.RepairMetric(
+            turns_used=1,
+            first_pass_compile_pass=False,
+            first_pass_typecheck_pass=True,
+            first_pass_tests_pass=False,
+            final_compile_pass=True,
+            final_typecheck_pass=True,
+            final_tests_pass=True,
+            repair_success=True,
+            failure_stage_by_turn={"turn-0": "compile", "turn-1": None},
+            generation_tokens_by_turn={"turn-0": 3, "turn-1": 5},
+            diagnostics_by_turn={
+                "turn-0": corpus_eval.diagnostic_envelope("compile-error", "failed"),
+                "turn-1": None,
+            },
+        ),
+    )
+    first_passed = corpus_eval.TaskMetric(
+        task_id="arithmetic/001-sum-to-n",
+        stdlib_dominated=False,
+        compile_pass=True,
+        typecheck_pass=True,
+        tests_pass=2,
+        tests_total=2,
+        generation_tokens=4,
+        python_baseline_tokens=20,
+        diagnostics=None,
+        duration_ms=1,
+        retries=0,
+        repair=corpus_eval.RepairMetric(
+            turns_used=0,
+            first_pass_compile_pass=True,
+            first_pass_typecheck_pass=True,
+            first_pass_tests_pass=True,
+            final_compile_pass=True,
+            final_typecheck_pass=True,
+            final_tests_pass=True,
+            repair_success=False,
+            failure_stage_by_turn={"turn-0": None},
+            generation_tokens_by_turn={"turn-0": 4},
+            diagnostics_by_turn={"turn-0": None},
+        ),
+    )
+
+    aggregates = corpus_eval.repair_aggregates([recovered, first_passed], dry_run=False)
+
+    assert aggregates["one_shot_task_pass_rate"] == 0.5
+    assert aggregates["final_task_pass_rate"] == 1.0
+    assert aggregates["repair_recovery_rate"] == 1.0
+    assert aggregates["compile_typecheck_recovery_rate"] == 1.0
+    assert aggregates["average_model_calls_per_task"] == 1.5
+    assert aggregates["total_model_calls"] == 3
+    assert aggregates["total_api_calls"] == 3
 
 
 def test_load_tasks_accepts_numeric_selector() -> None:

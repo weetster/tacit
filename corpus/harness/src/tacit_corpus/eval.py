@@ -42,17 +42,20 @@ from tacit_corpus._paths import (
 Provider = Literal["anthropic", "openrouter"]
 Track = Literal["primary", "cross-family"]
 Scope = Literal["open", "sealed"]
+FailureStage = Literal["api", "extract", "typecheck", "compile", "test"]
 
 DEFAULT_TEMPERATURE = 0
 DEFAULT_MAX_TOKENS = 8192
 DEFAULT_TIMEOUT_SECONDS = 120
 DEFAULT_MAX_RETRIES = 3
-HARNESS_VERSION = "0.1.0"
+HARNESS_VERSION = "0.2.0"
 PROMPT_SUFFIX = (
     "Write the solution as a single Tacit-Lite program in a fenced "
     "block: ```tacit ... ```. Do not include any extra files, metadata, "
     "explanation, or second block."
 )
+REPAIR_RAW_TEXT_LIMIT = 2000
+REPAIR_TEST_FAILURE_LIMIT = 2
 RESULTS_DIR = REPO_ROOT / "plans" / "phase-3-results"
 PRIMER_PATH = REPO_ROOT / "plans" / "primer" / "tacit-lite-primer.md"
 DOMINANCE_FILE = CORPUS_ROOT / "stdlib-dominance.toml"
@@ -93,6 +96,76 @@ class GradeOutcome:
     tests_pass: int
     tests_total: int
     diagnostics: dict[str, Any] | None
+    failure_stage: FailureStage | None = None
+    test_failures: tuple["TestFailureDetail", ...] = ()
+
+
+@dataclass(frozen=True)
+class TestFailureDetail:
+    name: str
+    stdin: str
+    expected_stdout: str
+    actual_stdout: str | None = None
+    failure_reason: str | None = None
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "stdin": self.stdin,
+            "expected_stdout": self.expected_stdout,
+            "actual_stdout": self.actual_stdout,
+            "failure_reason": self.failure_reason,
+        }
+
+
+@dataclass(frozen=True)
+class TurnResult:
+    turn_index: int
+    compile_pass: bool
+    typecheck_pass: bool
+    tests_pass: int
+    tests_total: int
+    generation_tokens: int
+    diagnostics: dict[str, Any] | None
+    retries: int
+    raw_output: str | None
+    source: str | None
+    failure_stage: FailureStage | None
+    test_failures: tuple[TestFailureDetail, ...] = ()
+
+    @property
+    def tests_success(self) -> bool:
+        return self.tests_total > 0 and self.tests_pass == self.tests_total
+
+
+@dataclass(frozen=True)
+class RepairMetric:
+    turns_used: int | None
+    first_pass_compile_pass: bool
+    first_pass_typecheck_pass: bool
+    first_pass_tests_pass: bool
+    final_compile_pass: bool
+    final_typecheck_pass: bool
+    final_tests_pass: bool
+    repair_success: bool
+    failure_stage_by_turn: dict[str, str | None]
+    generation_tokens_by_turn: dict[str, int]
+    diagnostics_by_turn: dict[str, Any]
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "turns_used": self.turns_used,
+            "first_pass_compile_pass": self.first_pass_compile_pass,
+            "first_pass_typecheck_pass": self.first_pass_typecheck_pass,
+            "first_pass_tests_pass": self.first_pass_tests_pass,
+            "final_compile_pass": self.final_compile_pass,
+            "final_typecheck_pass": self.final_typecheck_pass,
+            "final_tests_pass": self.final_tests_pass,
+            "repair_success": self.repair_success,
+            "failure_stage_by_turn": self.failure_stage_by_turn,
+            "generation_tokens_by_turn": self.generation_tokens_by_turn,
+            "diagnostics_by_turn": self.diagnostics_by_turn,
+        }
 
 
 @dataclass(frozen=True)
@@ -108,9 +181,10 @@ class TaskMetric:
     diagnostics: dict[str, Any] | None
     duration_ms: int
     retries: int
+    repair: RepairMetric | None = None
 
     def to_json(self) -> dict[str, Any]:
-        return {
+        data = {
             "task_id": self.task_id,
             "stdlib_dominated": self.stdlib_dominated,
             "compile_pass": self.compile_pass,
@@ -123,6 +197,9 @@ class TaskMetric:
             "duration_ms": self.duration_ms,
             "retries": self.retries,
         }
+        if self.repair is not None:
+            data.update(self.repair.to_json())
+        return data
 
 
 class EvalError(RuntimeError):
@@ -255,9 +332,83 @@ def load_primer(enc: tiktoken.Encoding) -> tuple[str, str, int]:
     return primer_text, primer_hash, primer_tokens
 
 
+def load_task_statement(task_dir: Path) -> str:
+    return (task_dir / "task.md").read_text(encoding="utf-8").rstrip()
+
+
 def build_task_prompt(task_dir: Path) -> str:
-    task_text = (task_dir / "task.md").read_text(encoding="utf-8").rstrip()
+    task_text = load_task_statement(task_dir)
     return f"{task_text}\n\n{PROMPT_SUFFIX}\n"
+
+
+def build_repair_prompt(task_dir: Path, previous: TurnResult) -> str:
+    task_text = load_task_statement(task_dir)
+    previous_source = previous.source.rstrip() if previous.source is not None else ""
+    stage = previous.failure_stage or "test"
+    feedback = repair_feedback(previous)
+    return (
+        "The previous Tacit-Lite program failed.\n\n"
+        "Task:\n"
+        f"{task_text}\n\n"
+        "Previous program:\n"
+        "```tacit\n"
+        f"{previous_source}\n"
+        "```\n\n"
+        f"Failure stage: {stage}\n\n"
+        "Feedback:\n"
+        f"{feedback}\n\n"
+        "Return a corrected solution as a single Tacit-Lite program in one fenced\n"
+        "block: ```tacit ... ```. Do not include the sidecar. Do not include\n"
+        "explanatory prose.\n"
+    )
+
+
+def repair_feedback(previous: TurnResult) -> str:
+    if previous.failure_stage == "test":
+        return compact_test_failure_summary(previous)
+
+    parts: list[str] = []
+    if previous.diagnostics is None:
+        parts.append("No structured diagnostic was available.")
+    else:
+        parts.append(json.dumps(previous.diagnostics, indent=2, sort_keys=True))
+
+    if previous.failure_stage == "extract" and previous.raw_output:
+        if len(previous.raw_output) <= REPAIR_RAW_TEXT_LIMIT:
+            parts.append(f"Raw model text as a JSON string:\n{json.dumps(previous.raw_output)}")
+        else:
+            parts.append(
+                "Raw model text omitted because it was "
+                f"{len(previous.raw_output)} characters, over the "
+                f"{REPAIR_RAW_TEXT_LIMIT}-character repair limit."
+            )
+    return "\n\n".join(parts)
+
+
+def compact_test_failure_summary(previous: TurnResult) -> str:
+    if not previous.test_failures:
+        if previous.diagnostics is None:
+            return "Tests failed, but no concrete failing case detail was captured."
+        return json.dumps(previous.diagnostics, indent=2, sort_keys=True)
+
+    shown = previous.test_failures[:REPAIR_TEST_FAILURE_LIMIT]
+    lines: list[str] = [
+        f"{len(previous.test_failures)} failing test case(s) captured; "
+        f"showing first {len(shown)}."
+    ]
+    for idx, failure in enumerate(shown, start=1):
+        lines.append(f"\nFailure {idx}:")
+        lines.append(f"name: {failure.name}")
+        lines.append(f"stdin: {failure.stdin!r}")
+        lines.append(f"expected stdout: {failure.expected_stdout!r}")
+        if failure.actual_stdout is not None:
+            lines.append(f"actual stdout: {failure.actual_stdout!r}")
+        if failure.failure_reason is not None:
+            lines.append(f"failure reason: {failure.failure_reason}")
+    remaining = len(previous.test_failures) - len(shown)
+    if remaining > 0:
+        lines.append(f"\n{remaining} additional failing case(s) omitted.")
+    return "\n".join(lines)
 
 
 def infer_provider(model: str, requested: str) -> Provider:
@@ -632,6 +783,72 @@ def _compare_test_output(
     return True, ""
 
 
+def _decode_bytes_for_feedback(value: bytes | None) -> str:
+    if value is None:
+        return ""
+    try:
+        return value.decode("utf-8")
+    except UnicodeDecodeError:
+        return repr(value)
+
+
+def _run_test_case(
+    *,
+    binary_path: Path,
+    test: dict[str, str],
+    sealed: bool,
+) -> tuple[bool, str, TestFailureDetail | None]:
+    try:
+        proc = subprocess.run(
+            [str(binary_path)],
+            input=test["stdin"].encode("utf-8"),
+            capture_output=True,
+            text=False,
+            timeout=30,
+        )
+    except subprocess.TimeoutExpired as e:
+        message = "timeout after 30 seconds"
+        if sealed:
+            return False, message, None
+        return (
+            False,
+            message,
+            TestFailureDetail(
+                name=test["name"],
+                stdin=test["stdin"],
+                expected_stdout=test["stdout"],
+                actual_stdout=_decode_bytes_for_feedback(e.output),
+                failure_reason=message,
+            ),
+        )
+
+    ok, message = _compare_test_output(proc, test, sealed=sealed)
+    if ok:
+        return True, "", None
+    if sealed:
+        return False, message, None
+
+    actual_stdout = _decode_bytes_for_feedback(proc.stdout)
+    failure_reason = None
+    if proc.returncode != 0:
+        stderr = _decode_bytes_for_feedback(proc.stderr)
+        failure_reason = f"nonzero exit {proc.returncode}"
+        if stderr:
+            failure_reason = f"{failure_reason}; stderr={stderr!r}"
+
+    return (
+        False,
+        message,
+        TestFailureDetail(
+            name=test["name"],
+            stdin=test["stdin"],
+            expected_stdout=test["stdout"],
+            actual_stdout=actual_stdout,
+            failure_reason=failure_reason,
+        ),
+    )
+
+
 def grade_source(
     *,
     tacit_bin: Path,
@@ -647,6 +864,7 @@ def grade_source(
             tests_pass=0,
             tests_total=0,
             diagnostics=check_diags,
+            failure_stage="typecheck",
         )
 
     compile_pass, compile_diags = _run_tacit_compile(tacit_bin, source_path, binary_path)
@@ -657,24 +875,25 @@ def grade_source(
             tests_pass=0,
             tests_total=0,
             diagnostics=compile_diags,
+            failure_stage="compile",
         )
 
     tests = load_tests(task.task_dir)
     passed = 0
     failures: list[str] = []
+    failure_details: list[TestFailureDetail] = []
     for test in tests:
-        proc = subprocess.run(
-            [str(binary_path)],
-            input=test["stdin"].encode("utf-8"),
-            capture_output=True,
-            text=False,
-            timeout=30,
+        ok, message, detail = _run_test_case(
+            binary_path=binary_path,
+            test=test,
+            sealed=task.sealed,
         )
-        ok, message = _compare_test_output(proc, test, sealed=task.sealed)
         if ok:
             passed += 1
         else:
             failures.append(message)
+            if detail is not None:
+                failure_details.append(detail)
 
     if failures:
         if task.sealed:
@@ -684,8 +903,10 @@ def grade_source(
             if len(failures) > 3:
                 message = f"{message}; {len(failures) - 3} more failure(s)"
         diagnostics = diagnostic_envelope("test-failure", message)
+        failure_stage: FailureStage | None = "test"
     else:
         diagnostics = None
+        failure_stage = None
 
     return GradeOutcome(
         compile_pass=True,
@@ -693,6 +914,8 @@ def grade_source(
         tests_pass=passed,
         tests_total=len(tests),
         diagnostics=diagnostics,
+        failure_stage=failure_stage,
+        test_failures=tuple(failure_details),
     )
 
 
@@ -723,8 +946,11 @@ def capture_failure(
     raw_output: str | None,
     source: str | None,
     diagnostics: dict[str, Any] | None,
+    turn_index: int | None = None,
 ) -> None:
     path = failure_dir(output_dir, run_id, task.task_id)
+    if turn_index is not None:
+        path = path / f"turn-{turn_index}"
     path.mkdir(parents=True, exist_ok=True)
     if raw_output is not None:
         (path / "raw-response.txt").write_text(raw_output, encoding="utf-8")
@@ -748,10 +974,51 @@ def _dry_run_response(task: EvalTask) -> ModelResponse:
     return ModelResponse(text=f"```tacit\n{source}\n```", stop_reason="end_turn")
 
 
-def evaluate_task(
+def _capture_turn_failure(
+    *,
+    output_dir: Path,
+    run_id: str,
+    task: EvalTask,
+    raw_output: str | None,
+    source: str | None,
+    diagnostics: dict[str, Any] | None,
+    turn_index: int,
+    repair_mode: bool,
+) -> None:
+    capture_failure(
+        output_dir=output_dir,
+        run_id=run_id,
+        task=task,
+        raw_output=raw_output,
+        source=source,
+        diagnostics=diagnostics,
+        turn_index=turn_index if repair_mode else None,
+    )
+
+
+def _retain_turn_output(
+    *,
+    output_dir: Path,
+    run_id: str,
+    task: EvalTask,
+    raw_output: str,
+    turn_index: int,
+    repair_mode: bool,
+) -> None:
+    if repair_mode:
+        out_path = output_dir / f"{run_id}.outputs" / task.task_id / f"turn-{turn_index}.txt"
+    else:
+        out_path = output_dir / f"{run_id}.outputs" / f"{task.task_id}.txt"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(raw_output, encoding="utf-8")
+
+
+def evaluate_turn(
     *,
     task: EvalTask,
     run_id: str,
+    turn_index: int,
+    prompt: str,
     dry_run: bool,
     provider: Provider,
     api_key: str | None,
@@ -765,16 +1032,13 @@ def evaluate_task(
     temperature: float,
     timeout_seconds: int,
     max_retries: int,
-) -> TaskMetric:
-    started = time.monotonic()
-    raw_output: str | None = None
-    retries = 0
-
+    repair_mode: bool,
+) -> TurnResult:
     if dry_run:
         model_response = _dry_run_response(task)
+        retries = 0
     else:
         assert api_key is not None
-        prompt = build_task_prompt(task.task_dir)
         outcome = call_model_with_retries(
             provider=provider,
             api_key=api_key,
@@ -789,60 +1053,67 @@ def evaluate_task(
         retries = outcome.retries
         if outcome.response is None:
             diagnostics = outcome.diagnostics
-            duration_ms = int((time.monotonic() - started) * 1000)
-            capture_failure(
+            _capture_turn_failure(
                 output_dir=output_dir,
                 run_id=run_id,
                 task=task,
                 raw_output=None,
                 source=None,
                 diagnostics=diagnostics,
+                turn_index=turn_index,
+                repair_mode=repair_mode,
             )
-            return TaskMetric(
-                task_id=task.task_id,
-                stdlib_dominated=task.stdlib_dominated,
+            return TurnResult(
+                turn_index=turn_index,
                 compile_pass=False,
                 typecheck_pass=False,
                 tests_pass=0,
                 tests_total=0,
                 generation_tokens=0,
-                python_baseline_tokens=task.python_baseline_tokens,
                 diagnostics=diagnostics,
-                duration_ms=duration_ms,
                 retries=retries,
+                raw_output=None,
+                source=None,
+                failure_stage="api",
             )
         model_response = outcome.response
 
     raw_output = model_response.text
     if retain_outputs and not task.sealed:
-        out_path = output_dir / f"{run_id}.outputs" / f"{task.task_id}.txt"
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_text(raw_output, encoding="utf-8")
+        _retain_turn_output(
+            output_dir=output_dir,
+            run_id=run_id,
+            task=task,
+            raw_output=raw_output,
+            turn_index=turn_index,
+            repair_mode=repair_mode,
+        )
 
     extraction = extract_tacit_source(model_response)
     if extraction.source is None:
         diagnostics = extraction.diagnostics
-        duration_ms = int((time.monotonic() - started) * 1000)
-        capture_failure(
+        _capture_turn_failure(
             output_dir=output_dir,
             run_id=run_id,
             task=task,
             raw_output=raw_output,
             source=None,
             diagnostics=diagnostics,
+            turn_index=turn_index,
+            repair_mode=repair_mode,
         )
-        return TaskMetric(
-            task_id=task.task_id,
-            stdlib_dominated=task.stdlib_dominated,
+        return TurnResult(
+            turn_index=turn_index,
             compile_pass=False,
             typecheck_pass=False,
             tests_pass=0,
             tests_total=0,
             generation_tokens=0,
-            python_baseline_tokens=task.python_baseline_tokens,
             diagnostics=diagnostics,
-            duration_ms=duration_ms,
             retries=retries,
+            raw_output=raw_output,
+            source=None,
+            failure_stage="extract",
         )
 
     generation_tokens = len(enc.encode(extraction.source))
@@ -862,28 +1133,147 @@ def evaluate_task(
 
     diagnostics = grade.diagnostics
     if diagnostics is not None:
-        capture_failure(
+        _capture_turn_failure(
             output_dir=output_dir,
             run_id=run_id,
             task=task,
             raw_output=raw_output,
             source=extraction.source,
             diagnostics=diagnostics,
+            turn_index=turn_index,
+            repair_mode=repair_mode,
         )
 
-    duration_ms = int((time.monotonic() - started) * 1000)
-    return TaskMetric(
-        task_id=task.task_id,
-        stdlib_dominated=task.stdlib_dominated,
+    return TurnResult(
+        turn_index=turn_index,
         compile_pass=grade.compile_pass,
         typecheck_pass=grade.typecheck_pass,
         tests_pass=grade.tests_pass,
         tests_total=grade.tests_total,
         generation_tokens=generation_tokens,
-        python_baseline_tokens=task.python_baseline_tokens,
         diagnostics=diagnostics,
-        duration_ms=duration_ms,
         retries=retries,
+        raw_output=raw_output,
+        source=extraction.source,
+        failure_stage=grade.failure_stage,
+        test_failures=grade.test_failures,
+    )
+
+
+def build_repair_metric(turns: list[TurnResult]) -> RepairMetric:
+    first = turns[0]
+    final = turns[-1]
+    passing = next((turn for turn in turns if turn.tests_success), None)
+    return RepairMetric(
+        turns_used=passing.turn_index if passing is not None else None,
+        first_pass_compile_pass=first.compile_pass,
+        first_pass_typecheck_pass=first.typecheck_pass,
+        first_pass_tests_pass=first.tests_success,
+        final_compile_pass=final.compile_pass,
+        final_typecheck_pass=final.typecheck_pass,
+        final_tests_pass=final.tests_success,
+        repair_success=not first.tests_success and final.tests_success,
+        failure_stage_by_turn={
+            f"turn-{turn.turn_index}": turn.failure_stage for turn in turns
+        },
+        generation_tokens_by_turn={
+            f"turn-{turn.turn_index}": turn.generation_tokens for turn in turns
+        },
+        diagnostics_by_turn={
+            f"turn-{turn.turn_index}": turn.diagnostics for turn in turns
+        },
+    )
+
+
+def evaluate_task(
+    *,
+    task: EvalTask,
+    run_id: str,
+    dry_run: bool,
+    provider: Provider,
+    api_key: str | None,
+    model: str,
+    primer: str,
+    enc: tiktoken.Encoding,
+    tacit_bin: Path,
+    output_dir: Path,
+    retain_outputs: bool,
+    max_tokens: int,
+    temperature: float,
+    timeout_seconds: int,
+    max_retries: int,
+    repair_turns: int,
+) -> TaskMetric:
+    started = time.monotonic()
+    repair_mode = repair_turns > 0
+    first_prompt = build_task_prompt(task.task_dir)
+    turns = [
+        evaluate_turn(
+            task=task,
+            run_id=run_id,
+            turn_index=0,
+            prompt=first_prompt,
+            dry_run=dry_run,
+            provider=provider,
+            api_key=api_key,
+            model=model,
+            primer=primer,
+            enc=enc,
+            tacit_bin=tacit_bin,
+            output_dir=output_dir,
+            retain_outputs=retain_outputs,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            timeout_seconds=timeout_seconds,
+            max_retries=max_retries,
+            repair_mode=repair_mode,
+        )
+    ]
+
+    for turn_index in range(1, repair_turns + 1):
+        previous = turns[-1]
+        if previous.tests_success or previous.failure_stage == "api":
+            break
+        repair_prompt = build_repair_prompt(task.task_dir, previous)
+        turns.append(
+            evaluate_turn(
+                task=task,
+                run_id=run_id,
+                turn_index=turn_index,
+                prompt=repair_prompt,
+                dry_run=dry_run,
+                provider=provider,
+                api_key=api_key,
+                model=model,
+                primer=primer,
+                enc=enc,
+                tacit_bin=tacit_bin,
+                output_dir=output_dir,
+                retain_outputs=retain_outputs,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                timeout_seconds=timeout_seconds,
+                max_retries=max_retries,
+                repair_mode=repair_mode,
+            )
+        )
+
+    primary = turns[0]
+    repair = build_repair_metric(turns) if repair_mode else None
+    duration_ms = int((time.monotonic() - started) * 1000)
+    return TaskMetric(
+        task_id=task.task_id,
+        stdlib_dominated=task.stdlib_dominated,
+        compile_pass=primary.compile_pass,
+        typecheck_pass=primary.typecheck_pass,
+        tests_pass=primary.tests_pass,
+        tests_total=primary.tests_total,
+        generation_tokens=primary.generation_tokens,
+        python_baseline_tokens=task.python_baseline_tokens,
+        diagnostics=primary.diagnostics,
+        duration_ms=duration_ms,
+        retries=sum(turn.retries for turn in turns),
+        repair=repair,
     )
 
 
@@ -925,6 +1315,84 @@ def primary_aggregates(tasks: list[TaskMetric], primer_tokens: int) -> dict[str,
         "full": _bucket(tasks, primer_tokens),
         "stdlib_dominated": _bucket(stdlib, primer_tokens),
         "non_stdlib_dominated": _bucket(non_stdlib, primer_tokens),
+    }
+
+
+def repair_aggregates(tasks: list[TaskMetric], *, dry_run: bool) -> dict[str, Any]:
+    repair_tasks = [task for task in tasks if task.repair is not None]
+    task_count = len(repair_tasks)
+    initially_failed = [task for task in repair_tasks if not task.repair.first_pass_tests_pass]
+    initially_failed_count = len(initially_failed)
+    repair_successes = [task for task in initially_failed if task.repair.repair_success]
+    final_passes = [task for task in repair_tasks if task.repair.final_tests_pass]
+    final_compile_passes = [task for task in repair_tasks if task.repair.final_compile_pass]
+    final_typecheck_passes = [task for task in repair_tasks if task.repair.final_typecheck_pass]
+
+    def first_stage(task: TaskMetric) -> str | None:
+        assert task.repair is not None
+        return task.repair.failure_stage_by_turn.get("turn-0")
+
+    compile_typecheck_initial = [
+        task for task in initially_failed if first_stage(task) in {"typecheck", "compile"}
+    ]
+    compile_typecheck_recovered = [
+        task
+        for task in compile_typecheck_initial
+        if task.repair is not None
+        and task.repair.final_compile_pass
+        and task.repair.final_typecheck_pass
+    ]
+    invalid_initial = [
+        task
+        for task in initially_failed
+        if first_stage(task) in {"extract", "typecheck", "compile"}
+    ]
+    invalid_repaired = [
+        task for task in invalid_initial if task.repair is not None and task.repair.final_tests_pass
+    ]
+    behavioral_initial = [task for task in initially_failed if first_stage(task) == "test"]
+    behavioral_repaired = [
+        task
+        for task in behavioral_initial
+        if task.repair is not None and task.repair.final_tests_pass
+    ]
+
+    model_calls = sum(
+        len(task.repair.generation_tokens_by_turn)
+        for task in repair_tasks
+        if task.repair is not None
+    )
+    total_retries = sum(task.retries for task in repair_tasks)
+    total_generation_tokens = sum(
+        sum(task.repair.generation_tokens_by_turn.values())
+        for task in repair_tasks
+        if task.repair is not None
+    )
+
+    return {
+        "task_count": task_count,
+        "one_shot_task_pass_rate": _rate(task_count - initially_failed_count, task_count),
+        "final_task_pass_rate": _rate(len(final_passes), task_count),
+        "final_compile_pass_rate": _rate(len(final_compile_passes), task_count),
+        "final_typecheck_pass_rate": _rate(len(final_typecheck_passes), task_count),
+        "initially_failed_count": initially_failed_count,
+        "repair_success_count": len(repair_successes),
+        "repair_recovery_rate": _rate(len(repair_successes), initially_failed_count),
+        "compile_typecheck_initial_failure_count": len(compile_typecheck_initial),
+        "compile_typecheck_recovered_count": len(compile_typecheck_recovered),
+        "compile_typecheck_recovery_rate": _rate(
+            len(compile_typecheck_recovered), len(compile_typecheck_initial)
+        ),
+        "invalid_initial_failure_count": len(invalid_initial),
+        "invalid_repaired_count": len(invalid_repaired),
+        "invalid_recovery_rate": _rate(len(invalid_repaired), len(invalid_initial)),
+        "behavioral_initial_failure_count": len(behavioral_initial),
+        "behavioral_repaired_count": len(behavioral_repaired),
+        "behavioral_recovery_rate": _rate(len(behavioral_repaired), len(behavioral_initial)),
+        "average_model_calls_per_task": _rate(model_calls, task_count),
+        "total_model_calls": model_calls,
+        "total_generation_tokens": total_generation_tokens,
+        "total_api_calls": 0 if dry_run else model_calls + total_retries,
     }
 
 
@@ -973,8 +1441,12 @@ def build_metrics(
     primer_hash: str,
     primer_tokens: int,
     tasks: list[TaskMetric],
+    repair_turns: int = 0,
+    dry_run: bool = False,
 ) -> dict[str, Any]:
     aggregates = primary_aggregates(tasks, primer_tokens)
+    if repair_turns > 0:
+        aggregates["repair"] = repair_aggregates(tasks, dry_run=dry_run)
     gates = primary_gates(aggregates) if track == "primary" else reporting_only_gates()
     return {
         "schema_version": "p3.0",
@@ -1065,9 +1537,10 @@ def build_run_metadata(
     started_at: datetime,
     completed_at: datetime,
     dry_run: bool,
+    repair_turns: int = 0,
 ) -> dict[str, Any]:
     sha = _git_sha()
-    return {
+    data = {
         "run_id": run_id,
         "harness_git_sha": sha,
         "corpus_git_sha": sha,
@@ -1087,6 +1560,9 @@ def build_run_metadata(
         "harness_version": HARNESS_VERSION,
         "dry_run": dry_run,
     }
+    if repair_turns > 0:
+        data["repair_turns"] = repair_turns
+    return data
 
 
 def write_json(path: Path, data: dict[str, Any]) -> None:
@@ -1148,6 +1624,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="write raw model outputs under <run-id>.outputs/ for open tasks",
     )
+    parser.add_argument(
+        "--repair-turns",
+        type=int,
+        default=0,
+        help="number of repair turns after the initial generation (0-2; default: 0)",
+    )
     parser.add_argument("--max-tokens", type=int, default=DEFAULT_MAX_TOKENS)
     parser.add_argument("--temperature", type=float, default=DEFAULT_TEMPERATURE)
     parser.add_argument("--timeout-seconds", type=int, default=DEFAULT_TIMEOUT_SECONDS)
@@ -1157,6 +1639,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def run(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+
+    if args.repair_turns < 0 or args.repair_turns > 2:
+        raise EvalError("--repair-turns must be between 0 and 2")
+    if args.repair_turns > 0 and args.include_sealed:
+        raise EvalError("--repair-turns is open-only; sealed repair feedback policy is not settled")
 
     if args.tacit_bin is None or not args.tacit_bin.is_file():
         raise EvalError("tacit binary not found; build it or pass --tacit-bin")
@@ -1190,9 +1677,10 @@ def run(argv: list[str] | None = None) -> int:
     started_at = _utc_now()
     task_metrics: list[TaskMetric] = []
 
+    repair_label = f" repair_turns={args.repair_turns}" if args.repair_turns > 0 else ""
     print(
         f"corpus-eval run_id={run_id} scope={scope} track={track} "
-        f"provider={provider} model={model} tasks={len(tasks)}"
+        f"provider={provider} model={model} tasks={len(tasks)}{repair_label}"
     )
     for task in tasks:
         metric = evaluate_task(
@@ -1211,9 +1699,14 @@ def run(argv: list[str] | None = None) -> int:
             temperature=args.temperature,
             timeout_seconds=args.timeout_seconds,
             max_retries=args.max_retries,
+            repair_turns=args.repair_turns,
         )
         task_metrics.append(metric)
-        ok = metric.tests_pass == metric.tests_total and metric.tests_total > 0
+        ok = (
+            metric.repair.final_tests_pass
+            if metric.repair is not None
+            else metric.tests_pass == metric.tests_total and metric.tests_total > 0
+        )
         print("." if ok else "F", end="", flush=True)
     print()
 
@@ -1227,6 +1720,8 @@ def run(argv: list[str] | None = None) -> int:
         primer_hash=primer_hash,
         primer_tokens=primer_tokens,
         tasks=task_metrics,
+        repair_turns=args.repair_turns,
+        dry_run=args.dry_run,
     )
     validate_metrics_shape(metrics)
     run_metadata = build_run_metadata(
@@ -1242,6 +1737,7 @@ def run(argv: list[str] | None = None) -> int:
         started_at=started_at,
         completed_at=completed_at,
         dry_run=args.dry_run,
+        repair_turns=args.repair_turns,
     )
 
     run_path = args.output_dir / f"{run_id}.run.json"
@@ -1251,11 +1747,20 @@ def run(argv: list[str] | None = None) -> int:
 
     full = metrics["aggregates"]["full"]
     print(f"wrote {display_path(run_path)} and {display_path(metrics_path)}")
-    print(
-        f"tasks_passed={full['tests_pass_rate']:.3f} "
-        f"compile_pass={full['compile_pass_rate']:.3f} "
-        f"token_delta={full['token_delta']:.3f}"
-    )
+    if args.repair_turns > 0:
+        repair = metrics["aggregates"]["repair"]
+        print(
+            f"one_shot_tasks_passed={repair['one_shot_task_pass_rate']:.3f} "
+            f"final_tasks_passed={repair['final_task_pass_rate']:.3f} "
+            f"repair_recovery={repair['repair_recovery_rate']:.3f} "
+            f"avg_model_calls={repair['average_model_calls_per_task']:.2f}"
+        )
+    else:
+        print(
+            f"tasks_passed={full['tests_pass_rate']:.3f} "
+            f"compile_pass={full['compile_pass_rate']:.3f} "
+            f"token_delta={full['token_delta']:.3f}"
+        )
     return 0
 
 

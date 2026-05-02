@@ -311,6 +311,75 @@
         },
         "retries": {
           "$ref": "#/$defs/non_negative_integer"
+        },
+        "turns_used": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/non_negative_integer"
+            }
+          ]
+        },
+        "first_pass_compile_pass": {
+          "type": "boolean"
+        },
+        "first_pass_typecheck_pass": {
+          "type": "boolean"
+        },
+        "first_pass_tests_pass": {
+          "type": "boolean"
+        },
+        "final_compile_pass": {
+          "type": "boolean"
+        },
+        "final_typecheck_pass": {
+          "type": "boolean"
+        },
+        "final_tests_pass": {
+          "type": "boolean"
+        },
+        "repair_success": {
+          "type": "boolean"
+        },
+        "failure_stage_by_turn": {
+          "type": "object",
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "enum": [
+                  "api",
+                  "extract",
+                  "typecheck",
+                  "compile",
+                  "test"
+                ]
+              }
+            ]
+          }
+        },
+        "generation_tokens_by_turn": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/non_negative_integer"
+          }
+        },
+        "diagnostics_by_turn": {
+          "type": "object",
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/$defs/diagnostic_envelope"
+              }
+            ]
+          }
         }
       }
     },
@@ -406,6 +475,9 @@
         },
         "non_stdlib_dominated": {
           "$ref": "#/$defs/primary_bucket"
+        },
+        "repair": {
+          "$ref": "#/$defs/repair_aggregates"
         }
       }
     },
@@ -453,6 +525,99 @@
           "$ref": "#/$defs/non_negative_integer"
         },
         "tests_total_total": {
+          "$ref": "#/$defs/non_negative_integer"
+        }
+      }
+    },
+    "repair_aggregates": {
+      "type": "object",
+      "required": [
+        "task_count",
+        "one_shot_task_pass_rate",
+        "final_task_pass_rate",
+        "final_compile_pass_rate",
+        "final_typecheck_pass_rate",
+        "initially_failed_count",
+        "repair_success_count",
+        "repair_recovery_rate",
+        "compile_typecheck_initial_failure_count",
+        "compile_typecheck_recovered_count",
+        "compile_typecheck_recovery_rate",
+        "invalid_initial_failure_count",
+        "invalid_repaired_count",
+        "invalid_recovery_rate",
+        "behavioral_initial_failure_count",
+        "behavioral_repaired_count",
+        "behavioral_recovery_rate",
+        "average_model_calls_per_task",
+        "total_model_calls",
+        "total_generation_tokens",
+        "total_api_calls"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "task_count": {
+          "$ref": "#/$defs/non_negative_integer"
+        },
+        "one_shot_task_pass_rate": {
+          "$ref": "#/$defs/rate"
+        },
+        "final_task_pass_rate": {
+          "$ref": "#/$defs/rate"
+        },
+        "final_compile_pass_rate": {
+          "$ref": "#/$defs/rate"
+        },
+        "final_typecheck_pass_rate": {
+          "$ref": "#/$defs/rate"
+        },
+        "initially_failed_count": {
+          "$ref": "#/$defs/non_negative_integer"
+        },
+        "repair_success_count": {
+          "$ref": "#/$defs/non_negative_integer"
+        },
+        "repair_recovery_rate": {
+          "$ref": "#/$defs/rate"
+        },
+        "compile_typecheck_initial_failure_count": {
+          "$ref": "#/$defs/non_negative_integer"
+        },
+        "compile_typecheck_recovered_count": {
+          "$ref": "#/$defs/non_negative_integer"
+        },
+        "compile_typecheck_recovery_rate": {
+          "$ref": "#/$defs/rate"
+        },
+        "invalid_initial_failure_count": {
+          "$ref": "#/$defs/non_negative_integer"
+        },
+        "invalid_repaired_count": {
+          "$ref": "#/$defs/non_negative_integer"
+        },
+        "invalid_recovery_rate": {
+          "$ref": "#/$defs/rate"
+        },
+        "behavioral_initial_failure_count": {
+          "$ref": "#/$defs/non_negative_integer"
+        },
+        "behavioral_repaired_count": {
+          "$ref": "#/$defs/non_negative_integer"
+        },
+        "behavioral_recovery_rate": {
+          "$ref": "#/$defs/rate"
+        },
+        "average_model_calls_per_task": {
+          "type": "number",
+          "minimum": 0
+        },
+        "total_model_calls": {
+          "$ref": "#/$defs/non_negative_integer"
+        },
+        "total_generation_tokens": {
+          "$ref": "#/$defs/non_negative_integer"
+        },
+        "total_api_calls": {
           "$ref": "#/$defs/non_negative_integer"
         }
       }

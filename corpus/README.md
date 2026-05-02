@@ -168,3 +168,6 @@ writes ADR 0052/0055 run and metrics JSON under
 [`plans/phase-3-results/`](../plans/phase-3-results/). Anthropic runs use
 `ANTHROPIC_API_KEY`; OpenRouter runs use `OPENROUTER_API_KEY`. `--dry-run`
 uses open Tacit references as synthetic outputs and is what CI runs.
+`--repair-turns 2` enables the open-only repair-loop experiment: failed turn-0
+solutions get up to two repair prompts with compiler or compact test feedback,
+and metrics report both one-shot and final-pass results.
