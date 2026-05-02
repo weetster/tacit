@@ -36,6 +36,12 @@
         "maintenance"
       ]
     },
+    "result_label": {
+      "enum": [
+        "core-language",
+        "library-mediated"
+      ]
+    },
     "model": {
       "$ref": "#/$defs/model"
     },

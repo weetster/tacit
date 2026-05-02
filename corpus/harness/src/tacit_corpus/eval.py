@@ -42,13 +42,14 @@ from tacit_corpus._paths import (
 Provider = Literal["anthropic", "openrouter"]
 Track = Literal["primary", "cross-family"]
 Scope = Literal["open", "sealed"]
+ResultLabel = Literal["core-language", "library-mediated"]
 FailureStage = Literal["api", "extract", "typecheck", "compile", "test"]
 
 DEFAULT_TEMPERATURE = 0
 DEFAULT_MAX_TOKENS = 8192
 DEFAULT_TIMEOUT_SECONDS = 120
 DEFAULT_MAX_RETRIES = 3
-HARNESS_VERSION = "0.3.0"
+HARNESS_VERSION = "0.4.0"
 PROMPT_SUFFIX = (
     "Write the solution as a single Tacit-Lite program in a fenced "
     "block: ```tacit ... ```. Do not include any extra files, metadata, "
@@ -1517,6 +1518,7 @@ def build_metrics(
     run_id: str,
     track: Track,
     scope: Scope,
+    result_label: ResultLabel,
     provider: Provider,
     model_id: str,
     primer_hash: str,
@@ -1532,12 +1534,17 @@ def build_metrics(
             dry_run=dry_run,
             primer_tokens=primer_tokens,
         )
-    gates = primary_gates(aggregates) if track == "primary" else reporting_only_gates()
+    gates = (
+        primary_gates(aggregates)
+        if track == "primary" and result_label == "core-language"
+        else reporting_only_gates()
+    )
     return {
         "schema_version": "p3.0",
         "run_id": run_id,
         "track": track,
         "scope": scope,
+        "result_label": result_label,
         "model": {
             "provider": provider,
             "id": model_id,
@@ -1572,6 +1579,8 @@ def validate_metrics_shape(metrics: dict[str, Any]) -> None:
         raise EvalError("metrics track is invalid")
     if metrics["scope"] not in {"open", "sealed", "maintenance"}:
         raise EvalError("metrics scope is invalid")
+    if metrics.get("result_label") not in {None, "core-language", "library-mediated"}:
+        raise EvalError("metrics result_label is invalid")
     model = metrics["model"]
     if model["provider"] not in {"anthropic", "openrouter"}:
         raise EvalError("metrics model.provider is invalid")
@@ -1585,6 +1594,7 @@ def build_run_metadata(
     provider: Provider,
     model_id: str,
     scope: Scope,
+    result_label: ResultLabel,
     task_ids: list[str],
     primer_hash: str,
     primer_tokens: int,
@@ -1604,6 +1614,7 @@ def build_run_metadata(
         "primer_token_count": primer_tokens,
         "model_id": model_id,
         "provider": provider,
+        "result_label": result_label,
         "sampling": {
             "temperature": temperature,
             "max_tokens": max_tokens,
@@ -1647,6 +1658,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         choices=["auto", "primary", "cross-family"],
         default="auto",
         help="metrics track (default: primary for Anthropic, cross-family for OpenRouter)",
+    )
+    parser.add_argument(
+        "--result-label",
+        choices=["core-language", "library-mediated"],
+        default="core-language",
+        help=(
+            "result interpretation label; library-mediated runs are reported "
+            "separately and do not apply primary Phase 3 gates"
+        ),
     )
     parser.add_argument(
         "--include-sealed",
@@ -1736,7 +1756,8 @@ def run(argv: list[str] | None = None) -> int:
     repair_label = f" repair_turns={args.repair_turns}" if args.repair_turns > 0 else ""
     print(
         f"corpus-eval run_id={run_id} scope={scope} track={track} "
-        f"provider={provider} model={model} tasks={len(tasks)}{repair_label}"
+        f"result_label={args.result_label} provider={provider} model={model} "
+        f"tasks={len(tasks)}{repair_label}"
     )
     for task in tasks:
         metric = evaluate_task(
@@ -1771,6 +1792,7 @@ def run(argv: list[str] | None = None) -> int:
         run_id=run_id,
         track=track,
         scope=scope,
+        result_label=args.result_label,
         provider=provider,
         model_id=model,
         primer_hash=primer_hash,
@@ -1785,6 +1807,7 @@ def run(argv: list[str] | None = None) -> int:
         provider=provider,
         model_id=model,
         scope=scope,
+        result_label=args.result_label,
         task_ids=[task.task_id for task in tasks],
         primer_hash=primer_hash,
         primer_tokens=primer_tokens,

@@ -207,6 +207,11 @@ Proceed from paid canary to full open run only if:
 7. Run the open canary one-shot and repair-loop modes.
 8. Decide whether to run full open stdlib-mediated evaluation.
 
+Step 2 implementation note: `corpus-eval` supports
+`--result-label library-mediated`. The label is written into both run metadata
+and metrics, and primary Phase 3 gates are reporting-only for labelled
+library-mediated runs.
+
 ## First Recommendation
 
 Start with Bundle A plus the smallest part of Bundle B needed to represent

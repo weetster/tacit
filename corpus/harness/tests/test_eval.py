@@ -226,6 +226,39 @@ def test_primary_aggregates_are_primer_inclusive() -> None:
     assert aggregates["non_stdlib_dominated"]["tests_pass_rate"] == 1.0
 
 
+def test_library_mediated_metrics_are_reporting_only() -> None:
+    task = corpus_eval.TaskMetric(
+        task_id="collections/025-partition-eo",
+        stdlib_dominated=False,
+        compile_pass=True,
+        typecheck_pass=True,
+        tests_pass=2,
+        tests_total=2,
+        generation_tokens=4,
+        python_baseline_tokens=20,
+        diagnostics=None,
+        duration_ms=1,
+        retries=0,
+    )
+
+    metrics = corpus_eval.build_metrics(
+        run_id="run",
+        track="primary",
+        scope="open",
+        result_label="library-mediated",
+        provider="anthropic",
+        model_id="claude-sonnet-4-6",
+        primer_hash="0" * 64,
+        primer_tokens=10,
+        tasks=[task],
+    )
+
+    assert metrics["result_label"] == "library-mediated"
+    assert metrics["gates"]["primary_pass_rate_gate"]["applies"] is False
+    assert metrics["gates"]["passed_overall"] is False
+    corpus_eval.validate_metrics_shape(metrics)
+
+
 def test_repair_aggregates_report_final_recovery() -> None:
     recovered = corpus_eval.TaskMetric(
         task_id="algorithms/035-bubble-sort",

@@ -42,6 +42,7 @@ Tacit references. The aggregate Python count is the Phase 3 baseline per
 ```bash
 uv run corpus-eval --model claude-sonnet-4-6 --tasks 001
 uv run corpus-eval --model claude-sonnet-4-6 --repair-turns 2 --tasks 033,035,037
+uv run corpus-eval --model claude-sonnet-4-6 --result-label library-mediated --tasks 025,035
 uv run corpus-eval --provider openrouter --model openai/gpt-5.5 --tasks 001
 uv run corpus-eval --model claude-sonnet-4-6 --include-sealed
 ```
@@ -53,3 +54,8 @@ files as synthetic model outputs and makes no API calls. `--repair-turns`
 defaults to `0`; values up to `2` enable the open-only repair protocol, adding
 per-turn repair fields and final-pass aggregates while preserving the existing
 one-shot fields for turn 0.
+
+Use `--result-label library-mediated` for stdlib-mediated experiments. The
+label is written to both `run.json` and `metrics.json`; primary Phase 3 gates
+are marked reporting-only for these runs so they cannot satisfy the
+primer-only core-language gate.
