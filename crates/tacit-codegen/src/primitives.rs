@@ -1,4 +1,4 @@
-//! `@name` primitive allowlist and classification (ADR 0028, 0030, 0038, 0047, 0061, 0062, 0063).
+//! `@name` primitive allowlist and classification (ADR 0028, 0030, 0038, 0047, 0061, 0062, 0063, 0064).
 //!
 //! Categories per ADR 0028 + 0030 + 0038 + 0047:
 //! - LIBC: external libc call (`write`, `read`, `exit`).
@@ -14,6 +14,8 @@
 //! - TEXT-INDEX-ANY: multi-delimiter token indexing (ADR 0063).
 //! - RANGE-TABLE: I64Vec start/length pair accessors (ADR 0062).
 //! - ORDER: inline ordering operations over I64Vec and range tables.
+//! - SEARCH: inline binary search over sorted I64Vec prefixes (ADR 0064).
+//! - RANGE-GROUP: inline adjacent range grouping helpers (ADR 0064).
 //!
 //! Codegen pattern-matches an `App` left-spine whose head is `Sym(name)`,
 //! looks up `name` here, collects right-spine args, and emits accordingly.
@@ -70,6 +72,12 @@ pub enum PrimKind {
     SortRangesByBytes,
     /// Stable-sort i64 keys and apply the same permutation to i64 values.
     StableSortPairsI64,
+    /// Find the lower-bound insertion index in a sorted i64 vector prefix.
+    LowerBoundI64,
+    /// Count adjacent equal byte ranges into `(start, len, count)` triples.
+    CountEqualRanges,
+    /// Deduplicate adjacent equal byte ranges into start/length pairs.
+    DedupAdjacentRanges,
     /// Binary `i64 → i64 → i64` arithmetic, lowering as a single LLVM op.
     Arith(ArithOp),
     /// Binary `i64 → i64 → i64` comparison: emits `icmp` + `zext`.
@@ -123,6 +131,9 @@ impl PrimKind {
             "sort-i64" => PrimKind::SortI64,
             "sort-ranges-by-bytes" => PrimKind::SortRangesByBytes,
             "stable-sort-pairs-i64" => PrimKind::StableSortPairsI64,
+            "lower-bound-i64" => PrimKind::LowerBoundI64,
+            "count-equal-ranges" => PrimKind::CountEqualRanges,
+            "dedup-adjacent-ranges" => PrimKind::DedupAdjacentRanges,
             "add" => PrimKind::Arith(ArithOp::Add),
             "sub" => PrimKind::Arith(ArithOp::Sub),
             "mul" => PrimKind::Arith(ArithOp::Mul),
@@ -152,8 +163,9 @@ impl PrimKind {
             | PrimKind::I64Swap
             | PrimKind::LineIndex
             | PrimKind::SortRangesByBytes
-            | PrimKind::StableSortPairsI64 => 3,
-            PrimKind::ScanByte => 4,
+            | PrimKind::StableSortPairsI64
+            | PrimKind::LowerBoundI64 => 3,
+            PrimKind::ScanByte | PrimKind::CountEqualRanges | PrimKind::DedupAdjacentRanges => 4,
             PrimKind::BufCopy | PrimKind::BufEq | PrimKind::I64Copy | PrimKind::TokenIndex => 5,
             PrimKind::TokenIndexAny => 6,
             PrimKind::Arith(_) | PrimKind::Cmp(_) => 2,
@@ -237,6 +249,18 @@ mod tests {
             PrimKind::lookup("stable-sort-pairs-i64"),
             Some(PrimKind::StableSortPairsI64)
         );
+        assert_eq!(
+            PrimKind::lookup("lower-bound-i64"),
+            Some(PrimKind::LowerBoundI64)
+        );
+        assert_eq!(
+            PrimKind::lookup("count-equal-ranges"),
+            Some(PrimKind::CountEqualRanges)
+        );
+        assert_eq!(
+            PrimKind::lookup("dedup-adjacent-ranges"),
+            Some(PrimKind::DedupAdjacentRanges)
+        );
     }
 
     #[test]
@@ -265,6 +289,9 @@ mod tests {
         assert_eq!(PrimKind::SortI64.arity(), 2);
         assert_eq!(PrimKind::SortRangesByBytes.arity(), 3);
         assert_eq!(PrimKind::StableSortPairsI64.arity(), 3);
+        assert_eq!(PrimKind::LowerBoundI64.arity(), 3);
+        assert_eq!(PrimKind::CountEqualRanges.arity(), 4);
+        assert_eq!(PrimKind::DedupAdjacentRanges.arity(), 4);
         assert_eq!(PrimKind::Arith(ArithOp::Add).arity(), 2);
         assert_eq!(PrimKind::Cmp(CmpOp::Lt).arity(), 2);
     }

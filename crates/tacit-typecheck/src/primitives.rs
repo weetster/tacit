@@ -1,4 +1,4 @@
-//! Type and effect signatures for built-in @name primitives (ADR 0028, 0030, 0042, 0047, 0061, 0062, 0063).
+//! Type and effect signatures for built-in @name primitives (ADR 0028, 0030, 0042, 0047, 0061, 0062, 0063, 0064).
 //!
 //! Effect sets mirror `stdlib/libc-effects.toml` (ADR 0025, consumed in Stage 3).
 //! The canonical source for primitive effects is that TOML file; values here match it.
@@ -8,6 +8,7 @@
 //! - ADR 0062: text indexing into I64Vec range tables.
 //! - ADR 0063: multi-delimiter token indexing.
 //! - Bundle C: ordering operations over I64Vec and range tables.
+//! - ADR 0064: search and adjacent range grouping helpers.
 
 use crate::ty::{EffAtom, EffSet, FnEff, Ty};
 
@@ -76,6 +77,12 @@ pub fn prim_type(name: &str) -> Option<Ty> {
         "sort-ranges-by-bytes" => fn3_mut(Ty::Buf, Ty::I64Vec, Ty::Int, Ty::Int),
         // ORDER: stable-sort-pairs-i64(keys: I64Vec, values: I64Vec, count: Int) -> Int / {Mut}
         "stable-sort-pairs-i64" => fn3_mut(Ty::I64Vec, Ty::I64Vec, Ty::Int, Ty::Int),
+        // SEARCH: lower-bound-i64(vec: I64Vec, count: Int, value: Int) -> Int (pure)
+        "lower-bound-i64" => fn3_pure(Ty::I64Vec, Ty::Int, Ty::Int, Ty::Int),
+        // RANGE-GROUP: count-equal-ranges(text: Buf, table: I64Vec, count: Int, out: I64Vec) -> Int / {Mut}
+        "count-equal-ranges" => fn4_mut(Ty::Buf, Ty::I64Vec, Ty::Int, Ty::I64Vec, Ty::Int),
+        // RANGE-GROUP: dedup-adjacent-ranges(text: Buf, table: I64Vec, count: Int, out: I64Vec) -> Int / {Mut}
+        "dedup-adjacent-ranges" => fn4_mut(Ty::Buf, Ty::I64Vec, Ty::Int, Ty::I64Vec, Ty::Int),
         // ARITH: Int → Int → Int (pure)
         "add" | "sub" | "mul" | "div" | "mod" => fn2_pure(Ty::Int, Ty::Int, Ty::Int),
         // CMP: Int → Int → Bool (pure, ADR 0042)
@@ -120,6 +127,8 @@ pub fn is_mut_prim(name: &str) -> bool {
             | "sort-i64"
             | "sort-ranges-by-bytes"
             | "stable-sort-pairs-i64"
+            | "count-equal-ranges"
+            | "dedup-adjacent-ranges"
     )
 }
 
@@ -246,6 +255,23 @@ fn fn4_pure(a: Ty, b: Ty, c: Ty, d: Ty, r: Ty) -> Ty {
             Box::new(Ty::Fn(
                 Box::new(c),
                 Box::new(Ty::Fn(Box::new(d), Box::new(r), FnEff::pure_())),
+                FnEff::pure_(),
+            )),
+            FnEff::pure_(),
+        )),
+        FnEff::pure_(),
+    )
+}
+
+/// Quaternary function, {Mut} at the innermost (fully-applied) step.
+fn fn4_mut(a: Ty, b: Ty, c: Ty, d: Ty, r: Ty) -> Ty {
+    Ty::Fn(
+        Box::new(a),
+        Box::new(Ty::Fn(
+            Box::new(b),
+            Box::new(Ty::Fn(
+                Box::new(c),
+                Box::new(Ty::Fn(Box::new(d), Box::new(r), mut_eff())),
                 FnEff::pure_(),
             )),
             FnEff::pure_(),
@@ -650,6 +676,28 @@ mod tests {
             (
                 "stable-sort-pairs-i64",
                 vec![Ty::I64Vec, Ty::I64Vec, Ty::Int],
+            ),
+            ("lower-bound-i64", vec![Ty::I64Vec, Ty::Int, Ty::Int]),
+        ] {
+            let mut args = Vec::new();
+            let eff = args_and_eff(&prim_type(name).unwrap(), &mut args);
+            assert_eq!(args, expected_args);
+            let expected_eff = if name == "lower-bound-i64" {
+                FnEff::pure_()
+            } else {
+                FnEff::from_set(EffSet::of([EffAtom::Mut]))
+            };
+            assert_eq!(eff, expected_eff);
+        }
+
+        for (name, expected_args) in [
+            (
+                "count-equal-ranges",
+                vec![Ty::Buf, Ty::I64Vec, Ty::Int, Ty::I64Vec],
+            ),
+            (
+                "dedup-adjacent-ranges",
+                vec![Ty::Buf, Ty::I64Vec, Ty::Int, Ty::I64Vec],
             ),
         ] {
             let mut args = Vec::new();

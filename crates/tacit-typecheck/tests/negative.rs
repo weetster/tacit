@@ -434,3 +434,35 @@ fn neg_stable_sort_pairs_i64_rejects_byte_buffer_values() {
         "type-mismatch",
     );
 }
+
+#[test]
+fn neg_lower_bound_i64_rejects_byte_buffer() {
+    expect_authoring_error(
+        "let xs = @buf-alloc 8 in @lower-bound-i64 xs 1 4",
+        "type-mismatch",
+    );
+}
+
+#[test]
+fn neg_count_equal_ranges_rejects_i64_text() {
+    expect_authoring_error(
+        "let text = @i64-alloc 2 in let rows = @i64-alloc 4 in let out = @i64-alloc 6 in @count-equal-ranges text rows 2 out",
+        "type-mismatch",
+    );
+}
+
+#[test]
+fn neg_count_equal_ranges_rejects_byte_buffer_out() {
+    expect_authoring_error(
+        "let text = @buf-alloc 4 in let rows = @i64-alloc 4 in let out = @buf-alloc 24 in @count-equal-ranges text rows 2 out",
+        "type-mismatch",
+    );
+}
+
+#[test]
+fn neg_dedup_adjacent_ranges_rejects_byte_buffer_table() {
+    expect_authoring_error(
+        "let text = @buf-alloc 4 in let rows = @buf-alloc 8 in let out = @i64-alloc 4 in @dedup-adjacent-ranges text rows 2 out",
+        "type-mismatch",
+    );
+}

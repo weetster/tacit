@@ -1,0 +1,27 @@
+let text = @buf-alloc 10 in
+let _ = @buf-set text 0 97 in
+let _ = @buf-set text 1 98 in
+let _ = @buf-set text 2 120 in
+let _ = @buf-set text 3 97 in
+let _ = @buf-set text 4 98 in
+let _ = @buf-set text 5 120 in
+let _ = @buf-set text 6 97 in
+let _ = @buf-set text 7 98 in
+let _ = @buf-set text 8 99 in
+let _ = @buf-set text 9 121 in
+let rows = @i64-alloc 8 in
+let _ = @i64-set rows 0 0 in
+let _ = @i64-set rows 1 2 in
+let _ = @i64-set rows 2 3 in
+let _ = @i64-set rows 3 2 in
+let _ = @i64-set rows 4 6 in
+let _ = @i64-set rows 5 3 in
+let _ = @i64-set rows 6 9 in
+let _ = @i64-set rows 7 1 in
+let out = @i64-alloc 6 in
+let groups = @dedup-adjacent-ranges text rows 4 out in
+let ok_count = @eq groups 3 in
+let ok0 = @add (@eq (@range-start out 0) 0) (@eq (@range-len out 0) 2) in
+let ok1 = @add (@eq (@range-start out 1) 6) (@eq (@range-len out 1) 3) in
+let ok2 = @add (@eq (@range-start out 2) 9) (@eq (@range-len out 2) 1) in
+@add ok_count (@add ok0 (@add ok1 ok2))

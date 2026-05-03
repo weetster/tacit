@@ -880,6 +880,9 @@ Text range indexing: `@line-index`, `@token-index`, `@token-index-any`,
 Ordering: `@sort-i64`, `@sort-ranges-by-bytes`,
 `@stable-sort-pairs-i64`.
 
+Search and range grouping: `@lower-bound-i64`, `@count-equal-ranges`,
+`@dedup-adjacent-ranges`.
+
 Parsing and formatting: `@parse-i64`, `@fmt-i64`.
 
 The primitive call shape is part of the language contract. For example,
@@ -891,6 +894,10 @@ of rows written. `@token-index-any text off len delims delim_count table`
 does the same with a delimiter set.
 `@sort-i64 xs count`, `@sort-ranges-by-bytes text table count`, and
 `@stable-sort-pairs-i64 keys values count` sort in place and return `0`.
+`@lower-bound-i64 xs count value` searches a sorted integer vector prefix.
+`@count-equal-ranges text table count out` and
+`@dedup-adjacent-ranges text table count out` scan adjacent equal byte ranges
+and write grouped rows to `out`.
 
 ### Program Boundary
 
@@ -1301,6 +1308,12 @@ prefer `@sort-ranges-by-bytes text table count`; it reorders range rows while
 leaving the source bytes in place. For numeric keys with attached values,
 prefer `@stable-sort-pairs-i64 keys values count` so equal keys keep their
 relative order.
+
+After sorting an integer vector, use `@lower-bound-i64 xs count value` for
+lookup or insertion-position searches. After sorting line or token ranges, use
+`@dedup-adjacent-ranges text table count out` for unique adjacent byte ranges
+and `@count-equal-ranges text table count out` when each run also needs a
+count.
 
 Only write a custom ordering loop when the comparison is not one of those
 forms. Keep helper state concrete: indexes, offsets, lengths, and any
@@ -1727,7 +1740,7 @@ primer.
 If a shorter solution would need a missing abstraction, write the explicit
 one.
 
-## Stdlib Appendix: Indexed Storage, Text Ranges, And Ordering
+## Stdlib Appendix: Indexed Storage, Text Ranges, Ordering, And Grouping
 
 Use `I64Vec` when a program needs indexed storage for full integer values.
 Byte-oriented buffers still handle raw input/output bytes; an `I64Vec` keeps
@@ -1829,3 +1842,37 @@ another, the shorter range sorts first.
 `@stable-sort-pairs-i64 keys values count` sorts `keys[0..count)` ascending
 and applies the same movement to `values[0..count)`. Equal keys keep their
 relative order, so attached values with the same key remain in input order.
+
+`@lower-bound-i64 xs count value` returns the first index in a sorted
+ascending `I64Vec` prefix where `value` can be inserted without moving earlier
+equal values. If every element is less than `value`, it returns `count`.
+
+```tacit
+let xs = @i64-alloc 4 in
+let _ = @i64-set xs 0 1 in
+let _ = @i64-set xs 1 3 in
+let _ = @i64-set xs 2 3 in
+let _ = @i64-set xs 3 9 in
+@lower-bound-i64 xs 4 3
+```
+
+`@dedup-adjacent-ranges text table count out` scans adjacent range rows and
+writes one start/length pair for each run of equal bytes. Use it after
+`@sort-ranges-by-bytes` when only unique byte ranges are needed. The returned
+integer is the number of output rows. `out` may be the same vector as `table`
+for in-place compaction.
+
+`@count-equal-ranges text table count out` scans the same adjacent runs but
+writes triples: representative start, representative length, then run count.
+Allocate three `I64Vec` slots per possible output row and read triple fields
+with `@i64-get`.
+
+```tacit
+let text = @buf-alloc 128 in
+let n = @read 0 text 128 in
+let rows = @i64-alloc (@mul n 2) in
+let row_count = @token-index-any text 0 n " \n\r\t" 4 rows in
+let _ = @sort-ranges-by-bytes text rows row_count in
+let grouped = @i64-alloc (@mul row_count 3) in
+@count-equal-ranges text rows row_count grouped
+```

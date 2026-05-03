@@ -1,0 +1,27 @@
+let text = @buf-alloc 10 in
+let _ = @buf-set text 0 97 in
+let _ = @buf-set text 1 98 in
+let _ = @buf-set text 2 120 in
+let _ = @buf-set text 3 97 in
+let _ = @buf-set text 4 98 in
+let _ = @buf-set text 5 120 in
+let _ = @buf-set text 6 97 in
+let _ = @buf-set text 7 98 in
+let _ = @buf-set text 8 99 in
+let _ = @buf-set text 9 121 in
+let rows = @i64-alloc 8 in
+let _ = @i64-set rows 0 0 in
+let _ = @i64-set rows 1 2 in
+let _ = @i64-set rows 2 3 in
+let _ = @i64-set rows 3 2 in
+let _ = @i64-set rows 4 6 in
+let _ = @i64-set rows 5 3 in
+let _ = @i64-set rows 6 9 in
+let _ = @i64-set rows 7 1 in
+let out = @i64-alloc 9 in
+let groups = @count-equal-ranges text rows 4 out in
+let ok_count = @eq groups 3 in
+let ok0 = @add (@eq (@i64-get out 0) 0) (@add (@eq (@i64-get out 1) 2) (@eq (@i64-get out 2) 2)) in
+let ok1 = @add (@eq (@i64-get out 3) 6) (@add (@eq (@i64-get out 4) 3) (@eq (@i64-get out 5) 1)) in
+let ok2 = @add (@eq (@i64-get out 6) 9) (@add (@eq (@i64-get out 7) 1) (@eq (@i64-get out 8) 1)) in
+@add ok_count (@add ok0 (@add ok1 ok2))

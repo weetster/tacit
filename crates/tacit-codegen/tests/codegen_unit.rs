@@ -36,6 +36,18 @@ fn primitive_lookup_smoke() {
         PrimKind::lookup("stable-sort-pairs-i64").map(PrimKind::arity),
         Some(3)
     );
+    assert_eq!(
+        PrimKind::lookup("lower-bound-i64").map(PrimKind::arity),
+        Some(3)
+    );
+    assert_eq!(
+        PrimKind::lookup("count-equal-ranges").map(PrimKind::arity),
+        Some(4)
+    );
+    assert_eq!(
+        PrimKind::lookup("dedup-adjacent-ranges").map(PrimKind::arity),
+        Some(4)
+    );
     assert!(PrimKind::lookup("frobnicate").is_none());
 }
 

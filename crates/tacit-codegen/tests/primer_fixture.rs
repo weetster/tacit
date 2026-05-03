@@ -19,7 +19,7 @@ use tacit_typecheck::infer_module;
 use tacit_views::authoring::parse_authoring;
 
 const STDLIB_APPENDIX_HEADING: &str =
-    "## Stdlib Appendix: Indexed Storage, Text Ranges, And Ordering";
+    "## Stdlib Appendix: Indexed Storage, Text Ranges, Ordering, And Grouping";
 
 #[derive(Debug)]
 struct Block {
@@ -265,6 +265,9 @@ fn primer_stdlib_appendix_examples_validate() {
     assert!(appendix.contains("`@sort-i64 xs count`"));
     assert!(appendix.contains("`@sort-ranges-by-bytes text table count`"));
     assert!(appendix.contains("`@stable-sort-pairs-i64 keys values count`"));
+    assert!(appendix.contains("`@lower-bound-i64 xs count value`"));
+    assert!(appendix.contains("`@count-equal-ranges text table count out`"));
+    assert!(appendix.contains("`@dedup-adjacent-ranges text table count out`"));
     for repo_term in [
         "corpus",
         "canary",
@@ -283,7 +286,7 @@ fn primer_stdlib_appendix_examples_validate() {
     let blocks = extract_tacit_blocks(appendix);
     assert_eq!(
         blocks.len(),
-        6,
+        8,
         "expected one fixture-checked Tacit block per stdlib appendix example"
     );
 

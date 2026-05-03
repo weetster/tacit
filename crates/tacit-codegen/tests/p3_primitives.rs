@@ -370,3 +370,54 @@ fn stable_sort_pairs_i64_preserves_equal_key_order() {
     assert!(out.is_empty());
     assert_eq!(code, 8);
 }
+
+// ── search and adjacent range grouping primitives ───────────────────────────
+
+#[test]
+fn lower_bound_i64_finds_hit_and_insertion_point() {
+    let (out, code) = run_p3("p3-lower-bound-i64");
+    assert!(out.is_empty());
+    assert_eq!(code, 24);
+}
+
+#[test]
+fn lower_bound_i64_empty_prefix_returns_zero() {
+    let (out, code) = run_p3("p3-lower-bound-i64-empty");
+    assert!(out.is_empty());
+    assert_eq!(code, 0);
+}
+
+#[test]
+fn count_equal_ranges_writes_count_triples() {
+    let (out, code) = run_p3("p3-count-equal-ranges");
+    assert!(out.is_empty());
+    assert_eq!(code, 10);
+}
+
+#[test]
+fn count_equal_ranges_empty_input_returns_zero_groups() {
+    let (out, code) = run_p3("p3-count-equal-ranges-empty");
+    assert!(out.is_empty());
+    assert_eq!(code, 0);
+}
+
+#[test]
+fn dedup_adjacent_ranges_writes_unique_pairs() {
+    let (out, code) = run_p3("p3-dedup-adjacent-ranges");
+    assert!(out.is_empty());
+    assert_eq!(code, 7);
+}
+
+#[test]
+fn dedup_adjacent_ranges_empty_input_returns_zero_groups() {
+    let (out, code) = run_p3("p3-dedup-adjacent-ranges-empty");
+    assert!(out.is_empty());
+    assert_eq!(code, 0);
+}
+
+#[test]
+fn dedup_adjacent_ranges_can_compact_in_place() {
+    let (out, code) = run_p3("p3-dedup-adjacent-ranges-in-place");
+    assert!(out.is_empty());
+    assert_eq!(code, 5);
+}

@@ -580,6 +580,9 @@ impl<'ctx> Compiler<'ctx> {
             PrimKind::SortI64 => self.emit_sort_i64(args, env, cur_fn),
             PrimKind::SortRangesByBytes => self.emit_sort_ranges_by_bytes(args, env, cur_fn),
             PrimKind::StableSortPairsI64 => self.emit_stable_sort_pairs_i64(args, env, cur_fn),
+            PrimKind::LowerBoundI64 => self.emit_lower_bound_i64(args, env, cur_fn),
+            PrimKind::CountEqualRanges => self.emit_count_equal_ranges(args, env, cur_fn),
+            PrimKind::DedupAdjacentRanges => self.emit_dedup_adjacent_ranges(args, env, cur_fn),
         }
     }
 
@@ -1059,6 +1062,36 @@ impl<'ctx> Compiler<'ctx> {
         Ok((start, len))
     }
 
+    fn store_range_count_triple(
+        &mut self,
+        out: PointerValue<'ctx>,
+        row: IntValue<'ctx>,
+        start: IntValue<'ctx>,
+        len: IntValue<'ctx>,
+        count: IntValue<'ctx>,
+    ) -> Result<()> {
+        let i64_t = self.context.i64_type();
+        let three64 = i64_t.const_int(3, false);
+        let one64 = i64_t.const_int(1, false);
+        let two64 = i64_t.const_int(2, false);
+        let base = self
+            .builder
+            .build_int_mul(row, three64, "range_count_base")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let len_index = self
+            .builder
+            .build_int_add(base, one64, "range_count_len_index")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let count_index = self
+            .builder
+            .build_int_add(base, two64, "range_count_count_index")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.store_i64(out, base, start)?;
+        self.store_i64(out, len_index, len)?;
+        self.store_i64(out, count_index, count)?;
+        Ok(())
+    }
+
     fn emit_byte_in_delims(
         &mut self,
         byte: IntValue<'ctx>,
@@ -1161,8 +1194,7 @@ impl<'ctx> Compiler<'ctx> {
         text: PointerValue<'ctx>,
         table: PointerValue<'ctx>,
         row: IntValue<'ctx>,
-        key_start: IntValue<'ctx>,
-        key_len: IntValue<'ctx>,
+        key: (IntValue<'ctx>, IntValue<'ctx>),
         cur_fn: FunctionValue<'ctx>,
         prefix: &str,
     ) -> Result<IntValue<'ctx>> {
@@ -1173,6 +1205,7 @@ impl<'ctx> Compiler<'ctx> {
         let false_val = bool_t.const_int(0, false);
         let true_val = bool_t.const_int(1, false);
 
+        let (key_start, key_len) = key;
         let (start, len) = self.load_range_pair(table, row, prefix)?;
 
         let entry_bb = self.builder.get_insert_block().unwrap();
@@ -1301,7 +1334,123 @@ impl<'ctx> Compiler<'ctx> {
         Ok(result_phi.as_basic_value().into_int_value())
     }
 
-    // ── Phase 3 emit functions (ADR 0047, ADR 0061, ADR 0062, ADR 0063) ──────────
+    fn emit_range_bytes_eq_key(
+        &mut self,
+        text: PointerValue<'ctx>,
+        table: PointerValue<'ctx>,
+        row: IntValue<'ctx>,
+        key: (IntValue<'ctx>, IntValue<'ctx>),
+        cur_fn: FunctionValue<'ctx>,
+        prefix: &str,
+    ) -> Result<IntValue<'ctx>> {
+        let i64_t = self.context.i64_type();
+        let bool_t = self.context.bool_type();
+        let zero64 = i64_t.const_zero();
+        let one64 = i64_t.const_int(1, false);
+        let false_val = bool_t.const_int(0, false);
+        let true_val = bool_t.const_int(1, false);
+
+        let (key_start, key_len) = key;
+        let (start, len) = self.load_range_pair(table, row, prefix)?;
+
+        let entry_bb = self.builder.get_insert_block().unwrap();
+        let hdr_bb = self
+            .context
+            .append_basic_block(cur_fn, &format!("{prefix}_eq_hdr"));
+        let check_bb = self
+            .context
+            .append_basic_block(cur_fn, &format!("{prefix}_eq_chk"));
+        let cont_bb = self
+            .context
+            .append_basic_block(cur_fn, &format!("{prefix}_eq_cont"));
+        let equal_bb = self
+            .context
+            .append_basic_block(cur_fn, &format!("{prefix}_eq_true"));
+        let false_bb = self
+            .context
+            .append_basic_block(cur_fn, &format!("{prefix}_eq_false"));
+        let merge_bb = self
+            .context
+            .append_basic_block(cur_fn, &format!("{prefix}_eq_merge"));
+
+        let len_eq = self
+            .builder
+            .build_int_compare(IntPredicate::EQ, len, key_len, "range_eq_len")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(len_eq, hdr_bb, false_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(hdr_bb);
+        let k_phi = self
+            .builder
+            .build_phi(i64_t, &format!("{prefix}_eq_k"))
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let k_val = k_phi.as_basic_value().into_int_value();
+        let done = self
+            .builder
+            .build_int_compare(IntPredicate::SGE, k_val, len, "range_eq_done")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(done, equal_bb, check_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(check_bb);
+        let left_off = self
+            .builder
+            .build_int_add(start, k_val, "range_eq_left_off")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let key_off = self
+            .builder
+            .build_int_add(key_start, k_val, "range_eq_key_off")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let left_byte = self.load_byte(text, left_off, "range_eq_left_byte")?;
+        let key_byte = self.load_byte(text, key_off, "range_eq_key_byte")?;
+        let bytes_eq = self
+            .builder
+            .build_int_compare(IntPredicate::EQ, left_byte, key_byte, "range_eq_bytes")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(bytes_eq, cont_bb, false_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(cont_bb);
+        let k_next = self
+            .builder
+            .build_int_add(k_val, one64, "range_eq_k_next")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_unconditional_branch(hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        k_phi.add_incoming(&[
+            (&zero64 as &dyn BasicValue<'ctx>, entry_bb),
+            (&k_next as &dyn BasicValue<'ctx>, cont_bb),
+        ]);
+
+        self.builder.position_at_end(equal_bb);
+        self.builder
+            .build_unconditional_branch(merge_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(false_bb);
+        self.builder
+            .build_unconditional_branch(merge_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(merge_bb);
+        let result_phi = self
+            .builder
+            .build_phi(bool_t, &format!("{prefix}_eq_result"))
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        result_phi.add_incoming(&[
+            (&true_val as &dyn BasicValue<'ctx>, equal_bb),
+            (&false_val as &dyn BasicValue<'ctx>, false_bb),
+        ]);
+        Ok(result_phi.as_basic_value().into_int_value())
+    }
+
+    // ── Phase 3 emit functions (ADR 0047, ADR 0061, ADR 0062, ADR 0063, ADR 0064) ─
 
     /// `@buf-get buf off` → load `buf[off]` as `i64`.
     fn emit_buf_get(
@@ -1794,8 +1943,7 @@ impl<'ctx> Compiler<'ctx> {
             text,
             table,
             prev_idx,
-            key_start,
-            key_len,
+            (key_start, key_len),
             cur_fn,
             "sort_ranges_prev",
         )?;
@@ -1837,6 +1985,359 @@ impl<'ctx> Compiler<'ctx> {
 
         self.builder.position_at_end(ret_bb);
         Ok(zero64)
+    }
+
+    /// `@lower-bound-i64 vec count value` → first sorted index with `vec[i] >= value`.
+    fn emit_lower_bound_i64(
+        &mut self,
+        args: &[&Node],
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<IntValue<'ctx>> {
+        let vec = self.compile_i64_vec_arg(args[0], env)?;
+        let count = self.compile_expr(args[1], env, cur_fn)?;
+        let value = self.compile_expr(args[2], env, cur_fn)?;
+
+        let i64_t = self.context.i64_type();
+        let zero64 = i64_t.const_zero();
+        let one64 = i64_t.const_int(1, false);
+        let two64 = i64_t.const_int(2, false);
+
+        let entry_bb = self.builder.get_insert_block().unwrap();
+        let hdr_bb = self.context.append_basic_block(cur_fn, "lower_bound_hdr");
+        let check_bb = self.context.append_basic_block(cur_fn, "lower_bound_chk");
+        let move_low_bb = self
+            .context
+            .append_basic_block(cur_fn, "lower_bound_move_low");
+        let move_high_bb = self
+            .context
+            .append_basic_block(cur_fn, "lower_bound_move_high");
+        let ret_bb = self.context.append_basic_block(cur_fn, "lower_bound_ret");
+
+        self.builder
+            .build_unconditional_branch(hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(hdr_bb);
+        let lo_phi = self
+            .builder
+            .build_phi(i64_t, "lower_bound_lo")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let hi_phi = self
+            .builder
+            .build_phi(i64_t, "lower_bound_hi")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let lo_val = lo_phi.as_basic_value().into_int_value();
+        let hi_val = hi_phi.as_basic_value().into_int_value();
+        let done = self
+            .builder
+            .build_int_compare(IntPredicate::SGE, lo_val, hi_val, "lower_bound_done")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(done, ret_bb, check_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(check_bb);
+        let span = self
+            .builder
+            .build_int_add(lo_val, hi_val, "lower_bound_span")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let mid = self
+            .builder
+            .build_int_signed_div(span, two64, "lower_bound_mid")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let mid_val = self.load_i64(vec, mid, "lower_bound_mid_val")?;
+        let is_less = self
+            .builder
+            .build_int_compare(IntPredicate::SLT, mid_val, value, "lower_bound_is_less")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(is_less, move_low_bb, move_high_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(move_low_bb);
+        let lo_next = self
+            .builder
+            .build_int_add(mid, one64, "lower_bound_lo_next")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_unconditional_branch(hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(move_high_bb);
+        self.builder
+            .build_unconditional_branch(hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        lo_phi.add_incoming(&[
+            (&zero64 as &dyn BasicValue<'ctx>, entry_bb),
+            (&lo_next as &dyn BasicValue<'ctx>, move_low_bb),
+            (&lo_val as &dyn BasicValue<'ctx>, move_high_bb),
+        ]);
+        hi_phi.add_incoming(&[
+            (&count as &dyn BasicValue<'ctx>, entry_bb),
+            (&hi_val as &dyn BasicValue<'ctx>, move_low_bb),
+            (&mid as &dyn BasicValue<'ctx>, move_high_bb),
+        ]);
+
+        self.builder.position_at_end(ret_bb);
+        Ok(lo_val)
+    }
+
+    /// `@count-equal-ranges text table count out` → triples `(start, len, run_count)`.
+    fn emit_count_equal_ranges(
+        &mut self,
+        args: &[&Node],
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<IntValue<'ctx>> {
+        let text = self.compile_buf_ptr_arg(args[0], env)?;
+        let table = self.compile_i64_vec_arg(args[1], env)?;
+        let count = self.compile_expr(args[2], env, cur_fn)?;
+        let out = self.compile_i64_vec_arg(args[3], env)?;
+
+        let i64_t = self.context.i64_type();
+        let zero64 = i64_t.const_zero();
+        let one64 = i64_t.const_int(1, false);
+
+        let entry_bb = self.builder.get_insert_block().unwrap();
+        let outer_hdr_bb = self
+            .context
+            .append_basic_block(cur_fn, "count_ranges_outer_hdr");
+        let outer_body_bb = self
+            .context
+            .append_basic_block(cur_fn, "count_ranges_outer_body");
+        let inner_hdr_bb = self
+            .context
+            .append_basic_block(cur_fn, "count_ranges_inner_hdr");
+        let inner_check_bb = self
+            .context
+            .append_basic_block(cur_fn, "count_ranges_inner_chk");
+        let inner_cont_bb = self
+            .context
+            .append_basic_block(cur_fn, "count_ranges_inner_cont");
+        let emit_bb = self.context.append_basic_block(cur_fn, "count_ranges_emit");
+        let ret_bb = self.context.append_basic_block(cur_fn, "count_ranges_ret");
+
+        self.builder
+            .build_unconditional_branch(outer_hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(outer_hdr_bb);
+        let i_phi = self
+            .builder
+            .build_phi(i64_t, "count_ranges_i")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let out_count_phi = self
+            .builder
+            .build_phi(i64_t, "count_ranges_out_count")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let i_val = i_phi.as_basic_value().into_int_value();
+        let out_count_val = out_count_phi.as_basic_value().into_int_value();
+        let done = self
+            .builder
+            .build_int_compare(IntPredicate::SGE, i_val, count, "count_ranges_done")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(done, ret_bb, outer_body_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(outer_body_bb);
+        let (key_start, key_len) = self.load_range_pair(table, i_val, "count_ranges_key")?;
+        let first_j = self
+            .builder
+            .build_int_add(i_val, one64, "count_ranges_first_j")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_unconditional_branch(inner_hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(inner_hdr_bb);
+        let j_phi = self
+            .builder
+            .build_phi(i64_t, "count_ranges_j")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let j_val = j_phi.as_basic_value().into_int_value();
+        let inner_done = self
+            .builder
+            .build_int_compare(IntPredicate::SGE, j_val, count, "count_ranges_inner_done")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(inner_done, emit_bb, inner_check_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(inner_check_bb);
+        let equal = self.emit_range_bytes_eq_key(
+            text,
+            table,
+            j_val,
+            (key_start, key_len),
+            cur_fn,
+            "count_ranges_eq",
+        )?;
+        self.builder
+            .build_conditional_branch(equal, inner_cont_bb, emit_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(inner_cont_bb);
+        let j_next = self
+            .builder
+            .build_int_add(j_val, one64, "count_ranges_j_next")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_unconditional_branch(inner_hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        j_phi.add_incoming(&[
+            (&first_j as &dyn BasicValue<'ctx>, outer_body_bb),
+            (&j_next as &dyn BasicValue<'ctx>, inner_cont_bb),
+        ]);
+
+        self.builder.position_at_end(emit_bb);
+        let run_count = self
+            .builder
+            .build_int_sub(j_val, i_val, "count_ranges_run_count")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.store_range_count_triple(out, out_count_val, key_start, key_len, run_count)?;
+        let out_count_next = self
+            .builder
+            .build_int_add(out_count_val, one64, "count_ranges_out_next")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_unconditional_branch(outer_hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        i_phi.add_incoming(&[
+            (&zero64 as &dyn BasicValue<'ctx>, entry_bb),
+            (&j_val as &dyn BasicValue<'ctx>, emit_bb),
+        ]);
+        out_count_phi.add_incoming(&[
+            (&zero64 as &dyn BasicValue<'ctx>, entry_bb),
+            (&out_count_next as &dyn BasicValue<'ctx>, emit_bb),
+        ]);
+
+        self.builder.position_at_end(ret_bb);
+        Ok(out_count_val)
+    }
+
+    /// `@dedup-adjacent-ranges text table count out` → adjacent unique start/length pairs.
+    fn emit_dedup_adjacent_ranges(
+        &mut self,
+        args: &[&Node],
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<IntValue<'ctx>> {
+        let text = self.compile_buf_ptr_arg(args[0], env)?;
+        let table = self.compile_i64_vec_arg(args[1], env)?;
+        let count = self.compile_expr(args[2], env, cur_fn)?;
+        let out = self.compile_i64_vec_arg(args[3], env)?;
+
+        let i64_t = self.context.i64_type();
+        let zero64 = i64_t.const_zero();
+        let one64 = i64_t.const_int(1, false);
+
+        let entry_bb = self.builder.get_insert_block().unwrap();
+        let hdr_bb = self.context.append_basic_block(cur_fn, "dedup_ranges_hdr");
+        let body_bb = self.context.append_basic_block(cur_fn, "dedup_ranges_body");
+        let compare_bb = self
+            .context
+            .append_basic_block(cur_fn, "dedup_ranges_compare");
+        let copy_bb = self.context.append_basic_block(cur_fn, "dedup_ranges_copy");
+        let skip_bb = self.context.append_basic_block(cur_fn, "dedup_ranges_skip");
+        let ret_bb = self.context.append_basic_block(cur_fn, "dedup_ranges_ret");
+
+        self.builder
+            .build_unconditional_branch(hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(hdr_bb);
+        let i_phi = self
+            .builder
+            .build_phi(i64_t, "dedup_ranges_i")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let out_count_phi = self
+            .builder
+            .build_phi(i64_t, "dedup_ranges_out_count")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let i_val = i_phi.as_basic_value().into_int_value();
+        let out_count_val = out_count_phi.as_basic_value().into_int_value();
+        let done = self
+            .builder
+            .build_int_compare(IntPredicate::SGE, i_val, count, "dedup_ranges_done")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(done, ret_bb, body_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(body_bb);
+        let has_output = self
+            .builder
+            .build_int_compare(
+                IntPredicate::SGT,
+                out_count_val,
+                zero64,
+                "dedup_ranges_has_output",
+            )
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(has_output, compare_bb, copy_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(compare_bb);
+        let last_out = self
+            .builder
+            .build_int_sub(out_count_val, one64, "dedup_ranges_last_out")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let (key_start, key_len) = self.load_range_pair(out, last_out, "dedup_ranges_key")?;
+        let equal = self.emit_range_bytes_eq_key(
+            text,
+            table,
+            i_val,
+            (key_start, key_len),
+            cur_fn,
+            "dedup_ranges_eq",
+        )?;
+        self.builder
+            .build_conditional_branch(equal, skip_bb, copy_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(copy_bb);
+        let (start, len) = self.load_range_pair(table, i_val, "dedup_ranges_copy")?;
+        self.store_range_pair(out, out_count_val, start, len)?;
+        let out_count_next = self
+            .builder
+            .build_int_add(out_count_val, one64, "dedup_ranges_out_next")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let i_next_copy = self
+            .builder
+            .build_int_add(i_val, one64, "dedup_ranges_i_next_copy")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_unconditional_branch(hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(skip_bb);
+        let i_next_skip = self
+            .builder
+            .build_int_add(i_val, one64, "dedup_ranges_i_next_skip")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_unconditional_branch(hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        i_phi.add_incoming(&[
+            (&zero64 as &dyn BasicValue<'ctx>, entry_bb),
+            (&i_next_copy as &dyn BasicValue<'ctx>, copy_bb),
+            (&i_next_skip as &dyn BasicValue<'ctx>, skip_bb),
+        ]);
+        out_count_phi.add_incoming(&[
+            (&zero64 as &dyn BasicValue<'ctx>, entry_bb),
+            (&out_count_next as &dyn BasicValue<'ctx>, copy_bb),
+            (&out_count_val as &dyn BasicValue<'ctx>, skip_bb),
+        ]);
+
+        self.builder.position_at_end(ret_bb);
+        Ok(out_count_val)
     }
 
     /// `@range-start table index` → load `table[2 * index]`.
