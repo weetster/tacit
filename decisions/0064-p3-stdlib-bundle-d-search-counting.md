@@ -4,15 +4,17 @@
 **Date:** 2026-05-03
 **Phase:** 3, library-mediated experiment
 **Requires:** [ADR 0061](0061-p3-stdlib-bundle-a-i64-vectors.md),
-[ADR 0062](0062-p3-stdlib-bundle-b-text-indexing.md)
+[ADR 0062](0062-p3-stdlib-bundle-b-text-indexing.md),
+[ADR 0065](0065-p3-stdlib-bundle-c-ordering-primitives.md)
 **Amends:** [ADR 0047](0047-p3-stdlib-expansion-surface.md) additively.
 
 ## Context
 
 Bundle A added compact integer storage, Bundle B/B2 added range-table
-construction, and Bundle C added ordering over vectors and byte ranges. That
-still leaves generated programs repeating fragile grouping, deduplication, and
-binary-search loops after sorting.
+construction, and Bundle C added ordering over vectors and byte ranges
+([ADR 0065](0065-p3-stdlib-bundle-c-ordering-primitives.md), recorded
+retroactively). That still leaves generated programs repeating fragile
+grouping, deduplication, and binary-search loops after sorting.
 
 Bundle D provides the smallest reusable accumulation layer without adding
 closures, iterators, or hash maps. It assumes the caller has already indexed or
@@ -150,3 +152,5 @@ allowlist only.
 - [ADR 0062](0062-p3-stdlib-bundle-b-text-indexing.md) - Bundle B range tables
 - [ADR 0063](0063-p3-stdlib-bundle-b2-token-index-any.md) - multi-delimiter
   token indexing
+- [ADR 0065](0065-p3-stdlib-bundle-c-ordering-primitives.md) - Bundle C
+  ordering primitives
