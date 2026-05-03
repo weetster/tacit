@@ -413,3 +413,24 @@ fn neg_range_len_rejects_byte_buffer() {
         "type-mismatch",
     );
 }
+
+#[test]
+fn neg_sort_i64_rejects_byte_buffer() {
+    expect_authoring_error("let xs = @buf-alloc 2 in @sort-i64 xs 2", "type-mismatch");
+}
+
+#[test]
+fn neg_sort_ranges_by_bytes_rejects_i64_text() {
+    expect_authoring_error(
+        "let text = @i64-alloc 2 in let rows = @i64-alloc 4 in @sort-ranges-by-bytes text rows 2",
+        "type-mismatch",
+    );
+}
+
+#[test]
+fn neg_stable_sort_pairs_i64_rejects_byte_buffer_values() {
+    expect_authoring_error(
+        "let keys = @i64-alloc 2 in let values = @buf-alloc 16 in @stable-sort-pairs-i64 keys values 2",
+        "type-mismatch",
+    );
+}

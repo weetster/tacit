@@ -577,6 +577,9 @@ impl<'ctx> Compiler<'ctx> {
             PrimKind::TokenIndexAny => self.emit_token_index_any(args, env, cur_fn),
             PrimKind::RangeStart => self.emit_range_start(args, env, cur_fn),
             PrimKind::RangeLen => self.emit_range_len(args, env, cur_fn),
+            PrimKind::SortI64 => self.emit_sort_i64(args, env, cur_fn),
+            PrimKind::SortRangesByBytes => self.emit_sort_ranges_by_bytes(args, env, cur_fn),
+            PrimKind::StableSortPairsI64 => self.emit_stable_sort_pairs_i64(args, env, cur_fn),
         }
     }
 
@@ -1034,6 +1037,28 @@ impl<'ctx> Compiler<'ctx> {
         Ok(())
     }
 
+    fn load_range_pair(
+        &mut self,
+        table: PointerValue<'ctx>,
+        row: IntValue<'ctx>,
+        prefix: &str,
+    ) -> Result<(IntValue<'ctx>, IntValue<'ctx>)> {
+        let i64_t = self.context.i64_type();
+        let two64 = i64_t.const_int(2, false);
+        let one64 = i64_t.const_int(1, false);
+        let base = self
+            .builder
+            .build_int_mul(row, two64, &format!("{prefix}_base"))
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let len_index = self
+            .builder
+            .build_int_add(base, one64, &format!("{prefix}_len_index"))
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let start = self.load_i64(table, base, &format!("{prefix}_start"))?;
+        let len = self.load_i64(table, len_index, &format!("{prefix}_len"))?;
+        Ok((start, len))
+    }
+
     fn emit_byte_in_delims(
         &mut self,
         byte: IntValue<'ctx>,
@@ -1129,6 +1154,151 @@ impl<'ctx> Compiler<'ctx> {
             (&true_val as &dyn BasicValue<'ctx>, found_bb),
         ]);
         Ok(found_phi.as_basic_value().into_int_value())
+    }
+
+    fn emit_range_bytes_gt_key(
+        &mut self,
+        text: PointerValue<'ctx>,
+        table: PointerValue<'ctx>,
+        row: IntValue<'ctx>,
+        key_start: IntValue<'ctx>,
+        key_len: IntValue<'ctx>,
+        cur_fn: FunctionValue<'ctx>,
+        prefix: &str,
+    ) -> Result<IntValue<'ctx>> {
+        let i64_t = self.context.i64_type();
+        let bool_t = self.context.bool_type();
+        let zero64 = i64_t.const_zero();
+        let one64 = i64_t.const_int(1, false);
+        let false_val = bool_t.const_int(0, false);
+        let true_val = bool_t.const_int(1, false);
+
+        let (start, len) = self.load_range_pair(table, row, prefix)?;
+
+        let entry_bb = self.builder.get_insert_block().unwrap();
+        let hdr_bb = self
+            .context
+            .append_basic_block(cur_fn, &format!("{prefix}_cmp_hdr"));
+        let check_bb = self
+            .context
+            .append_basic_block(cur_fn, &format!("{prefix}_cmp_chk"));
+        let lt_check_bb = self
+            .context
+            .append_basic_block(cur_fn, &format!("{prefix}_cmp_lt"));
+        let cont_bb = self
+            .context
+            .append_basic_block(cur_fn, &format!("{prefix}_cmp_cont"));
+        let gt_bb = self
+            .context
+            .append_basic_block(cur_fn, &format!("{prefix}_cmp_gt"));
+        let le_bb = self
+            .context
+            .append_basic_block(cur_fn, &format!("{prefix}_cmp_le"));
+        let prefix_done_bb = self
+            .context
+            .append_basic_block(cur_fn, &format!("{prefix}_cmp_prefix"));
+        let merge_bb = self
+            .context
+            .append_basic_block(cur_fn, &format!("{prefix}_cmp_merge"));
+
+        self.builder
+            .build_unconditional_branch(hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(hdr_bb);
+        let k_phi = self
+            .builder
+            .build_phi(i64_t, &format!("{prefix}_cmp_k"))
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let k_val = k_phi.as_basic_value().into_int_value();
+        let in_left = self
+            .builder
+            .build_int_compare(IntPredicate::SLT, k_val, len, "range_cmp_in_left")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let in_key = self
+            .builder
+            .build_int_compare(IntPredicate::SLT, k_val, key_len, "range_cmp_in_key")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let in_both = self
+            .builder
+            .build_and(in_left, in_key, "range_cmp_in_both")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(in_both, check_bb, prefix_done_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(check_bb);
+        let left_off = self
+            .builder
+            .build_int_add(start, k_val, "range_cmp_left_off")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let key_off = self
+            .builder
+            .build_int_add(key_start, k_val, "range_cmp_key_off")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let left_byte = self.load_byte(text, left_off, "range_cmp_left_byte")?;
+        let key_byte = self.load_byte(text, key_off, "range_cmp_key_byte")?;
+        let left_gt = self
+            .builder
+            .build_int_compare(IntPredicate::UGT, left_byte, key_byte, "range_cmp_gt")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(left_gt, gt_bb, lt_check_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(lt_check_bb);
+        let left_lt = self
+            .builder
+            .build_int_compare(IntPredicate::ULT, left_byte, key_byte, "range_cmp_lt")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(left_lt, le_bb, cont_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(cont_bb);
+        let k_next = self
+            .builder
+            .build_int_add(k_val, one64, "range_cmp_k_next")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_unconditional_branch(hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        k_phi.add_incoming(&[
+            (&zero64 as &dyn BasicValue<'ctx>, entry_bb),
+            (&k_next as &dyn BasicValue<'ctx>, cont_bb),
+        ]);
+
+        self.builder.position_at_end(gt_bb);
+        self.builder
+            .build_unconditional_branch(merge_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(le_bb);
+        self.builder
+            .build_unconditional_branch(merge_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(prefix_done_bb);
+        let left_longer = self
+            .builder
+            .build_int_compare(IntPredicate::SGT, len, key_len, "range_cmp_left_longer")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_unconditional_branch(merge_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(merge_bb);
+        let result_phi = self
+            .builder
+            .build_phi(bool_t, &format!("{prefix}_cmp_result"))
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        result_phi.add_incoming(&[
+            (&true_val as &dyn BasicValue<'ctx>, gt_bb),
+            (&false_val as &dyn BasicValue<'ctx>, le_bb),
+            (&left_longer as &dyn BasicValue<'ctx>, prefix_done_bb),
+        ]);
+        Ok(result_phi.as_basic_value().into_int_value())
     }
 
     // ── Phase 3 emit functions (ADR 0047, ADR 0061, ADR 0062, ADR 0063) ──────────
@@ -1287,6 +1457,386 @@ impl<'ctx> Compiler<'ctx> {
             )
             .map_err(|e| CodegenError::Llvm(e.to_string()))?;
         Ok(i64_t.const_zero())
+    }
+
+    /// `@sort-i64 vec count` → stable insertion sort of `vec[0..count)`; return 0.
+    fn emit_sort_i64(
+        &mut self,
+        args: &[&Node],
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<IntValue<'ctx>> {
+        let vec = self.compile_i64_vec_arg(args[0], env)?;
+        let count = self.compile_expr(args[1], env, cur_fn)?;
+
+        let i64_t = self.context.i64_type();
+        let zero64 = i64_t.const_zero();
+        let one64 = i64_t.const_int(1, false);
+
+        let entry_bb = self.builder.get_insert_block().unwrap();
+        let outer_hdr_bb = self
+            .context
+            .append_basic_block(cur_fn, "sort_i64_outer_hdr");
+        let outer_body_bb = self
+            .context
+            .append_basic_block(cur_fn, "sort_i64_outer_body");
+        let inner_hdr_bb = self
+            .context
+            .append_basic_block(cur_fn, "sort_i64_inner_hdr");
+        let inner_check_bb = self
+            .context
+            .append_basic_block(cur_fn, "sort_i64_inner_chk");
+        let shift_bb = self.context.append_basic_block(cur_fn, "sort_i64_shift");
+        let inner_done_bb = self
+            .context
+            .append_basic_block(cur_fn, "sort_i64_inner_done");
+        let outer_cont_bb = self
+            .context
+            .append_basic_block(cur_fn, "sort_i64_outer_cont");
+        let ret_bb = self.context.append_basic_block(cur_fn, "sort_i64_ret");
+
+        self.builder
+            .build_unconditional_branch(outer_hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(outer_hdr_bb);
+        let i_phi = self
+            .builder
+            .build_phi(i64_t, "sort_i64_i")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let i_val = i_phi.as_basic_value().into_int_value();
+        let more = self
+            .builder
+            .build_int_compare(IntPredicate::SLT, i_val, count, "sort_i64_more")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(more, outer_body_bb, ret_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(outer_body_bb);
+        let key = self.load_i64(vec, i_val, "sort_i64_key")?;
+        self.builder
+            .build_unconditional_branch(inner_hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(inner_hdr_bb);
+        let j_phi = self
+            .builder
+            .build_phi(i64_t, "sort_i64_j")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let j_val = j_phi.as_basic_value().into_int_value();
+        let has_prev = self
+            .builder
+            .build_int_compare(IntPredicate::SGT, j_val, zero64, "sort_i64_has_prev")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(has_prev, inner_check_bb, inner_done_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(inner_check_bb);
+        let prev_idx = self
+            .builder
+            .build_int_sub(j_val, one64, "sort_i64_prev_idx")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let prev = self.load_i64(vec, prev_idx, "sort_i64_prev")?;
+        let should_shift = self
+            .builder
+            .build_int_compare(IntPredicate::SGT, prev, key, "sort_i64_should_shift")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(should_shift, shift_bb, inner_done_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(shift_bb);
+        self.store_i64(vec, j_val, prev)?;
+        self.builder
+            .build_unconditional_branch(inner_hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        j_phi.add_incoming(&[
+            (&i_val as &dyn BasicValue<'ctx>, outer_body_bb),
+            (&prev_idx as &dyn BasicValue<'ctx>, shift_bb),
+        ]);
+
+        self.builder.position_at_end(inner_done_bb);
+        self.store_i64(vec, j_val, key)?;
+        self.builder
+            .build_unconditional_branch(outer_cont_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(outer_cont_bb);
+        let i_next = self
+            .builder
+            .build_int_add(i_val, one64, "sort_i64_i_next")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_unconditional_branch(outer_hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        i_phi.add_incoming(&[
+            (&one64 as &dyn BasicValue<'ctx>, entry_bb),
+            (&i_next as &dyn BasicValue<'ctx>, outer_cont_bb),
+        ]);
+
+        self.builder.position_at_end(ret_bb);
+        Ok(zero64)
+    }
+
+    /// `@stable-sort-pairs-i64 keys values count` → stable key sort; return 0.
+    fn emit_stable_sort_pairs_i64(
+        &mut self,
+        args: &[&Node],
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<IntValue<'ctx>> {
+        let keys = self.compile_i64_vec_arg(args[0], env)?;
+        let values = self.compile_i64_vec_arg(args[1], env)?;
+        let count = self.compile_expr(args[2], env, cur_fn)?;
+
+        let i64_t = self.context.i64_type();
+        let zero64 = i64_t.const_zero();
+        let one64 = i64_t.const_int(1, false);
+
+        let entry_bb = self.builder.get_insert_block().unwrap();
+        let outer_hdr_bb = self
+            .context
+            .append_basic_block(cur_fn, "sort_pair_outer_hdr");
+        let outer_body_bb = self
+            .context
+            .append_basic_block(cur_fn, "sort_pair_outer_body");
+        let inner_hdr_bb = self
+            .context
+            .append_basic_block(cur_fn, "sort_pair_inner_hdr");
+        let inner_check_bb = self
+            .context
+            .append_basic_block(cur_fn, "sort_pair_inner_chk");
+        let shift_bb = self.context.append_basic_block(cur_fn, "sort_pair_shift");
+        let inner_done_bb = self
+            .context
+            .append_basic_block(cur_fn, "sort_pair_inner_done");
+        let outer_cont_bb = self
+            .context
+            .append_basic_block(cur_fn, "sort_pair_outer_cont");
+        let ret_bb = self.context.append_basic_block(cur_fn, "sort_pair_ret");
+
+        self.builder
+            .build_unconditional_branch(outer_hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(outer_hdr_bb);
+        let i_phi = self
+            .builder
+            .build_phi(i64_t, "sort_pair_i")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let i_val = i_phi.as_basic_value().into_int_value();
+        let more = self
+            .builder
+            .build_int_compare(IntPredicate::SLT, i_val, count, "sort_pair_more")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(more, outer_body_bb, ret_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(outer_body_bb);
+        let key = self.load_i64(keys, i_val, "sort_pair_key")?;
+        let value = self.load_i64(values, i_val, "sort_pair_value")?;
+        self.builder
+            .build_unconditional_branch(inner_hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(inner_hdr_bb);
+        let j_phi = self
+            .builder
+            .build_phi(i64_t, "sort_pair_j")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let j_val = j_phi.as_basic_value().into_int_value();
+        let has_prev = self
+            .builder
+            .build_int_compare(IntPredicate::SGT, j_val, zero64, "sort_pair_has_prev")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(has_prev, inner_check_bb, inner_done_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(inner_check_bb);
+        let prev_idx = self
+            .builder
+            .build_int_sub(j_val, one64, "sort_pair_prev_idx")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let prev_key = self.load_i64(keys, prev_idx, "sort_pair_prev_key")?;
+        let should_shift = self
+            .builder
+            .build_int_compare(IntPredicate::SGT, prev_key, key, "sort_pair_should_shift")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(should_shift, shift_bb, inner_done_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(shift_bb);
+        let prev_value = self.load_i64(values, prev_idx, "sort_pair_prev_value")?;
+        self.store_i64(keys, j_val, prev_key)?;
+        self.store_i64(values, j_val, prev_value)?;
+        self.builder
+            .build_unconditional_branch(inner_hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        j_phi.add_incoming(&[
+            (&i_val as &dyn BasicValue<'ctx>, outer_body_bb),
+            (&prev_idx as &dyn BasicValue<'ctx>, shift_bb),
+        ]);
+
+        self.builder.position_at_end(inner_done_bb);
+        self.store_i64(keys, j_val, key)?;
+        self.store_i64(values, j_val, value)?;
+        self.builder
+            .build_unconditional_branch(outer_cont_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(outer_cont_bb);
+        let i_next = self
+            .builder
+            .build_int_add(i_val, one64, "sort_pair_i_next")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_unconditional_branch(outer_hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        i_phi.add_incoming(&[
+            (&one64 as &dyn BasicValue<'ctx>, entry_bb),
+            (&i_next as &dyn BasicValue<'ctx>, outer_cont_bb),
+        ]);
+
+        self.builder.position_at_end(ret_bb);
+        Ok(zero64)
+    }
+
+    /// `@sort-ranges-by-bytes text table count` → stable byte-lexicographic range sort; return 0.
+    fn emit_sort_ranges_by_bytes(
+        &mut self,
+        args: &[&Node],
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<IntValue<'ctx>> {
+        let text = self.compile_buf_ptr_arg(args[0], env)?;
+        let table = self.compile_i64_vec_arg(args[1], env)?;
+        let count = self.compile_expr(args[2], env, cur_fn)?;
+
+        let i64_t = self.context.i64_type();
+        let zero64 = i64_t.const_zero();
+        let one64 = i64_t.const_int(1, false);
+
+        let entry_bb = self.builder.get_insert_block().unwrap();
+        let outer_hdr_bb = self
+            .context
+            .append_basic_block(cur_fn, "sort_ranges_outer_hdr");
+        let outer_body_bb = self
+            .context
+            .append_basic_block(cur_fn, "sort_ranges_outer_body");
+        let inner_hdr_bb = self
+            .context
+            .append_basic_block(cur_fn, "sort_ranges_inner_hdr");
+        let inner_check_bb = self
+            .context
+            .append_basic_block(cur_fn, "sort_ranges_inner_chk");
+        let shift_bb = self.context.append_basic_block(cur_fn, "sort_ranges_shift");
+        let inner_done_bb = self
+            .context
+            .append_basic_block(cur_fn, "sort_ranges_inner_done");
+        let outer_cont_bb = self
+            .context
+            .append_basic_block(cur_fn, "sort_ranges_outer_cont");
+        let ret_bb = self.context.append_basic_block(cur_fn, "sort_ranges_ret");
+
+        self.builder
+            .build_unconditional_branch(outer_hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(outer_hdr_bb);
+        let i_phi = self
+            .builder
+            .build_phi(i64_t, "sort_ranges_i")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let i_val = i_phi.as_basic_value().into_int_value();
+        let more = self
+            .builder
+            .build_int_compare(IntPredicate::SLT, i_val, count, "sort_ranges_more")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(more, outer_body_bb, ret_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(outer_body_bb);
+        let (key_start, key_len) = self.load_range_pair(table, i_val, "sort_ranges_key")?;
+        self.builder
+            .build_unconditional_branch(inner_hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(inner_hdr_bb);
+        let j_phi = self
+            .builder
+            .build_phi(i64_t, "sort_ranges_j")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let j_val = j_phi.as_basic_value().into_int_value();
+        let has_prev = self
+            .builder
+            .build_int_compare(IntPredicate::SGT, j_val, zero64, "sort_ranges_has_prev")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(has_prev, inner_check_bb, inner_done_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(inner_check_bb);
+        let prev_idx = self
+            .builder
+            .build_int_sub(j_val, one64, "sort_ranges_prev_idx")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let should_shift = self.emit_range_bytes_gt_key(
+            text,
+            table,
+            prev_idx,
+            key_start,
+            key_len,
+            cur_fn,
+            "sort_ranges_prev",
+        )?;
+        self.builder
+            .build_conditional_branch(should_shift, shift_bb, inner_done_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(shift_bb);
+        let (prev_start, prev_len) = self.load_range_pair(table, prev_idx, "sort_ranges_shift")?;
+        self.store_range_pair(table, j_val, prev_start, prev_len)?;
+        self.builder
+            .build_unconditional_branch(inner_hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        j_phi.add_incoming(&[
+            (&i_val as &dyn BasicValue<'ctx>, outer_body_bb),
+            (&prev_idx as &dyn BasicValue<'ctx>, shift_bb),
+        ]);
+
+        self.builder.position_at_end(inner_done_bb);
+        self.store_range_pair(table, j_val, key_start, key_len)?;
+        self.builder
+            .build_unconditional_branch(outer_cont_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(outer_cont_bb);
+        let i_next = self
+            .builder
+            .build_int_add(i_val, one64, "sort_ranges_i_next")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_unconditional_branch(outer_hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        i_phi.add_incoming(&[
+            (&one64 as &dyn BasicValue<'ctx>, entry_bb),
+            (&i_next as &dyn BasicValue<'ctx>, outer_cont_bb),
+        ]);
+
+        self.builder.position_at_end(ret_bb);
+        Ok(zero64)
     }
 
     /// `@range-start table index` → load `table[2 * index]`.

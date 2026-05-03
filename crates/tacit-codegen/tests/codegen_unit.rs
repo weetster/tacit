@@ -27,6 +27,15 @@ fn primitive_lookup_smoke() {
         Some(2)
     );
     assert_eq!(PrimKind::lookup("range-len").map(PrimKind::arity), Some(2));
+    assert_eq!(PrimKind::lookup("sort-i64").map(PrimKind::arity), Some(2));
+    assert_eq!(
+        PrimKind::lookup("sort-ranges-by-bytes").map(PrimKind::arity),
+        Some(3)
+    );
+    assert_eq!(
+        PrimKind::lookup("stable-sort-pairs-i64").map(PrimKind::arity),
+        Some(3)
+    );
     assert!(PrimKind::lookup("frobnicate").is_none());
 }
 

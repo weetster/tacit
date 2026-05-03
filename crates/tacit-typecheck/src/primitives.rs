@@ -7,6 +7,7 @@
 //! - ADR 0061: I64Vec allocation and element operations.
 //! - ADR 0062: text indexing into I64Vec range tables.
 //! - ADR 0063: multi-delimiter token indexing.
+//! - Bundle C: ordering operations over I64Vec and range tables.
 
 use crate::ty::{EffAtom, EffSet, FnEff, Ty};
 
@@ -69,6 +70,12 @@ pub fn prim_type(name: &str) -> Option<Ty> {
         "range-start" => fn2_pure(Ty::I64Vec, Ty::Int, Ty::Int),
         // RANGE-TABLE: range-len(table: I64Vec, index: Int) -> Int (pure)
         "range-len" => fn2_pure(Ty::I64Vec, Ty::Int, Ty::Int),
+        // ORDER: sort-i64(vec: I64Vec, count: Int) -> Int / {Mut}
+        "sort-i64" => fn2_mut(Ty::I64Vec, Ty::Int, Ty::Int),
+        // ORDER: sort-ranges-by-bytes(text: Buf, table: I64Vec, count: Int) -> Int / {Mut}
+        "sort-ranges-by-bytes" => fn3_mut(Ty::Buf, Ty::I64Vec, Ty::Int, Ty::Int),
+        // ORDER: stable-sort-pairs-i64(keys: I64Vec, values: I64Vec, count: Int) -> Int / {Mut}
+        "stable-sort-pairs-i64" => fn3_mut(Ty::I64Vec, Ty::I64Vec, Ty::Int, Ty::Int),
         // ARITH: Int → Int → Int (pure)
         "add" | "sub" | "mul" | "div" | "mod" => fn2_pure(Ty::Int, Ty::Int, Ty::Int),
         // CMP: Int → Int → Bool (pure, ADR 0042)
@@ -110,6 +117,9 @@ pub fn is_mut_prim(name: &str) -> bool {
             | "line-index"
             | "token-index"
             | "token-index-any"
+            | "sort-i64"
+            | "sort-ranges-by-bytes"
+            | "stable-sort-pairs-i64"
     )
 }
 
@@ -188,6 +198,15 @@ fn fn2_pure(a: Ty, b: Ty, r: Ty) -> Ty {
     Ty::Fn(
         Box::new(a),
         Box::new(Ty::Fn(Box::new(b), Box::new(r), FnEff::pure_())),
+        FnEff::pure_(),
+    )
+}
+
+/// Binary function, {Mut} at the innermost (fully-applied) step.
+fn fn2_mut(a: Ty, b: Ty, r: Ty) -> Ty {
+    Ty::Fn(
+        Box::new(a),
+        Box::new(Ty::Fn(Box::new(b), Box::new(r), mut_eff())),
         FnEff::pure_(),
     )
 }
@@ -607,5 +626,36 @@ mod tests {
             vec![Ty::Buf, Ty::Int, Ty::Int, Ty::Buf, Ty::Int, Ty::I64Vec]
         );
         assert_eq!(eff, FnEff::from_set(EffSet::of([EffAtom::Mut])));
+    }
+
+    #[test]
+    fn ordering_primitives_have_expected_shapes_and_mut() {
+        fn args_and_eff(t: &Ty, args: &mut Vec<Ty>) -> FnEff {
+            match t {
+                Ty::Fn(a, b, eff) => {
+                    args.push(a.as_ref().clone());
+                    if matches!(b.as_ref(), Ty::Fn(_, _, _)) {
+                        args_and_eff(b, args)
+                    } else {
+                        eff.clone()
+                    }
+                }
+                _ => panic!("not a Fn"),
+            }
+        }
+
+        for (name, expected_args) in [
+            ("sort-i64", vec![Ty::I64Vec, Ty::Int]),
+            ("sort-ranges-by-bytes", vec![Ty::Buf, Ty::I64Vec, Ty::Int]),
+            (
+                "stable-sort-pairs-i64",
+                vec![Ty::I64Vec, Ty::I64Vec, Ty::Int],
+            ),
+        ] {
+            let mut args = Vec::new();
+            let eff = args_and_eff(&prim_type(name).unwrap(), &mut args);
+            assert_eq!(args, expected_args);
+            assert_eq!(eff, FnEff::from_set(EffSet::of([EffAtom::Mut])));
+        }
     }
 }

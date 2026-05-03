@@ -877,6 +877,9 @@ Integer vector storage: `@i64-get`, `@i64-set`, `@i64-swap`, `@i64-copy`.
 Text range indexing: `@line-index`, `@token-index`, `@token-index-any`,
 `@range-start`, `@range-len`.
 
+Ordering: `@sort-i64`, `@sort-ranges-by-bytes`,
+`@stable-sort-pairs-i64`.
+
 Parsing and formatting: `@parse-i64`, `@fmt-i64`.
 
 The primitive call shape is part of the language contract. For example,
@@ -886,6 +889,8 @@ The primitive call shape is part of the language contract. For example,
 `@token-index text off len delim table` mutate `table` and return the number
 of rows written. `@token-index-any text off len delims delim_count table`
 does the same with a delimiter set.
+`@sort-i64 xs count`, `@sort-ranges-by-bytes text table count`, and
+`@stable-sort-pairs-i64 keys values count` sort in place and return `0`.
 
 ### Program Boundary
 
@@ -1010,10 +1015,11 @@ correct.
 
 When an effect appears surprising, find the innermost primitive that creates
 it. `Mut` usually comes from `@buf-set`, `@buf-copy`, `@fmt-i64`, `@read`,
-`@i64-set`, `@i64-copy`, `@line-index`, `@token-index`, or
-`@token-index-any`. `IO` comes from `@read`, `@write`, or `@exit`. `Alloc`
-comes from allocation primitives. `Div` comes from recursion, division, or
-modulo.
+`@i64-set`, `@i64-copy`, `@line-index`, `@token-index`,
+`@token-index-any`, `@sort-i64`, `@sort-ranges-by-bytes`, or
+`@stable-sort-pairs-i64`. `IO` comes from `@read`, `@write`, or `@exit`.
+`Alloc` comes from allocation primitives. `Div` comes from recursion,
+division, or modulo.
 
 ## 5. Negative Examples And Diagnostics
 
@@ -1289,34 +1295,16 @@ the first buffer is the destination. Many wrong answers reverse `dst` and
 `src`; the typechecker cannot catch that because both are `Buf`.
 
 Ordering a fixed tiny buffer: direct buffer reads and writes can be clearer
-than a general recursive ordering routine. For a dynamic size, write a
-recursive outer loop and inner loop, or choose a simple algorithm whose state
-fits cleanly in integers and buffers. Prefer correctness over clever token
-packing.
+than a general recursive ordering routine. For integer vectors, prefer
+`@sort-i64 xs count` over hand-written nested loops. For line or token ranges,
+prefer `@sort-ranges-by-bytes text table count`; it reorders range rows while
+leaving the source bytes in place. For numeric keys with attached values,
+prefer `@stable-sort-pairs-i64 keys values count` so equal keys keep their
+relative order.
 
-For integer sorting where values may exceed one byte, sort indexes rather
-than values. Read the input once, count tokens, initialize `idx[i] = i` with
-fixed-width byte packing, and define `value_at want pos cur` to rescan the
-original input until token `want`. A comparison becomes:
-
-```text
-let av = value_at (get_idx i) 0 0 in
-let bv = value_at (get_idx j) 0 0 in
-if @gt av bv then swap i j else 0
-```
-
-Many ordering algorithms can use this representation because the mutable
-state is only the indirection buffer. Keep `set_idx`, `get_idx`, `swap`,
-`value_at`, loop helpers, and emit helpers as siblings in one `rec` group. If
-an algorithm needs temporary ordering state, use a second concrete index
-buffer named for its role; do not pass either buffer as a helper argument.
-
-For lexicographic or key-based ordering over input spans, a repeated-minimum
-pass is often simpler than maintaining a mutable collection. Keep the
-previous emitted key or span in recursive state. Each pass scans all input and
-finds the smallest candidate greater than the previous one, then a second
-pass emits all items matching that candidate in original order. This is
-quadratic, but it avoids dictionaries and preserves stable ordering
+Only write a custom ordering loop when the comparison is not one of those
+forms. Keep helper state concrete: indexes, offsets, lengths, and any
+temporary storage should have one clear role.
 naturally. If output includes an aggregate such as a count, compute that
 aggregate by a separate scan of matching spans before emitting.
 
@@ -1739,7 +1727,7 @@ primer.
 If a shorter solution would need a missing abstraction, write the explicit
 one.
 
-## Stdlib Appendix: Indexed Storage And Text Ranges
+## Stdlib Appendix: Indexed Storage, Text Ranges, And Ordering
 
 Use `I64Vec` when a program needs indexed storage for full integer values.
 Byte-oriented buffers still handle raw input/output bytes; an `I64Vec` keeps
@@ -1819,3 +1807,25 @@ word_count
 
 `@token-index text off len delim table` is the one-byte form. Use it when the
 input range has exactly one separator byte; `delim` contributes its low byte.
+
+`@sort-i64 xs count` sorts `xs[0..count)` in ascending signed integer order
+and mutates the vector. Use it after parsing numbers into an `I64Vec`, then
+read or format the sorted cells normally.
+
+```tacit
+let xs = @i64-alloc 3 in
+let _ = @i64-set xs 0 9 in
+let _ = @i64-set xs 1 -2 in
+let _ = @i64-set xs 2 4 in
+let _ = @sort-i64 xs 3 in
+@i64-get xs 0
+```
+
+`@sort-ranges-by-bytes text table count` sorts the first `count` range rows
+by the bytes they reference in `text`. It mutates only the row order in
+`table`; the source bytes stay in place. When one range is a prefix of
+another, the shorter range sorts first.
+
+`@stable-sort-pairs-i64 keys values count` sorts `keys[0..count)` ascending
+and applies the same movement to `values[0..count)`. Equal keys keep their
+relative order, so attached values with the same key remain in input order.

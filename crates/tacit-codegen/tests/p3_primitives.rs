@@ -340,3 +340,33 @@ fn token_index_any_zero_delim_count_emits_whole_range() {
     assert!(out.is_empty());
     assert_eq!(code, 13);
 }
+
+// ── ordering primitives ──────────────────────────────────────────────────────
+
+#[test]
+fn sort_i64_orders_signed_values() {
+    let (out, code) = run_p3("p3-sort-i64");
+    assert!(out.is_empty());
+    assert_eq!(code, 4);
+}
+
+#[test]
+fn sort_i64_zero_count_leaves_vector_unchanged() {
+    let (out, code) = run_p3("p3-sort-i64-empty");
+    assert!(out.is_empty());
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn sort_ranges_by_bytes_orders_range_rows_lexicographically() {
+    let (out, code) = run_p3("p3-sort-ranges-by-bytes");
+    assert!(out.is_empty());
+    assert_eq!(code, 8);
+}
+
+#[test]
+fn stable_sort_pairs_i64_preserves_equal_key_order() {
+    let (out, code) = run_p3("p3-stable-sort-pairs-i64");
+    assert!(out.is_empty());
+    assert_eq!(code, 8);
+}
