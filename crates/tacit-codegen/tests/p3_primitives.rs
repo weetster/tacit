@@ -1,4 +1,4 @@
-//! Phase 3 primitive exit-gate tests (ADR 0047, ADR 0061).
+//! Phase 3 primitive exit-gate tests (ADR 0047, ADR 0061, ADR 0062, ADR 0063).
 //!
 //! Exercises each new Phase 3 primitive end-to-end — authoring view → compile
 //! → link → run.  One positive and one boundary case per primitive.
@@ -262,7 +262,7 @@ fn i64_copy_overlap_same_vector() {
     assert_eq!(code, 23);
 }
 
-// ── @line-index / @token-index / @range-start / @range-len ───────────────────
+// ── @line-index / @token-index / @token-index-any / accessors ────────────────
 
 #[test]
 fn range_accessors_read_pair_fields() {
@@ -309,4 +309,34 @@ fn token_index_skips_delims_and_uses_absolute_offsets() {
     let (out, code) = run_p3("p3-token-index-offset");
     assert!(out.is_empty());
     assert_eq!(code, 116);
+}
+
+#[test]
+fn token_index_any_empty_input_returns_zero_rows() {
+    let (out, code) = run_p3("p3-token-index-any-empty");
+    assert!(out.is_empty());
+    assert_eq!(code, 0);
+}
+
+#[test]
+fn token_index_any_skips_repeated_mixed_buffer_delims() {
+    // " A\n\nB  C " with delimiters [' ', '\n'] gives starts 1, 4, 7.
+    let (out, code) = run_p3("p3-token-index-any-mixed");
+    assert!(out.is_empty());
+    assert_eq!(code, 158);
+}
+
+#[test]
+fn token_index_any_accepts_string_delims_and_absolute_offsets() {
+    // In "xx,A;B yy", indexing text[2..7) with ",; " gives starts 3 and 5.
+    let (out, code) = run_p3("p3-token-index-any-offset");
+    assert!(out.is_empty());
+    assert_eq!(code, 115);
+}
+
+#[test]
+fn token_index_any_zero_delim_count_emits_whole_range() {
+    let (out, code) = run_p3("p3-token-index-any-no-delims");
+    assert!(out.is_empty());
+    assert_eq!(code, 13);
 }

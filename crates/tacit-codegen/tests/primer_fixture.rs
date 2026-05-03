@@ -260,11 +260,13 @@ fn primer_stdlib_appendix_examples_validate() {
     assert!(appendix.contains("`I64Vec`"));
     assert!(appendix.contains("`@line-index text len table`"));
     assert!(appendix.contains("`@token-index text off len delim table`"));
+    assert!(appendix.contains("`@token-index-any text off len delims delim_count table`"));
     for repo_term in [
         "corpus",
         "canary",
         "reference.tac",
         "reference.stdlib",
+        "repo",
         "repository",
     ] {
         assert!(

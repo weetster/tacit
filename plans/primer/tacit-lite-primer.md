@@ -874,8 +874,8 @@ Buffer mutation and inspection: `@buf-get`, `@buf-set`, `@buf-copy`,
 
 Integer vector storage: `@i64-get`, `@i64-set`, `@i64-swap`, `@i64-copy`.
 
-Text range indexing: `@line-index`, `@token-index`, `@range-start`,
-`@range-len`.
+Text range indexing: `@line-index`, `@token-index`, `@token-index-any`,
+`@range-start`, `@range-len`.
 
 Parsing and formatting: `@parse-i64`, `@fmt-i64`.
 
@@ -884,7 +884,8 @@ The primitive call shape is part of the language contract. For example,
 `@buf-eq a a_off b b_off len` is pure and returns an `Int` flag.
 `@line-index text len table` and
 `@token-index text off len delim table` mutate `table` and return the number
-of rows written.
+of rows written. `@token-index-any text off len delims delim_count table`
+does the same with a delimiter set.
 
 ### Program Boundary
 
@@ -1009,9 +1010,10 @@ correct.
 
 When an effect appears surprising, find the innermost primitive that creates
 it. `Mut` usually comes from `@buf-set`, `@buf-copy`, `@fmt-i64`, `@read`,
-`@i64-set`, `@i64-copy`, `@line-index`, or `@token-index`. `IO` comes from
-`@read`, `@write`, or `@exit`. `Alloc` comes from allocation primitives.
-`Div` comes from recursion, division, or modulo.
+`@i64-set`, `@i64-copy`, `@line-index`, `@token-index`, or
+`@token-index-any`. `IO` comes from `@read`, `@write`, or `@exit`. `Alloc`
+comes from allocation primitives. `Div` comes from recursion, division, or
+modulo.
 
 ## 5. Negative Examples And Diagnostics
 
@@ -1799,15 +1801,21 @@ let line_count = @line-index text n lines in
 if @eq line_count 0 then 0 else @range-len lines 0
 ```
 
-`@token-index text off len delim table` scans `text[off..off+len)` into
-non-empty byte runs separated by the low byte of `delim`. Leading, trailing,
-and repeated delimiters are skipped. Stored starts are absolute byte offsets
-into `text`, not offsets relative to `off`.
+`@token-index-any text off len delims delim_count table` scans
+`text[off..off+len)` into non-empty byte runs separated by any byte in
+`delims[0..delim_count)`. Leading, trailing, and repeated delimiters are
+skipped. Stored starts are absolute byte offsets into `text`, not offsets
+relative to `off`. `delims` may be a string literal or a byte buffer. Prefer
+this form when spaces, LF, CR, tabs, or other separator bytes may appear
+together.
 
 ```tacit
 let text = @buf-alloc 128 in
 let n = @read 0 text 128 in
 let words = @i64-alloc (@mul n 2) in
-let word_count = @token-index text 0 n 32 words in
+let word_count = @token-index-any text 0 n " \n\r\t" 4 words in
 word_count
 ```
+
+`@token-index text off len delim table` is the one-byte form. Use it when the
+input range has exactly one separator byte; `delim` contributes its low byte.

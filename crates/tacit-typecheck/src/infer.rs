@@ -349,6 +349,9 @@ fn infer_full_primitive_app(
     match name.as_str() {
         "write" if args.len() == 3 => Some(infer_write_app(ctx, &args, subst, path, diags)),
         "read" if args.len() == 3 => Some(infer_read_app(ctx, &args, subst, path, diags)),
+        "token-index-any" if args.len() == 6 => {
+            Some(infer_token_index_any_app(ctx, &args, subst, path, diags))
+        }
         _ => None,
     }
 }
@@ -416,6 +419,47 @@ fn infer_read_app(
     (Ty::Int, eval_eff)
 }
 
+fn infer_token_index_any_app(
+    ctx: &[Ty],
+    args: &[&Node],
+    subst: &mut Subst,
+    path: &[usize],
+    diags: &mut Vec<Diagnostic>,
+) -> (Ty, FnEff) {
+    let (text_ty, text_eff) = infer(ctx, args[0], subst, &child_path(path, 0), diags);
+    let (off_ty, off_eff) = infer(ctx, args[1], subst, &child_path(path, 1), diags);
+    let (len_ty, len_eff) = infer(ctx, args[2], subst, &child_path(path, 2), diags);
+    let (delims_ty, delims_eff) = infer(ctx, args[3], subst, &child_path(path, 3), diags);
+    let (delim_count_ty, delim_count_eff) = infer(ctx, args[4], subst, &child_path(path, 4), diags);
+    let (table_ty, table_eff) = infer(ctx, args[5], subst, &child_path(path, 5), diags);
+
+    expect_type(&child_path(path, 0), &Ty::Buf, &text_ty, subst, diags);
+    expect_type(&child_path(path, 1), &Ty::Int, &off_ty, subst, diags);
+    expect_type(&child_path(path, 2), &Ty::Int, &len_ty, subst, diags);
+    expect_token_delims_arg(&child_path(path, 3), &delims_ty, subst, diags);
+    expect_type(
+        &child_path(path, 4),
+        &Ty::Int,
+        &delim_count_ty,
+        subst,
+        diags,
+    );
+    expect_type(&child_path(path, 5), &Ty::I64Vec, &table_ty, subst, diags);
+
+    let mut eval_eff = text_eff;
+    eval_eff = join_fn_eff(&eval_eff, &off_eff, subst);
+    eval_eff = join_fn_eff(&eval_eff, &len_eff, subst);
+    eval_eff = join_fn_eff(&eval_eff, &delims_eff, subst);
+    eval_eff = join_fn_eff(&eval_eff, &delim_count_eff, subst);
+    eval_eff = join_fn_eff(&eval_eff, &table_eff, subst);
+    eval_eff = join_fn_eff(
+        &eval_eff,
+        &FnEff::from_set(EffSet::of([EffAtom::Mut])),
+        subst,
+    );
+    (Ty::Int, eval_eff)
+}
+
 fn expect_type(
     path: &[usize],
     expected: &Ty,
@@ -433,6 +477,18 @@ fn expect_type(
 }
 
 fn expect_write_buffer_arg(
+    path: &[usize],
+    actual: &Ty,
+    subst: &mut Subst,
+    diags: &mut Vec<Diagnostic>,
+) {
+    match subst.apply(actual) {
+        Ty::Buf | Ty::Str | Ty::Unknown | Ty::Meta(_) => {}
+        other => diags.push(Diagnostic::type_mismatch(path, &Ty::Buf, &other)),
+    }
+}
+
+fn expect_token_delims_arg(
     path: &[usize],
     actual: &Ty,
     subst: &mut Subst,

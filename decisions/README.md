@@ -78,3 +78,4 @@ Keep ADRs short. They record the decision, not the full analysis that led to it.
 - [0060 — Phase 3 repair-loop outcome and next direction](0060-p3-repair-loop-outcome.md)
 - [0061 — Phase 3 stdlib Bundle A: buffer-backed i64 vectors](0061-p3-stdlib-bundle-a-i64-vectors.md)
 - [0062 — Phase 3 stdlib Bundle B: text indexing](0062-p3-stdlib-bundle-b-text-indexing.md)
+- [0063 — Phase 3 stdlib Bundle B2: token-index-any](0063-p3-stdlib-bundle-b2-token-index-any.md)

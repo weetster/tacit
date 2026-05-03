@@ -1,4 +1,4 @@
-//! `@name` primitive allowlist and classification (ADR 0028, 0030, 0038, 0047, 0061, 0062).
+//! `@name` primitive allowlist and classification (ADR 0028, 0030, 0038, 0047, 0061, 0062, 0063).
 //!
 //! Categories per ADR 0028 + 0030 + 0038 + 0047:
 //! - LIBC: external libc call (`write`, `read`, `exit`).
@@ -11,6 +11,7 @@
 //! - I64VEC-ALLOC: `@i64-alloc` (runtime i64 element count, ADR 0061).
 //! - I64VEC: inline i64 vector operations (ADR 0061).
 //! - TEXT-INDEX: inline text boundary indexing into I64Vec range tables (ADR 0062).
+//! - TEXT-INDEX-ANY: multi-delimiter token indexing (ADR 0063).
 //! - RANGE-TABLE: I64Vec start/length pair accessors (ADR 0062).
 //!
 //! Codegen pattern-matches an `App` left-spine whose head is `Sym(name)`,
@@ -56,6 +57,8 @@ pub enum PrimKind {
     LineIndex,
     /// Index delimiter-separated token ranges into an I64Vec pair table (ADR 0062).
     TokenIndex,
+    /// Index token ranges separated by any byte from a delimiter buffer (ADR 0063).
+    TokenIndexAny,
     /// Load the start field for a range-table row (ADR 0062).
     RangeStart,
     /// Load the length field for a range-table row (ADR 0062).
@@ -107,6 +110,7 @@ impl PrimKind {
             "i64-copy" => PrimKind::I64Copy,
             "line-index" => PrimKind::LineIndex,
             "token-index" => PrimKind::TokenIndex,
+            "token-index-any" => PrimKind::TokenIndexAny,
             "range-start" => PrimKind::RangeStart,
             "range-len" => PrimKind::RangeLen,
             "add" => PrimKind::Arith(ArithOp::Add),
@@ -138,6 +142,7 @@ impl PrimKind {
             | PrimKind::LineIndex => 3,
             PrimKind::ScanByte => 4,
             PrimKind::BufCopy | PrimKind::BufEq | PrimKind::I64Copy | PrimKind::TokenIndex => 5,
+            PrimKind::TokenIndexAny => 6,
             PrimKind::Arith(_) | PrimKind::Cmp(_) => 2,
         }
     }
@@ -204,6 +209,10 @@ mod tests {
         assert_eq!(PrimKind::lookup("i64-copy"), Some(PrimKind::I64Copy));
         assert_eq!(PrimKind::lookup("line-index"), Some(PrimKind::LineIndex));
         assert_eq!(PrimKind::lookup("token-index"), Some(PrimKind::TokenIndex));
+        assert_eq!(
+            PrimKind::lookup("token-index-any"),
+            Some(PrimKind::TokenIndexAny)
+        );
         assert_eq!(PrimKind::lookup("range-start"), Some(PrimKind::RangeStart));
         assert_eq!(PrimKind::lookup("range-len"), Some(PrimKind::RangeLen));
     }
@@ -228,6 +237,7 @@ mod tests {
         assert_eq!(PrimKind::I64Copy.arity(), 5);
         assert_eq!(PrimKind::LineIndex.arity(), 3);
         assert_eq!(PrimKind::TokenIndex.arity(), 5);
+        assert_eq!(PrimKind::TokenIndexAny.arity(), 6);
         assert_eq!(PrimKind::RangeStart.arity(), 2);
         assert_eq!(PrimKind::RangeLen.arity(), 2);
         assert_eq!(PrimKind::Arith(ArithOp::Add).arity(), 2);

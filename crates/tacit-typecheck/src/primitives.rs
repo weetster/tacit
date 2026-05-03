@@ -1,4 +1,4 @@
-//! Type and effect signatures for built-in @name primitives (ADR 0028, 0030, 0042, 0047, 0061, 0062).
+//! Type and effect signatures for built-in @name primitives (ADR 0028, 0030, 0042, 0047, 0061, 0062, 0063).
 //!
 //! Effect sets mirror `stdlib/libc-effects.toml` (ADR 0025, consumed in Stage 3).
 //! The canonical source for primitive effects is that TOML file; values here match it.
@@ -6,6 +6,7 @@
 //! Library-mediated additions:
 //! - ADR 0061: I64Vec allocation and element operations.
 //! - ADR 0062: text indexing into I64Vec range tables.
+//! - ADR 0063: multi-delimiter token indexing.
 
 use crate::ty::{EffAtom, EffSet, FnEff, Ty};
 
@@ -54,6 +55,16 @@ pub fn prim_type(name: &str) -> Option<Ty> {
         "line-index" => fn3_mut(Ty::Buf, Ty::Int, Ty::I64Vec, Ty::Int),
         // TEXT-INDEX: token-index(text: Buf, off: Int, len: Int, delim: Int, table: I64Vec) -> Int / {Mut}
         "token-index" => fn5_mut(Ty::Buf, Ty::Int, Ty::Int, Ty::Int, Ty::I64Vec, Ty::Int),
+        // TEXT-INDEX: token-index-any(text: Buf, off: Int, len: Int, delims: Buf, delim-count: Int, table: I64Vec) -> Int / {Mut}
+        "token-index-any" => fn6_mut(
+            Ty::Buf,
+            Ty::Int,
+            Ty::Int,
+            Ty::Buf,
+            Ty::Int,
+            Ty::I64Vec,
+            Ty::Int,
+        ),
         // RANGE-TABLE: range-start(table: I64Vec, index: Int) -> Int (pure)
         "range-start" => fn2_pure(Ty::I64Vec, Ty::Int, Ty::Int),
         // RANGE-TABLE: range-len(table: I64Vec, index: Int) -> Int (pure)
@@ -98,6 +109,7 @@ pub fn is_mut_prim(name: &str) -> bool {
             | "i64-copy"
             | "line-index"
             | "token-index"
+            | "token-index-any"
     )
 }
 
@@ -255,6 +267,31 @@ fn fn5_mut(a: Ty, b: Ty, c: Ty, d: Ty, e: Ty, r: Ty) -> Ty {
                 Box::new(Ty::Fn(
                     Box::new(d),
                     Box::new(Ty::Fn(Box::new(e), Box::new(r), mut_eff())),
+                    FnEff::pure_(),
+                )),
+                FnEff::pure_(),
+            )),
+            FnEff::pure_(),
+        )),
+        FnEff::pure_(),
+    )
+}
+
+/// Six-argument function, {Mut} at the innermost (fully-applied) step.
+fn fn6_mut(a: Ty, b: Ty, c: Ty, d: Ty, e: Ty, f: Ty, r: Ty) -> Ty {
+    Ty::Fn(
+        Box::new(a),
+        Box::new(Ty::Fn(
+            Box::new(b),
+            Box::new(Ty::Fn(
+                Box::new(c),
+                Box::new(Ty::Fn(
+                    Box::new(d),
+                    Box::new(Ty::Fn(
+                        Box::new(e),
+                        Box::new(Ty::Fn(Box::new(f), Box::new(r), mut_eff())),
+                        FnEff::pure_(),
+                    )),
                     FnEff::pure_(),
                 )),
                 FnEff::pure_(),
@@ -543,6 +580,31 @@ mod tests {
         assert_eq!(
             args,
             vec![Ty::I64Vec, Ty::Int, Ty::I64Vec, Ty::Int, Ty::Int]
+        );
+        assert_eq!(eff, FnEff::from_set(EffSet::of([EffAtom::Mut])));
+    }
+
+    #[test]
+    fn token_index_any_has_expected_shape_and_mut() {
+        let t = prim_type("token-index-any").unwrap();
+        fn args_and_eff(t: &Ty, args: &mut Vec<Ty>) -> FnEff {
+            match t {
+                Ty::Fn(a, b, eff) => {
+                    args.push(a.as_ref().clone());
+                    if matches!(b.as_ref(), Ty::Fn(_, _, _)) {
+                        args_and_eff(b, args)
+                    } else {
+                        eff.clone()
+                    }
+                }
+                _ => panic!("not a Fn"),
+            }
+        }
+        let mut args = Vec::new();
+        let eff = args_and_eff(&t, &mut args);
+        assert_eq!(
+            args,
+            vec![Ty::Buf, Ty::Int, Ty::Int, Ty::Buf, Ty::Int, Ty::I64Vec]
         );
         assert_eq!(eff, FnEff::from_set(EffSet::of([EffAtom::Mut])));
     }

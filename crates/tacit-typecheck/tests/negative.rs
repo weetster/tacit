@@ -367,9 +367,33 @@ fn neg_token_index_rejects_byte_buffer_table() {
 }
 
 #[test]
+fn neg_token_index_any_rejects_byte_buffer_table() {
+    expect_authoring_error(
+        "let text = @buf-alloc 1 in let table = @buf-alloc 2 in @token-index-any text 0 1 \" \" 1 table",
+        "type-mismatch",
+    );
+}
+
+#[test]
 fn neg_line_index_rejects_i64_vector_text() {
     expect_authoring_error(
         "let text = @i64-alloc 1 in let table = @i64-alloc 2 in @line-index text 1 table",
+        "type-mismatch",
+    );
+}
+
+#[test]
+fn neg_token_index_any_rejects_i64_vector_text() {
+    expect_authoring_error(
+        "let text = @i64-alloc 1 in let table = @i64-alloc 2 in @token-index-any text 0 1 \" \" 1 table",
+        "type-mismatch",
+    );
+}
+
+#[test]
+fn neg_token_index_any_rejects_i64_vector_delims() {
+    expect_authoring_error(
+        "let text = @buf-alloc 1 in let delims = @i64-alloc 1 in let table = @i64-alloc 2 in @token-index-any text 0 1 delims 1 table",
         "type-mismatch",
     );
 }
