@@ -1,7 +1,8 @@
 # Phase 3 Standard-Library Next Steps
 
-**Status:** Proposed next experiment
+**Status:** First canary complete; revise before any full open run
 **Date:** 2026-05-02
+**Updated:** 2026-05-03
 
 ## Summary
 
@@ -31,6 +32,25 @@ failures were concentrated in:
 These are exactly the places where the current Tacit surface forces long
 low-level buffer programs. The open reference corpus also shows the token
 problem before primer cost: 20,661 Tacit tokens vs 4,584 Python tokens.
+
+The first library-mediated canary,
+`019debbe-3de9-7a54-8d59-cef6523672f1`, used Bundle A plus the narrow
+line/token range subset of Bundle B. It improved same-task one-shot passes
+from 1/12 to 4/12 against the latest non-stdlib repair-loop run's matching
+task subset, and reduced generated tokens from 26,280 to 15,560. It did not
+meet the full-open proceed criteria: final repair-loop passes were 8/12,
+invalid recovery was 1/3, and average model calls were 2.17 per task. The
+stdlib canary references were also only about 16% shorter than current Tacit
+references on the 12-task subset, short of the 30% setup gate.
+
+The failure pattern is actionable. The model used the new vector and range
+primitives, but `@token-index text off len delim table` was too narrow for
+ordinary tokenized input: models treated "token" as whitespace-delimited,
+while the primitive splits on exactly one delimiter byte. That directly
+caused newline-containing pseudo-tokens in grouping and empty-input failures
+in sequence tasks. Sorting and grouping also remained too manual; indexed
+storage helped token count, but did not make hand-written ordering logic
+reliable enough.
 
 ## Non-Goals
 
@@ -91,11 +111,22 @@ Candidate operations:
 
 - `@line-index text len table`
 - `@token-index text off len delim table`
+- `@token-index-any text off len delims delim-count table`
 - `@range-start table index`
 - `@range-len table index`
 
 The table can be represented as a buffer-backed vector of start/length pairs.
 This depends on Bundle A or equivalent typed buffer access.
+
+`@token-index-any` is the next required text primitive. It scans
+`text[off..off+len)` into non-empty byte runs separated by any byte in
+`delims[0..delim-count)`, writes absolute start/length pairs to `table`, and
+returns the number of rows written. This avoids baking in a whitespace-only
+special case while giving the model the operation it expected from
+`@token-index`. The one-delimiter `@token-index` can remain as a compact
+low-level primitive, but model-facing examples should prefer
+`@token-index-any` for input records where spaces, LF, CR, or tabs may all
+separate tokens.
 
 Expected impact: shorter line sorting, unique-line, word-count, longest-line,
 and substring-filtering programs.
@@ -191,21 +222,36 @@ Proceed from paid canary to full open run only if:
 - invalid recovery is at least 50%, and
 - average model calls stay below 2.0 per task.
 
+The first paid canary did not satisfy this transition. Do not run the full
+open library-mediated evaluation until a revised primitive set and primer
+appendix clear these gates on a fresh open-only canary.
+
 ## Work Plan
 
-1. Write ADR 0061 choosing the first stdlib bundle and exact primitive
-   signatures.
-2. Add harness support for a `library-mediated` result label, or document the
-   label convention if no code change is needed.
-3. Implement the first bundle with codegen and typecheck fixtures.
-4. Add alternate open canary references, for example
-   `reference.stdlib.tac`, without replacing `reference.tac`.
-5. Extend token tooling to compare `reference.tac`,
-   `reference.stdlib.tac`, and `reference.py`.
-6. Add a short stdlib primer appendix and fixture checks for every new
-   example.
-7. Run the open canary one-shot and repair-loop modes.
-8. Decide whether to run full open stdlib-mediated evaluation.
+1. Record the first canary as a library-mediated result note, separate from
+   the primer-only Phase 3 gate and the core repair-loop result.
+2. Write the next ADR amendment or follow-up ADR for Bundle B2:
+   `@token-index-any text off len delims delim-count table`, including exact
+   type/effect signatures and string-literal/buffer argument rules for
+   `delims`.
+3. Implement `@token-index-any` with codegen and typecheck fixtures. Include
+   tests for leading, trailing, repeated, and mixed delimiters such as space
+   plus LF.
+4. Update the stdlib primer appendix to steer model-facing tokenization
+   examples toward `@token-index-any` when input may contain more than one
+   separator byte.
+5. Rework the 12 canary `reference.stdlib.tac` files so the canary subset
+   clears the 30% token-reduction setup gate before another paid run.
+6. Add canary-subset token reporting, or document the exact `corpus-tokens`
+   extraction method, because ADR 0021 `stdlib_dominated` buckets are not a
+   useful aggregate for this library-mediated experiment.
+7. Add the smallest ordering layer after B2, likely `@sort-i64` and
+   `@sort-ranges-by-bytes`, if references still require long hand-written
+   sorting/grouping loops.
+8. Rerun the open canary one-shot and repair-loop modes only after local
+   reference tests, token counts, and primer-size checks pass.
+9. Decide whether to run full open stdlib-mediated evaluation based on the
+   paid-canary gates above.
 
 Step 2 implementation note: `corpus-eval` supports
 `--result-label library-mediated`. The label is written into both run metadata
@@ -217,12 +263,15 @@ when present, with per-task `stdlib` / `stdΔ` / `std/tac` columns and aggregate
 rows for stdlib Tacit references plus the paired stdlib-vs-current Tacit
 subset.
 
-## First Recommendation
+## Post-Canary Recommendation
 
-Start with Bundle A plus the smallest part of Bundle B needed to represent
-line/token ranges. This attacks the largest source of low-level repetition
-without immediately adding high-level task-like operations.
+Do not proceed to a full open library-mediated run from the current Bundle A
+plus narrow Bundle B surface. The first canary shows that indexed storage and
+range tables reduce generated tokens, but the text-indexing shape is not yet
+aligned with model behavior or ordinary corpus input.
 
-Do not start with sorting primitives. Sorting should be the second bundle:
-first make sequences and range tables compact and safe, then add ordering on
-top of those representations.
+Next, add `@token-index-any` and refresh the primer/examples around it. Then
+recheck local reference token counts before paying for another canary. If the
+updated references still require hand-written sorting or grouping loops,
+promote the smallest ordering primitives from Bundle C before rerunning paid
+evaluation.

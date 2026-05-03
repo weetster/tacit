@@ -363,6 +363,14 @@ def test_load_tasks_accepts_numeric_selector() -> None:
     assert [task.task_id for task in tasks] == ["arithmetic/001-sum-to-n"]
 
 
+def test_require_api_key_loads_cwd_dotenv(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".env").write_text("ANTHROPIC_API_KEY=from-dotenv\n", encoding="utf-8")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    assert corpus_eval._require_api_key("anthropic") == "from-dotenv"
+
+
 def test_uuid7_shape() -> None:
     run_id = corpus_eval._uuid7()
 
