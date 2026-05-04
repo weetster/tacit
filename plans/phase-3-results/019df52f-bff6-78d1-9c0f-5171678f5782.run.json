@@ -1,0 +1,40 @@
+{
+  "completed_at": "2026-05-04T22:53:00Z",
+  "corpus_git_sha": "e7585209851ecb7753473fdf74f6719cb09f0491",
+  "dry_run": false,
+  "harness_git_sha": "e7585209851ecb7753473fdf74f6719cb09f0491",
+  "harness_version": "0.4.0",
+  "model_id": "claude-sonnet-4-6",
+  "primer_blake3": "3834b1bcfadba383d1292fb9fefeedda63706d69ecd0ba692c1258f2690cea6b",
+  "primer_token_count": 19231,
+  "provider": "anthropic",
+  "repair_turns": 2,
+  "result_label": "library-mediated",
+  "run_id": "019df52f-bff6-78d1-9c0f-5171678f5782",
+  "sampling": {
+    "max_tokens": 8192,
+    "temperature": 0
+  },
+  "started_at": "2026-05-04T22:50:40Z",
+  "tacit_binary": {
+    "tacit_bin_blake3": "455fadb9941ecbd755e39ae141784e016b60e8aa09f25298ac283cd449f83646",
+    "tacit_bin_mtime": "2026-05-04T04:29:46Z",
+    "tacit_bin_path": "/home/mike/github/tacit/target/debug/tacit"
+  },
+  "task_ids": [
+    "strings/017-common-prefix",
+    "collections/021-unique-in-order",
+    "collections/025-partition-eo",
+    "collections/026-group-counts",
+    "algorithms/033-two-sum",
+    "algorithms/035-bubble-sort",
+    "algorithms/036-quicksort",
+    "algorithms/037-merge-sort",
+    "algorithms/044-count-islands",
+    "algorithms/049-matrix-multiply",
+    "io/055-sort-lines",
+    "io/056-unique-lines"
+  ],
+  "tasks_scope": "open",
+  "tiktoken_encoding": "o200k_base"
+}

@@ -25,6 +25,33 @@ final block: rescan input instead of storing a complex table, use one clear
 quadratic pass instead of a half-written divide-and-conquer routine, and
 prefer direct output over building a large abstract result.
 
+## Hard Rules (Critical for Correctness)
+
+1. **Final expression must be `0`.** Executable programs return an exit status.
+   The final expression must evaluate to the literal integer `0`. When using
+   `@write`, note that it returns the byte count (e.g., 1 for writing `"\n"`).
+   If the final expression is `@write 1 "\n" 1`, the process exits with status
+   `1`, causing a test failure. Always end with an explicit `0` unless the task
+   explicitly requests a non-zero exit code.
+
+2. **Never put `@` in front of a name you define.** The `@`-prefix is reserved
+   for the primitive surface listed in §3 (Primitive Surface). If you write
+   `@search_from` or `@buffer_copy`, the compiler will report an
+   unknown-primitive error. Defined helpers, parameters, and local bindings use
+   bare names without `@`.
+
+3. **`rec` groups are mutually visible by name only, not by parameter scope.**
+   If a `rec` group has `bubble = lambda pass. ... inner ...` and
+   `inner = lambda i. ... pass ...`, the name `pass` inside `inner` is unbound.
+   The parameter `pass` of `bubble` is not visible in `inner`'s scope. Either
+   pass `pass` as an explicit parameter to `inner` (and to all call sites of
+   `inner`), or inline the inner loop into `bubble`'s body.
+
+4. **Cap allocations at ~1 MB.** Calls like `@buf-alloc 16777216` (16 MB) crash
+   before the program runs. Unless the task statement explicitly requires
+   allocations larger than 1,048,576 bytes, cap dynamic allocations there.
+   Static allocations (tuples, records) do not have this constraint.
+
 ## 1. Semantic Summary
 
 Tacit-Lite is a small expression language. Authors write source using `let`,
@@ -510,6 +537,18 @@ Make `parity` an ordinary parameter of the recursive helper:
 
 ```text
 rec {loop = lambda parity. lambda i. ... loop parity next_i} in
+```
+
+Sibling helpers in the same `rec` group do not share parameter scopes. If
+`bubble = lambda pass. ... inner ...` and `inner = lambda i. ...`, the name
+`pass` is not visible inside `inner`. You must pass `pass` as an explicit
+parameter:
+
+```text
+rec {
+  bubble = lambda pass. lambda i. ... inner pass i ...;
+  inner = lambda pass. lambda i. ... pass ...
+} in bubble initial_pass 0
 let _ = loop 0 0 in
 loop 1 0
 ```
@@ -906,7 +945,11 @@ IO: `@read`, `@write`, `@exit`.
 Allocation: `@buf-alloc`, `@buf-alloc-dyn`, `@i64-alloc`.
 
 Buffer mutation and inspection: `@buf-get`, `@buf-set`, `@buf-copy`,
-`@buf-eq`, `@scan-byte`.
+`@buf-eq`, `@scan-byte`. Note that `@buf-eq buf1 off1 buf2 off2 len` returns
+`1` if the byte spans are equal and `0` if they differ. Always branch on the
+result directly: `if @buf-eq buf1 o1 buf2 o2 len then equal_branch else
+unequal_branch`. Do not invert the return value with `if @eq (@buf-eq ...) 0
+then ...`, as this inverts the meaning.
 
 Integer vector storage: `@i64-get`, `@i64-set`, `@i64-swap`, `@i64-copy`.
 
@@ -1357,6 +1400,16 @@ lookup or insertion-position searches. After sorting line or token ranges, use
 and `@count-equal-ranges text table count out` when each run also needs a
 count.
 
+**Do not sort and then dedup for first-occurrence uniqueness.** When the task
+asks for unique lines in input order or first-occurrence counting, sorting
+destroys the original order. The first matching row in the sorted view is not
+the first occurrence in the input. Instead, scan the input left to right and
+track the previously emitted lines explicitly. For ≤1,000 items, a simple
+quadratic check ("have I output this one before?") is both correct and fast
+enough. For larger inputs or when you have a sorted structure from another
+step, remember that `@dedup-adjacent-ranges` works on the sorted copy and
+returns unique ranges in sorted order, not in input order.
+
 Only write a custom ordering loop when the comparison is not one of those
 forms. Keep helper state concrete: indexes, offsets, lengths, and any
 temporary storage should have one clear role.
@@ -1572,20 +1625,6 @@ through an early `@exit` or a conditional branch. Inspect what the final
 expression returns on the input that triggered the exit, and check any
 conditional `@exit` calls or branches that fall through to a nonzero integer.
 
-### Token-Aware Writing
-
-Compactness matters because Tacit is meant to be economical for models to
-read and write. That does not mean the generated program should be cryptic. A
-program that passes is worth more than a short program that fails. Use the
-recommended idioms from this primer first. Only shorten after the algorithm is
-obviously correct.
-
-Avoid token tricks that hurt repair: meaningless one-letter names everywhere,
-packed state with no clear invariant, unnecessary aliases for primitives, and
-deeply nested expressions where one `let` would name the intermediate value.
-The recommended style balances compactness and editability because generated
-programs often need later repair.
-
 ### Boundary Conditions To Remember
 
 Empty input: `@read` returns zero immediately. Make the EOF branch return the
@@ -1627,6 +1666,11 @@ negative indexes on empty input.
 
 Negative numbers: `@parse-i64` handles the primitive contract for integer
 text. If hand-scanning bytes, account for a leading minus sign explicitly.
+Note that `@mod -3 2` returns `-1`, not `1`. For parity tests that work for
+both positive and negative integers, prefer `@ne (@mod v 2) 0` for odd and
+`@eq (@mod v 2) 0` for even, but test your expected behavior with negative
+inputs first, or adjust: `let r = @mod v 2 in let r2 = if @lt r 0 then @add r
+2 else r in @eq r2 0` for portable even-number testing.
 
 Buffer lengths: write and compare exactly the logical length, not the
 allocated capacity. Allocating 32 bytes for formatting does not mean all 32
@@ -1653,10 +1697,12 @@ let _ = @write 1 "\n" 1 in
 0
 ```
 
-Use this skeleton for integer-output programs. For programs that output a
-string or transformed bytes, compute the output buffer and logical length,
-then write that buffer and length directly. Do not format a buffer as an
-integer unless the required output is numeric.
+Use this skeleton for integer-output programs. The final `0` is the exit
+status, not output data. For programs that output a string or transformed
+bytes, compute the output buffer and logical length, then write that buffer
+and length directly with `@write`, then end with `0`. Do not format a buffer
+as an integer unless the required output is numeric. The final expression must
+be `0` regardless of what you write.
 
 ### Checking Edge Cases
 
@@ -1675,20 +1721,10 @@ without newline.
 
 ### Choosing A Recursion State
 
-A good recursive state has a small invariant that can be spoken in one
-sentence. Examples: `i` is the next offset to inspect; `acc` is the sum of
-all complete numbers read so far; `best` is the longest length seen so far;
-`out_len` is the number of valid bytes already written to `out`.
-
-Avoid states that require reconstructing history. If a helper needs to know
-whether it is in a word, carry an `in_word` flag. If it needs the start of
-the current line, carry the start offset. If it needs to output separators,
-carry a `first` flag so the branch can decide whether to write the separator.
-
-When a state has more than two values, nested lambdas are often clearer than
-packing. A helper can be called as `loop i acc best flag`. The compiler
-lowers closed multi-argument helpers directly; you do not need to avoid this
-style for performance.
+A good recursive state has a small invariant: `i` is the next offset, `acc`
+is the running sum, `best` is the longest seen so far, and `first` is a flag
+to suppress the leading separator. Avoid states that require reconstructing
+history; carry explicit flags like `in_word` or `first` instead.
 
 ### Byte-Oriented String Work
 
