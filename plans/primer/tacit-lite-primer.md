@@ -699,6 +699,39 @@ the input buffer while later scans still need it. Either copy the slice into a
 separate output buffer with `@buf-copy out 0 input start len` and then write
 `out len`, or emit one byte at a time through a one-byte scratch buffer.
 
+### Stack And Buffer Safety
+
+The typechecker does not catch out-of-range buffer or range-table access, and
+allocation primitives reserve stack space. The following rules prevent the
+most common runtime failures:
+
+- Do not allocate multi-megabyte buffers or `I64Vec`s. A call such as
+  `@buf-alloc 16777216` or `@i64-alloc 16777216` can crash before the program
+  runs. Pick the smallest size that fits the input contract: 32 bytes for one
+  formatted integer, a few thousand bytes for tiny inputs, 65536 bytes for
+  most line-oriented inputs, and at most about one megabyte unless the input
+  contract clearly requires more.
+- For a range table built by `@line-index`, `@token-index`, or
+  `@token-index-any`, allocate two `I64Vec` slots per possible row. For
+  counted range groups built by `@count-equal-ranges`, allocate three slots
+  per possible output row. The text length is a safe upper bound on the
+  number of rows.
+- Treat the integer returned by `@line-index`, `@token-index`,
+  `@token-index-any`, `@count-equal-ranges`, and `@dedup-adjacent-ranges` as
+  the authoritative row count. Use it as the upper bound for every loop that
+  calls `@range-start` or `@range-len`. Do not infer the row count from
+  buffer size or table capacity.
+- When the returned row count is `0`, do not read row `0`. Branch on the
+  count first and return the empty-input result without touching the table.
+- Do not call `@buf-copy`, `@buf-eq`, `@parse-i64`, `@range-start`, or
+  `@range-len` on offsets or rows that have not first been bounded by the
+  relevant length or count. The program must enforce the bound itself.
+
+When a program segfaults, do not change the algorithm first. Reduce allocation
+size, add zero-count guards before reading row `0`, and verify that every
+table or range access is bounded by the count returned from the indexing
+primitive. Bounds discipline is what usually fails, not the algorithm.
+
 ### Output Rules
 
 Tacit output is explicit byte output. To print an integer, allocate a buffer,
@@ -1866,9 +1899,10 @@ word_count
 `@token-index text off len delim table` is the one-byte form. Use it when the
 input range has exactly one separator byte; `delim` contributes its low byte.
 
-`@sort-i64 xs count` sorts `xs[0..count)` in ascending signed integer order
-and mutates the vector. Use it after parsing numbers into an `I64Vec`, then
-read or format the sorted cells normally.
+`@sort-i64 xs count` sorts `xs[0..count)` in ascending signed integer order.
+It mutates only that prefix; cells at and beyond `count` are untouched. Use it
+after parsing numbers into an `I64Vec`, then read or format the sorted cells
+normally.
 
 ```tacit
 let xs = @i64-alloc 3 in
@@ -1888,6 +1922,23 @@ another, the shorter range sorts first.
 and applies the same movement to `values[0..count)`. Equal keys keep their
 relative order, so attached values with the same key remain in input order.
 
+```tacit
+let keys = @i64-alloc 3 in
+let _ = @i64-set keys 0 30 in
+let _ = @i64-set keys 1 10 in
+let _ = @i64-set keys 2 20 in
+let values = @i64-alloc 3 in
+let _ = @i64-set values 0 100 in
+let _ = @i64-set values 1 200 in
+let _ = @i64-set values 2 300 in
+let _ = @stable-sort-pairs-i64 keys values 3 in
+@i64-get values 0
+```
+
+After this runs, `keys` holds `10, 20, 30` and `values` holds `200, 300, 100`.
+Reading `values 0` returns `200` because `200` was paired with key `10` in
+input order.
+
 `@lower-bound-i64 xs count value` returns the first index in a sorted
 ascending `I64Vec` prefix where `value` can be inserted without moving earlier
 equal values. If every element is less than `value`, it returns `count`.
@@ -1902,13 +1953,13 @@ let _ = @i64-set xs 3 9 in
 ```
 
 `@dedup-adjacent-ranges text table count out` scans adjacent range rows and
-writes one start/length pair for each run of equal bytes. Use it after
+writes pairs (start, length): one pair per run of equal bytes. Use it after
 `@sort-ranges-by-bytes` when only unique byte ranges are needed. The returned
 integer is the number of output rows. `out` may be the same vector as `table`
 for in-place compaction.
 
-`@count-equal-ranges text table count out` scans the same adjacent runs but
-writes triples: representative start, representative length, then run count.
+`@count-equal-ranges text table count out` scans the same adjacent runs and
+writes triples (start, length, count): one triple per run of equal bytes.
 Allocate three `I64Vec` slots per possible output row and read triple fields
 with `@i64-get`.
 
