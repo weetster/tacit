@@ -1,0 +1,710 @@
+{
+  "aggregates": {
+    "full": {
+      "compile_pass_rate": 0.9166666666666666,
+      "primer_amortized_total": 23664,
+      "python_tokens_total": 1676,
+      "tacit_tokens_total": 227956,
+      "task_count": 12,
+      "tests_pass_rate": 0.5,
+      "tests_pass_total": 53,
+      "tests_total_total": 75,
+      "token_delta": 135.01193317422434,
+      "typecheck_pass_rate": 0.9166666666666666
+    },
+    "non_stdlib_dominated": {
+      "compile_pass_rate": 0.9166666666666666,
+      "primer_amortized_total": 23664,
+      "python_tokens_total": 1676,
+      "tacit_tokens_total": 227956,
+      "task_count": 12,
+      "tests_pass_rate": 0.5,
+      "tests_pass_total": 53,
+      "tests_total_total": 75,
+      "token_delta": 135.01193317422434,
+      "typecheck_pass_rate": 0.9166666666666666
+    },
+    "repair": {
+      "average_model_calls_per_task": 1.5833333333333333,
+      "behavioral_initial_failure_count": 5,
+      "behavioral_recovery_rate": 1.0,
+      "behavioral_repaired_count": 5,
+      "compile_typecheck_initial_failure_count": 1,
+      "compile_typecheck_recovered_count": 1,
+      "compile_typecheck_recovery_rate": 1.0,
+      "final_compile_pass_rate": 1.0,
+      "final_task_pass_rate": 1.0,
+      "final_typecheck_pass_rate": 1.0,
+      "initially_failed_count": 6,
+      "invalid_initial_failure_count": 1,
+      "invalid_recovery_rate": 1.0,
+      "invalid_repaired_count": 1,
+      "one_shot_task_pass_rate": 0.5,
+      "python_tokens_total": 1676,
+      "repair_primer_amortized_total": 26509,
+      "repair_primer_tokens_total": 352868,
+      "repair_recovery_rate": 1.0,
+      "repair_success_count": 6,
+      "repair_tacit_tokens_total": 360805,
+      "repair_token_delta": 214.27744630071598,
+      "task_count": 12,
+      "total_api_calls": 19,
+      "total_generation_tokens": 7937,
+      "total_model_calls": 19
+    },
+    "stdlib_dominated": {
+      "compile_pass_rate": 0.0,
+      "primer_amortized_total": 0,
+      "python_tokens_total": 0,
+      "tacit_tokens_total": 0,
+      "task_count": 0,
+      "tests_pass_rate": 0.0,
+      "tests_pass_total": 0,
+      "tests_total_total": 0,
+      "token_delta": 0.0,
+      "typecheck_pass_rate": 0.0
+    }
+  },
+  "gates": {
+    "passed_overall": false,
+    "primary_pass_rate_gate": {
+      "applies": false,
+      "metric": "tests_pass_rate",
+      "passed": false,
+      "scope": "full",
+      "threshold": 0.7,
+      "value": 0.0
+    },
+    "primary_token_gate_full": {
+      "applies": false,
+      "metric": "token_delta",
+      "passed": false,
+      "scope": "full",
+      "threshold": -0.3,
+      "value": 0.0
+    },
+    "primary_token_gate_non_stdlib": {
+      "applies": false,
+      "metric": "token_delta",
+      "passed": false,
+      "scope": "non_stdlib_dominated",
+      "threshold": -0.3,
+      "value": 0.0
+    }
+  },
+  "model": {
+    "id": "claude-sonnet-4-6",
+    "primer_hash": "fb5790c08402ef7251c9a72d388d57ed572b2319dddb6ce4ba5dbcdd6b04eb5d",
+    "primer_tokens": 18572,
+    "provider": "anthropic"
+  },
+  "result_label": "library-mediated",
+  "run_id": "019df3ed-ab52-701b-adc1-4c9967ebbbc2",
+  "schema_version": "p3.0",
+  "scope": "open",
+  "tasks": [
+    {
+      "compile_pass": true,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "test-failure",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "stdout mismatch for basic: expected 'fl\\n', got b'flo\\n'; stdout mismatch for no-prefix: expected '\\n', got b'dog\\n'; stdout mismatch for single-line: expected 'interview\\n', got b'i\\n'; 2 more failure(s)",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "diagnostics_by_turn": {
+        "turn-0": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "stdout mismatch for basic: expected 'fl\\n', got b'flo\\n'; stdout mismatch for no-prefix: expected '\\n', got b'dog\\n'; stdout mismatch for single-line: expected 'interview\\n', got b'i\\n'; 2 more failure(s)",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-1": null
+      },
+      "duration_ms": 15913,
+      "failure_stage_by_turn": {
+        "turn-0": "test",
+        "turn-1": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": false,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 385,
+      "generation_tokens_by_turn": {
+        "turn-0": 385,
+        "turn-1": 352
+      },
+      "python_baseline_tokens": 123,
+      "repair_success": true,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "strings/017-common-prefix",
+      "tests_pass": 1,
+      "tests_total": 6,
+      "turns_used": 1,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "diagnostics_by_turn": {
+        "turn-0": null
+      },
+      "duration_ms": 6310,
+      "failure_stage_by_turn": {
+        "turn-0": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": true,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 367,
+      "generation_tokens_by_turn": {
+        "turn-0": 367
+      },
+      "python_baseline_tokens": 111,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "collections/021-unique-in-order",
+      "tests_pass": 6,
+      "tests_total": 6,
+      "turns_used": 0,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "test-failure",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "stdout mismatch for empty: expected '\\n\\n', got b'0\\n\\n'",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "diagnostics_by_turn": {
+        "turn-0": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "stdout mismatch for empty: expected '\\n\\n', got b'0\\n\\n'",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-1": null
+      },
+      "duration_ms": 21380,
+      "failure_stage_by_turn": {
+        "turn-0": "test",
+        "turn-1": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": false,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 403,
+      "generation_tokens_by_turn": {
+        "turn-0": 403,
+        "turn-1": 425
+      },
+      "python_baseline_tokens": 100,
+      "repair_success": true,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "collections/025-partition-eo",
+      "tests_pass": 5,
+      "tests_total": 6,
+      "turns_used": 1,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "diagnostics_by_turn": {
+        "turn-0": null
+      },
+      "duration_ms": 7440,
+      "failure_stage_by_turn": {
+        "turn-0": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": true,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 363,
+      "generation_tokens_by_turn": {
+        "turn-0": 363
+      },
+      "python_baseline_tokens": 103,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "collections/026-group-counts",
+      "tests_pass": 5,
+      "tests_total": 5,
+      "turns_used": 0,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "diagnostics_by_turn": {
+        "turn-0": null
+      },
+      "duration_ms": 7409,
+      "failure_stage_by_turn": {
+        "turn-0": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": true,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 448,
+      "generation_tokens_by_turn": {
+        "turn-0": 448
+      },
+      "python_baseline_tokens": 152,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/033-two-sum",
+      "tests_pass": 7,
+      "tests_total": 7,
+      "turns_used": 0,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "typecheck-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: /tmp/tmpxvxox_b4/generated.tac: expected 'else' but got Semicolon",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "diagnostics_by_turn": {
+        "turn-0": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "typecheck-error",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "error: /tmp/tmpxvxox_b4/generated.tac: expected 'else' but got Semicolon",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-1": null
+      },
+      "duration_ms": 14009,
+      "failure_stage_by_turn": {
+        "turn-0": "typecheck",
+        "turn-1": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": false,
+      "first_pass_tests_pass": false,
+      "first_pass_typecheck_pass": false,
+      "generation_tokens": 465,
+      "generation_tokens_by_turn": {
+        "turn-0": 465,
+        "turn-1": 474
+      },
+      "python_baseline_tokens": 141,
+      "repair_success": true,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/035-bubble-sort",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "turns_used": 1,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "diagnostics_by_turn": {
+        "turn-0": null
+      },
+      "duration_ms": 4973,
+      "failure_stage_by_turn": {
+        "turn-0": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": true,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 309,
+      "generation_tokens_by_turn": {
+        "turn-0": 309
+      },
+      "python_baseline_tokens": 143,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/036-quicksort",
+      "tests_pass": 8,
+      "tests_total": 8,
+      "turns_used": 0,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "diagnostics_by_turn": {
+        "turn-0": null
+      },
+      "duration_ms": 4849,
+      "failure_stage_by_turn": {
+        "turn-0": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": true,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 308,
+      "generation_tokens_by_turn": {
+        "turn-0": 308
+      },
+      "python_baseline_tokens": 201,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/037-merge-sort",
+      "tests_pass": 8,
+      "tests_total": 8,
+      "turns_used": 0,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "test-failure",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "stdout mismatch for two-islands: expected '2\\n', got b'3\\n'; stdout mismatch for all-land: expected '1\\n', got b'3\\n'; stdout mismatch for l-shape: expected '1\\n', got b'3\\n'",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "diagnostics_by_turn": {
+        "turn-0": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "stdout mismatch for two-islands: expected '2\\n', got b'3\\n'; stdout mismatch for all-land: expected '1\\n', got b'3\\n'; stdout mismatch for l-shape: expected '1\\n', got b'3\\n'",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-1": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "stdout mismatch for all-land: expected '1\\n', got b'2\\n'; stdout mismatch for l-shape: expected '1\\n', got b'2\\n'",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-2": null
+      },
+      "duration_ms": 36375,
+      "failure_stage_by_turn": {
+        "turn-0": "test",
+        "turn-1": "test",
+        "turn-2": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": false,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 474,
+      "generation_tokens_by_turn": {
+        "turn-0": 474,
+        "turn-1": 479,
+        "turn-2": 484
+      },
+      "python_baseline_tokens": 280,
+      "repair_success": true,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/044-count-islands",
+      "tests_pass": 5,
+      "tests_total": 8,
+      "turns_used": 2,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "diagnostics_by_turn": {
+        "turn-0": null
+      },
+      "duration_ms": 22527,
+      "failure_stage_by_turn": {
+        "turn-0": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": true,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 759,
+      "generation_tokens_by_turn": {
+        "turn-0": 759
+      },
+      "python_baseline_tokens": 243,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/049-matrix-multiply",
+      "tests_pass": 6,
+      "tests_total": 6,
+      "turns_used": 0,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "test-failure",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "nonzero exit -11; stderr=b''; nonzero exit -11; stderr=b''; nonzero exit -11; stderr=b''; 4 more failure(s)",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "diagnostics_by_turn": {
+        "turn-0": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "nonzero exit -11; stderr=b''; nonzero exit -11; stderr=b''; nonzero exit -11; stderr=b''; 4 more failure(s)",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-1": null
+      },
+      "duration_ms": 8350,
+      "failure_stage_by_turn": {
+        "turn-0": "test",
+        "turn-1": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": false,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 266,
+      "generation_tokens_by_turn": {
+        "turn-0": 266,
+        "turn-1": 264
+      },
+      "python_baseline_tokens": 41,
+      "repair_success": true,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "io/055-sort-lines",
+      "tests_pass": 0,
+      "tests_total": 7,
+      "turns_used": 1,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "test-failure",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "stdout mismatch for basic: expected 'apple\\nbanana\\ncherry\\n', got b'banana\\ncherry\\nbanana\\n'; stdout mismatch for all-same: expected 'x\\n', got b''; stdout mismatch for blank-lines: expected 'a\\n\\nb\\nc\\n', got b'a\\nb\\nc\\n'; 3 more failure(s)",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "diagnostics_by_turn": {
+        "turn-0": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "stdout mismatch for basic: expected 'apple\\nbanana\\ncherry\\n', got b'banana\\ncherry\\nbanana\\n'; stdout mismatch for all-same: expected 'x\\n', got b''; stdout mismatch for blank-lines: expected 'a\\n\\nb\\nc\\n', got b'a\\nb\\nc\\n'; 3 more failure(s)",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-1": null
+      },
+      "duration_ms": 20379,
+      "failure_stage_by_turn": {
+        "turn-0": "test",
+        "turn-1": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": false,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 545,
+      "generation_tokens_by_turn": {
+        "turn-0": 545,
+        "turn-1": 367
+      },
+      "python_baseline_tokens": 38,
+      "repair_success": true,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "io/056-unique-lines",
+      "tests_pass": 2,
+      "tests_total": 8,
+      "turns_used": 1,
+      "typecheck_pass": true
+    }
+  ],
+  "track": "primary"
+}

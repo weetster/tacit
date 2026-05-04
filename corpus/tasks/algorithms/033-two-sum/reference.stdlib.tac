@@ -1,39 +1,33 @@
 let input = @buf-alloc 1000000 in
 let len = @read 0 input 1000000 in
-let target_end = @scan-byte input 0 len 10 in
-let target = @parse-i64 input 0 target_end in
-let nums_start = @add target_end 1 in
-let nums_end = @scan-byte input nums_start (@sub len nums_start) 10 in
+let table = @i64-alloc 200004 in
+let count = @token-index-any input 0 len " \n" 2 table in
+let target = @parse-i64 input (@range-start table 0) (@range-len table 0) in
+let n = @sub count 1 in
 let xs = @i64-alloc 100001 in
+let idxs = @i64-alloc 100001 in
 let out = @buf-alloc 32 in
-let n = rec {
-  skip = lambda pos.
-    if @ge pos nums_end then pos else
-      if @eq (@buf-get input pos) 32 then skip (@add pos 1) else pos;
-  token_end = lambda pos.
-    if @ge pos nums_end then nums_end else
-      if @eq (@buf-get input pos) 32 then pos else token_end (@add pos 1);
-  load = lambda pos. lambda i.
-    let p = skip pos in
-    if @ge p nums_end then i else
-      let e = token_end p in
-      let _ = @i64-set xs i (@parse-i64 input p (@sub e p)) in
-      load (@add e 1) (@add i 1)
-} in load nums_start 0 in
-let result = rec {
-  find_j = lambda i. lambda j. lambda vi.
-    if @ge j n then -1 else
-      let vj = @i64-get xs j in
-      if @eq (@add vi vj) target then @add (@mul i 100000) j
-      else find_j i (@add j 1) vi;
-  find_i = lambda i.
-    if @ge i n then -1 else
-      let r = find_j i (@add i 1) (@i64-get xs i) in
-      if @ge r 0 then r else find_i (@add i 1)
-} in find_i 0 in
+let _ = rec {fill = lambda i.
+  if @ge i n then 0 else
+    let r = @add i 1 in
+    let _ = @i64-set xs i (@parse-i64 input (@range-start table r) (@range-len table r)) in
+    let _ = @i64-set idxs i i in
+    fill (@add i 1)
+} in fill 0 in
+let _ = @stable-sort-pairs-i64 xs idxs n in
+let result = rec {find = lambda lo. lambda hi.
+  if @ge lo hi then -1 else
+    let s = @add (@i64-get xs lo) (@i64-get xs hi) in
+    if @eq s target then
+      (let a = @i64-get idxs lo in
+       let b = @i64-get idxs hi in
+       if @lt a b then @add (@mul a 1000000) b else @add (@mul b 1000000) a)
+    else if @lt s target then find (@add lo 1) hi
+    else find lo (@sub hi 1)
+} in find 0 (@sub n 1) in
 let _ = if @lt result 0 then @write 1 "-1\n" 3 else
-  let i = @div result 100000 in
-  let j = @mod result 100000 in
+  let i = @div result 1000000 in
+  let j = @mod result 1000000 in
   let w1 = @fmt-i64 out 0 i in
   let _ = @write 1 out w1 in
   let _ = @write 1 " " 1 in
