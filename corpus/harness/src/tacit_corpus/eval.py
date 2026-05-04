@@ -38,6 +38,7 @@ from tacit_corpus._paths import (
     REPO_ROOT,
     SEALED_ROOT,
 )
+from tacit_corpus.preflight import binary_metadata as _binary_metadata
 
 Provider = Literal["anthropic", "openrouter"]
 Track = Literal["primary", "cross-family"]
@@ -1633,6 +1634,7 @@ def build_run_metadata(
     started_at: datetime,
     completed_at: datetime,
     dry_run: bool,
+    tacit_bin: Path,
     repair_turns: int = 0,
 ) -> dict[str, Any]:
     sha = _git_sha()
@@ -1656,6 +1658,7 @@ def build_run_metadata(
         "tiktoken_encoding": "o200k_base",
         "harness_version": HARNESS_VERSION,
         "dry_run": dry_run,
+        "tacit_binary": _binary_metadata(tacit_bin),
     }
     if repair_turns > 0:
         data["repair_turns"] = repair_turns
@@ -1846,6 +1849,7 @@ def run(argv: list[str] | None = None) -> int:
         started_at=started_at,
         completed_at=completed_at,
         dry_run=args.dry_run,
+        tacit_bin=args.tacit_bin,
         repair_turns=args.repair_turns,
     )
 

@@ -21,6 +21,7 @@ default it uses `$TACIT_BIN`, `../../target/debug/tacit`, or `tacit` on
 uv run corpus-run        # compile + run Python/Rust references
 uv run corpus-run-tacit  # compile + run open Tacit references
 uv run corpus-tokens     # print per-task tiktoken o200k_base counts
+uv run corpus-preflight  # local preflight before any paid corpus-eval run
 uv run corpus-eval --dry-run
 ```
 
@@ -36,10 +37,22 @@ the stdlib-mediated Tacit references, and the paired stdlib-vs-current Tacit
 subset. The aggregate Python count is the Phase 3 baseline per
 [ADR 0019](../../decisions/0019-corpus-idiom-rules.md).
 
+`corpus-preflight` runs locally with the same `--tacit-bin` that a paid
+`corpus-eval` will use. It checks and compiles tiny smoke programs for
+`@token-index-any`, `@sort-i64`, `@sort-ranges-by-bytes`,
+`@count-equal-ranges`, and `@dedup-adjacent-ranges`; runs the 12 stdlib
+canary `reference.stdlib.tac` files against their `tests.jsonl`; reports the
+canary subset's stdlib-Tacit token total against current Tacit and Python
+references; and prints the binary path, mtime, and BLAKE3 hash. Pass `--json`
+for machine-readable output. Exits non-zero if any smoke or canary check
+fails. Run this before any paid stdlib-mediated rerun.
+
 `corpus-eval` drives the Phase 3 model-generation loop and writes paired
 `<run-id>.run.json` / `<run-id>.metrics.json` files under
 `../../plans/phase-3-results/` by default. Real Anthropic runs read
-`ANTHROPIC_API_KEY`; OpenRouter runs read `OPENROUTER_API_KEY`.
+`ANTHROPIC_API_KEY`; OpenRouter runs read `OPENROUTER_API_KEY`. Each
+`run.json` records the `tacit_binary` path, mtime, and BLAKE3 so source/binary
+skew is visible after the fact.
 
 ```bash
 uv run corpus-eval --model claude-sonnet-4-6 --tasks 001
