@@ -566,10 +566,13 @@ helper body.
 
 ### Branch Syntax Traps
 
-Every `if` is an expression and must have both `then` and `else`. There is no
-brace block syntax. The expression immediately after `then` must be an atom or
-application; if the then-branch begins with `let`, `if`, `rec`, `match`, or
-`lambda`, wrap that whole branch in parentheses. The `else` branch may be a
+Every `if` is an expression and must have both `then` and `else`, and each
+branch must be a complete expression. A parse error near `if` is almost always
+a missing `then`, a missing `else`, a branch that ends early, or a compound
+branch that was not parenthesized. There is no brace block syntax. The
+expression immediately after `then` must be an atom or application; if the
+then-branch begins with `let`, `if`, `rec`, `match`, or `lambda`, wrap that
+whole branch in parentheses. The `else` branch may be a
 full expression, but parenthesizing compound branches on both sides is often
 clearer. Do not rely on indentation or line breaks to group a branch. Every
 inner `if` must have its own `else` before the surrounding `let`, `rec`, or
@@ -884,6 +887,12 @@ Search and range grouping: `@lower-bound-i64`, `@count-equal-ranges`,
 `@dedup-adjacent-ranges`.
 
 Parsing and formatting: `@parse-i64`, `@fmt-i64`.
+
+Only the names listed above are recognized primitives. Always keep the leading
+`@`. An `@`-prefixed name not in this list will fail typechecking with an
+unknown-primitive error; an unprefixed name is treated as a local variable, not
+a primitive. If a needed operation is not in this list, build it from the
+listed primitives rather than guessing a new name.
 
 The primitive call shape is part of the language contract. For example,
 `@buf-copy dst dst_off src src_off len` mutates `dst` and returns an `Int`;
@@ -1483,6 +1492,14 @@ lambda, partially applying a helper, or putting a nested `rec` inside a
 helper while using the outer helper's parameters. Lift helpers into one
 `rec` group and pass all changing state explicitly.
 
+If output differs from the expected bytes only in whitespace — repeated
+missing or extra spaces, missing colons, or missing or extra trailing
+newlines — this is an output formatting bug, not an algorithm bug. Choose one
+separator rule (write a separator before every item except the first, or after
+every item except the last) and apply it consistently. Use a `first` flag to
+suppress the leading separator, and emit a final trailing newline only when
+the program produced output.
+
 If a program crashes with no diagnostic, inspect buffer allocation size and
 read-before-write. A giant buffer can overflow local storage. A flags buffer
 that was never initialized can make every item look already used, which often
@@ -1498,6 +1515,29 @@ For base conversion, the first digit computed by repeated division is usually
 the least significant digit. If the output expects most-significant first,
 either fill an output buffer from right to left or do a second pass that emits
 the temporary digits in reverse order.
+
+### Runtime Exit Codes
+
+A nonzero process exit usually indicates a runtime fault that the typechecker
+could not catch.
+
+Exit `-11` is a segmentation fault. The most common causes, in order of
+likelihood, are an out-of-bounds buffer access, an invalid range-table read, an
+excessive stack allocation, and unbounded recursion. Before changing the
+algorithm: reduce buffer sizes toward the smallest practical bound; add a
+zero-count guard before reading row `0` of any range table; verify that loop
+bounds use the row count returned by `@line-index`, `@token-index`, or
+`@token-index-any`; and check that `@buf-copy`, `@buf-eq`, `@parse-i64`,
+`@range-start`, and `@range-len` are only called on offsets and rows that have
+already been bounded by the relevant length or count. A multi-megabyte
+`@buf-alloc` or `@i64-alloc` can crash before any algorithmic work runs;
+prefer bounded sizes sized for the input contract.
+
+Exit `1` with empty stderr usually means the program's final expression
+evaluated to a nonzero status, or a runtime path returned an error sentinel
+through an early `@exit` or a conditional branch. Inspect what the final
+expression returns on the input that triggered the exit, and check any
+conditional `@exit` calls or branches that fall through to a nonzero integer.
 
 ### Token-Aware Writing
 
@@ -1517,7 +1557,12 @@ programs often need later repair.
 
 Empty input: `@read` returns zero immediately. Make the EOF branch return the
 right identity value: count zero, sum zero, longest length zero, or the
-current accumulated value if the last token has no trailing newline.
+current accumulated value if the last token has no trailing newline. If the
+required output for empty input is just a newline, write that newline; do not
+format `0` as the output. A test that expects `\n` and receives `0\n` is an
+empty-input formatting bug, not an algorithm bug. Make sure separator and
+trailing-newline emission still runs the right number of times when no rows or
+tokens were produced.
 
 Single element: ordering, deduplication, selection, and prefix-shaped programs
 often fail on one-element input when the recursive step assumes a successor
