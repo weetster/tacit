@@ -94,6 +94,92 @@ def test_repair_prompt_limits_open_test_feedback(tmp_path) -> None:
     assert "Do not include the sidecar" in prompt
 
 
+def test_repair_prompt_classifies_runtime_and_format_failures(tmp_path) -> None:
+    (tmp_path / "task.md").write_text("# Task\n\nDo the thing.\n", encoding="utf-8")
+    previous = corpus_eval.TurnResult(
+        turn_index=0,
+        compile_pass=True,
+        typecheck_pass=True,
+        tests_pass=0,
+        tests_total=5,
+        generation_tokens=12,
+        diagnostics=corpus_eval.diagnostic_envelope("test-failure", "failed"),
+        retries=0,
+        raw_output="```tacit\n0\n```",
+        source="0\n",
+        failure_stage="test",
+        test_failures=(
+            corpus_eval.TestFailureDetail(
+                "empty",
+                "",
+                "\n",
+                "0\n",
+            ),
+            corpus_eval.TestFailureDetail(
+                "spaced-1",
+                "a\n",
+                "a b\n",
+                "ab\n",
+            ),
+            corpus_eval.TestFailureDetail(
+                "spaced-2",
+                "c\n",
+                "c: d\n",
+                "cd\n",
+            ),
+            corpus_eval.TestFailureDetail(
+                "crash",
+                "x\n",
+                "x\n",
+                "",
+                "nonzero exit -11",
+            ),
+            corpus_eval.TestFailureDetail(
+                "bad-status",
+                "y\n",
+                "y\n",
+                "",
+                "nonzero exit 1",
+            ),
+        ),
+    )
+
+    prompt = corpus_eval.build_repair_prompt(tmp_path, previous)
+
+    assert "Generic failure classification:" in prompt
+    assert "segmentation fault" in prompt
+    assert "exit 1 with empty stderr" in prompt
+    assert "empty-input formatting bug" in prompt
+    assert "output formatting bug" in prompt
+
+
+def test_repair_prompt_classifies_typecheck_and_parse_failures(tmp_path) -> None:
+    (tmp_path / "task.md").write_text("# Task\n\nDo the thing.\n", encoding="utf-8")
+    previous = corpus_eval.TurnResult(
+        turn_index=0,
+        compile_pass=False,
+        typecheck_pass=False,
+        tests_pass=0,
+        tests_total=0,
+        generation_tokens=12,
+        diagnostics=corpus_eval.diagnostic_envelope(
+            "unresolved-type",
+            "unknown type 'token-index-any'; expected 'else' but got RBrace",
+        ),
+        retries=0,
+        raw_output="```tacit\n0\n```",
+        source="0\n",
+        failure_stage="typecheck",
+    )
+
+    prompt = corpus_eval.build_repair_prompt(tmp_path, previous)
+
+    assert "unknown primitive or primitive spelling issue" in prompt
+    assert "keep the leading @" in prompt
+    assert "Tacit if syntax issue" in prompt
+    assert "requires both then and else branches" in prompt
+
+
 def test_build_repair_metric_records_turns() -> None:
     first = corpus_eval.TurnResult(
         turn_index=0,

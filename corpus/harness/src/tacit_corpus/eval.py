@@ -395,24 +395,30 @@ def build_repair_prompt(task_dir: Path, previous: TurnResult) -> str:
 
 
 def repair_feedback(previous: TurnResult) -> str:
-    if previous.failure_stage == "test":
-        return compact_test_failure_summary(previous)
-
     parts: list[str] = []
-    if previous.diagnostics is None:
-        parts.append("No structured diagnostic was available.")
+    if previous.failure_stage == "test":
+        parts.append(compact_test_failure_summary(previous))
     else:
-        parts.append(json.dumps(previous.diagnostics, indent=2, sort_keys=True))
-
-    if previous.failure_stage == "extract" and previous.raw_output:
-        if len(previous.raw_output) <= REPAIR_RAW_TEXT_LIMIT:
-            parts.append(f"Raw model text as a JSON string:\n{json.dumps(previous.raw_output)}")
+        if previous.diagnostics is None:
+            parts.append("No structured diagnostic was available.")
         else:
-            parts.append(
-                "Raw model text omitted because it was "
-                f"{len(previous.raw_output)} characters, over the "
-                f"{REPAIR_RAW_TEXT_LIMIT}-character repair limit."
-            )
+            parts.append(json.dumps(previous.diagnostics, indent=2, sort_keys=True))
+
+        if previous.failure_stage == "extract" and previous.raw_output:
+            if len(previous.raw_output) <= REPAIR_RAW_TEXT_LIMIT:
+                parts.append(
+                    f"Raw model text as a JSON string:\n{json.dumps(previous.raw_output)}"
+                )
+            else:
+                parts.append(
+                    "Raw model text omitted because it was "
+                    f"{len(previous.raw_output)} characters, over the "
+                    f"{REPAIR_RAW_TEXT_LIMIT}-character repair limit."
+                )
+
+    classification = generic_failure_classification(previous)
+    if classification:
+        parts.append(classification)
     return "\n\n".join(parts)
 
 
@@ -440,6 +446,107 @@ def compact_test_failure_summary(previous: TurnResult) -> str:
     if remaining > 0:
         lines.append(f"\n{remaining} additional failing case(s) omitted.")
     return "\n".join(lines)
+
+
+def generic_failure_classification(previous: TurnResult) -> str | None:
+    hints = _test_failure_classification(previous.test_failures)
+    hints.extend(_diagnostic_classification(previous.diagnostics))
+    if not hints:
+        return None
+
+    deduped = list(dict.fromkeys(hints))
+    lines = ["Generic failure classification:"]
+    lines.extend(f"- {hint}" for hint in deduped)
+    return "\n".join(lines)
+
+
+def _diagnostic_classification(diagnostics: dict[str, Any] | None) -> list[str]:
+    if diagnostics is None:
+        return []
+
+    text = json.dumps(diagnostics, sort_keys=True).lower()
+    hints: list[str] = []
+    if (
+        "unknown primitive" in text
+        or "unknown type" in text
+        or "unresolved-type" in text
+    ):
+        hints.append(
+            "unknown primitive or primitive spelling issue; use only primitive names "
+            "listed in the primer, keep the leading @, and treat unprefixed names as "
+            "local variables rather than primitives."
+        )
+    if "expected 'else'" in text or 'expected "else"' in text:
+        hints.append(
+            "Tacit if syntax issue; every if expression requires both then and else "
+            "branches, and each branch must be a complete expression."
+        )
+    return hints
+
+
+def _test_failure_classification(
+    failures: tuple[TestFailureDetail, ...],
+) -> list[str]:
+    hints: list[str] = []
+    if any(_has_exit_code(failure, -11) for failure in failures):
+        hints.append(
+            "segmentation fault; likely causes are out-of-bounds buffer access, "
+            "invalid range-table access, unbounded recursion, or excessive stack "
+            "allocation. Reduce allocation size, add zero-count guards, and check "
+            "range/table bounds before changing the algorithm."
+        )
+    if any(_has_exit_1_empty_stderr(failure) for failure in failures):
+        hints.append(
+            "exit 1 with empty stderr; the program likely returned an explicit "
+            "nonzero status or a runtime error sentinel. Inspect the final "
+            "expression and early exits."
+        )
+    if any(_is_empty_input_formatting_failure(failure) for failure in failures):
+        hints.append(
+            "empty-input formatting bug; ensure the program prints the required "
+            "separators and newline even when no rows or tokens are present."
+        )
+    if _has_repeated_separator_failures(failures):
+        hints.append(
+            "output formatting bug; check spaces, colons, and trailing newlines."
+        )
+    return hints
+
+
+def _has_exit_code(failure: TestFailureDetail, code: int) -> bool:
+    reason = failure.failure_reason or ""
+    return f"nonzero exit {code}" in reason
+
+
+def _has_exit_1_empty_stderr(failure: TestFailureDetail) -> bool:
+    reason = failure.failure_reason
+    return reason == "nonzero exit 1"
+
+
+def _is_empty_input_formatting_failure(failure: TestFailureDetail) -> bool:
+    if failure.actual_stdout is None:
+        return False
+    if failure.stdin != "" and "empty" not in failure.name.lower():
+        return False
+    return failure.expected_stdout == "\n" and failure.actual_stdout != "\n"
+
+
+def _has_repeated_separator_failures(
+    failures: tuple[TestFailureDetail, ...],
+) -> bool:
+    separator_only = [
+        failure
+        for failure in failures
+        if failure.actual_stdout is not None
+        and failure.expected_stdout != failure.actual_stdout
+        and _strip_separators(failure.expected_stdout)
+        == _strip_separators(failure.actual_stdout)
+    ]
+    return len(separator_only) >= 2
+
+
+def _strip_separators(text: str) -> str:
+    return re.sub(r"[ \t\r\n:]+", "", text)
 
 
 def infer_provider(model: str, requested: str) -> Provider:

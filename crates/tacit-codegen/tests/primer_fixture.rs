@@ -286,7 +286,7 @@ fn primer_stdlib_appendix_examples_validate() {
     let blocks = extract_tacit_blocks(appendix);
     assert_eq!(
         blocks.len(),
-        8,
+        9,
         "expected one fixture-checked Tacit block per stdlib appendix example"
     );
 
