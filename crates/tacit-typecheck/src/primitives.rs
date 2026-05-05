@@ -1,4 +1,4 @@
-//! Type and effect signatures for built-in @name primitives (ADR 0028, 0030, 0042, 0047, 0061, 0062, 0063, 0064).
+//! Type and effect signatures for built-in @name primitives (ADR 0028, 0030, 0042, 0047, 0061, 0062, 0063, 0064, 0067).
 //!
 //! Effect sets mirror `stdlib/libc-effects.toml` (ADR 0025, consumed in Stage 3).
 //! The canonical source for primitive effects is that TOML file; values here match it.
@@ -9,6 +9,7 @@
 //! - ADR 0063: multi-delimiter token indexing.
 //! - Bundle C: ordering operations over I64Vec and range tables.
 //! - ADR 0064: search and adjacent range grouping helpers.
+//! - ADR 0067: Bundle E stream IO sugar (`stdin-slurp`, `write-range`, `buf-rev`).
 
 use crate::ty::{EffAtom, EffSet, FnEff, Ty};
 
@@ -83,6 +84,12 @@ pub fn prim_type(name: &str) -> Option<Ty> {
         "count-equal-ranges" => fn4_mut(Ty::Buf, Ty::I64Vec, Ty::Int, Ty::I64Vec, Ty::Int),
         // RANGE-GROUP: dedup-adjacent-ranges(text: Buf, table: I64Vec, count: Int, out: I64Vec) -> Int / {Mut}
         "dedup-adjacent-ranges" => fn4_mut(Ty::Buf, Ty::I64Vec, Ty::Int, Ty::I64Vec, Ty::Int),
+        // STREAM-IO: stdin-slurp(buf: Buf, cap: Int) -> Int / {IO, Mut} (ADR 0067)
+        "stdin-slurp" => fn2_mut_io(Ty::Buf, Ty::Int, Ty::Int),
+        // STREAM-IO: write-range(fd: Int, buf: Buf, off: Int, len: Int) -> Int / {IO} (ADR 0067)
+        "write-range" => fn4_io(Ty::Int, Ty::Buf, Ty::Int, Ty::Int, Ty::Int),
+        // BUF-MUT: buf-rev(buf: Buf, off: Int, len: Int) -> Int / {Mut} (ADR 0067)
+        "buf-rev" => fn3_mut(Ty::Buf, Ty::Int, Ty::Int, Ty::Int),
         // ARITH: Int → Int → Int (pure)
         "add" | "sub" | "mul" | "div" | "mod" => fn2_pure(Ty::Int, Ty::Int, Ty::Int),
         // CMP: Int → Int → Bool (pure, ADR 0042)
@@ -101,9 +108,12 @@ pub fn is_cmp(name: &str) -> bool {
     matches!(name, "eq" | "ne" | "lt" | "le" | "gt" | "ge")
 }
 
-/// True if `name` is an IO-producing primitive (from libc-effects.toml).
+/// True if `name` is an IO-producing primitive (from libc-effects.toml + ADR 0067).
 pub fn is_io_prim(name: &str) -> bool {
-    matches!(name, "write" | "read" | "exit")
+    matches!(
+        name,
+        "write" | "read" | "exit" | "stdin-slurp" | "write-range"
+    )
 }
 
 /// True if `name` is an Alloc-producing primitive.
@@ -129,6 +139,8 @@ pub fn is_mut_prim(name: &str) -> bool {
             | "stable-sort-pairs-i64"
             | "count-equal-ranges"
             | "dedup-adjacent-ranges"
+            | "stdin-slurp"
+            | "buf-rev"
     )
 }
 
@@ -166,6 +178,15 @@ fn fn2_io(a: Ty, b: Ty, r: Ty) -> Ty {
     Ty::Fn(
         Box::new(a),
         Box::new(Ty::Fn(Box::new(b), Box::new(r), io_eff())),
+        FnEff::pure_(),
+    )
+}
+
+/// Binary function, {IO, Mut} at the innermost (fully-applied) step.
+fn fn2_mut_io(a: Ty, b: Ty, r: Ty) -> Ty {
+    Ty::Fn(
+        Box::new(a),
+        Box::new(Ty::Fn(Box::new(b), Box::new(r), io_mut_eff())),
         FnEff::pure_(),
     )
 }
@@ -240,6 +261,23 @@ fn fn3_mut(a: Ty, b: Ty, c: Ty, r: Ty) -> Ty {
         Box::new(Ty::Fn(
             Box::new(b),
             Box::new(Ty::Fn(Box::new(c), Box::new(r), mut_eff())),
+            FnEff::pure_(),
+        )),
+        FnEff::pure_(),
+    )
+}
+
+/// Quaternary function, IO only at the innermost (fully-applied) step.
+fn fn4_io(a: Ty, b: Ty, c: Ty, d: Ty, r: Ty) -> Ty {
+    Ty::Fn(
+        Box::new(a),
+        Box::new(Ty::Fn(
+            Box::new(b),
+            Box::new(Ty::Fn(
+                Box::new(c),
+                Box::new(Ty::Fn(Box::new(d), Box::new(r), io_eff())),
+                FnEff::pure_(),
+            )),
             FnEff::pure_(),
         )),
         FnEff::pure_(),
@@ -652,6 +690,75 @@ mod tests {
             vec![Ty::Buf, Ty::Int, Ty::Int, Ty::Buf, Ty::Int, Ty::I64Vec]
         );
         assert_eq!(eff, FnEff::from_set(EffSet::of([EffAtom::Mut])));
+    }
+
+    #[test]
+    fn stdin_slurp_has_io_and_mut() {
+        let t = prim_type("stdin-slurp").unwrap();
+        // stdin-slurp :: Buf → Int → Int / {IO, Mut}
+        if let Ty::Fn(a, mid, _) = &t {
+            assert_eq!(a.as_ref(), &Ty::Buf);
+            if let Ty::Fn(b, r, eff) = mid.as_ref() {
+                assert_eq!(b.as_ref(), &Ty::Int);
+                assert_eq!(r.as_ref(), &Ty::Int);
+                assert_eq!(
+                    eff,
+                    &FnEff::from_set(EffSet::of([EffAtom::IO, EffAtom::Mut]))
+                );
+                return;
+            }
+        }
+        panic!("unexpected type shape for stdin-slurp");
+    }
+
+    #[test]
+    fn write_range_has_io_at_innermost() {
+        let t = prim_type("write-range").unwrap();
+        // write-range :: Int → Buf → Int → Int → Int / {IO}
+        fn args_and_eff(t: &Ty, args: &mut Vec<Ty>) -> FnEff {
+            match t {
+                Ty::Fn(a, b, eff) => {
+                    args.push(a.as_ref().clone());
+                    if matches!(b.as_ref(), Ty::Fn(_, _, _)) {
+                        args_and_eff(b, args)
+                    } else {
+                        eff.clone()
+                    }
+                }
+                _ => panic!("not a Fn"),
+            }
+        }
+        let mut args = Vec::new();
+        let eff = args_and_eff(&t, &mut args);
+        assert_eq!(args, vec![Ty::Int, Ty::Buf, Ty::Int, Ty::Int]);
+        assert_eq!(eff, FnEff::from_set(EffSet::of([EffAtom::IO])));
+    }
+
+    #[test]
+    fn buf_rev_has_mut_only() {
+        let t = prim_type("buf-rev").unwrap();
+        // buf-rev :: Buf → Int → Int → Int / {Mut}
+        if let Ty::Fn(a, mid, _) = &t {
+            assert_eq!(a.as_ref(), &Ty::Buf);
+            if let Ty::Fn(_, inner, _) = mid.as_ref() {
+                if let Ty::Fn(_, r, eff) = inner.as_ref() {
+                    assert_eq!(r.as_ref(), &Ty::Int);
+                    assert_eq!(eff, &FnEff::from_set(EffSet::of([EffAtom::Mut])));
+                    return;
+                }
+            }
+        }
+        panic!("unexpected type shape for buf-rev");
+    }
+
+    #[test]
+    fn bundle_e_classification() {
+        assert!(is_io_prim("stdin-slurp"));
+        assert!(is_io_prim("write-range"));
+        assert!(!is_io_prim("buf-rev"));
+        assert!(is_mut_prim("stdin-slurp"));
+        assert!(!is_mut_prim("write-range"));
+        assert!(is_mut_prim("buf-rev"));
     }
 
     #[test]

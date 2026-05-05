@@ -466,3 +466,26 @@ fn neg_dedup_adjacent_ranges_rejects_byte_buffer_table() {
         "type-mismatch",
     );
 }
+
+// ── Bundle E (ADR 0067) ──────────────────────────────────────────────────────
+
+#[test]
+fn neg_stdin_slurp_rejects_i64_vector() {
+    expect_authoring_error(
+        "let xs = @i64-alloc 1 in @stdin-slurp xs 8",
+        "type-mismatch",
+    );
+}
+
+#[test]
+fn neg_write_range_rejects_i64_vector() {
+    expect_authoring_error(
+        "let xs = @i64-alloc 1 in @write-range 1 xs 0 1",
+        "type-mismatch",
+    );
+}
+
+#[test]
+fn neg_buf_rev_rejects_i64_vector() {
+    expect_authoring_error("let xs = @i64-alloc 1 in @buf-rev xs 0 1", "type-mismatch");
+}

@@ -8,6 +8,7 @@
 
 #![cfg(feature = "llvm")]
 
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -72,6 +73,27 @@ fn run(built: &Built) -> (Vec<u8>, i32) {
 fn run_p3(stem: &str) -> (Vec<u8>, i32) {
     let path = examples_root().join(format!("{}.tac", stem));
     run(&build(&path, stem))
+}
+
+fn run_with_stdin(built: &Built, stdin_bytes: &[u8]) -> (Vec<u8>, i32) {
+    let mut child = Command::new(&built.exe)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn exe");
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(stdin_bytes)
+        .expect("write stdin");
+    let out = child.wait_with_output().expect("wait");
+    (out.stdout, out.status.code().unwrap_or(-1))
+}
+
+fn run_p3_with_stdin(stem: &str, stdin_bytes: &[u8]) -> (Vec<u8>, i32) {
+    let path = examples_root().join(format!("{}.tac", stem));
+    run_with_stdin(&build(&path, stem), stdin_bytes)
 }
 
 // ── @buf-alloc-dyn ────────────────────────────────────────────────────────────
@@ -420,4 +442,55 @@ fn dedup_adjacent_ranges_can_compact_in_place() {
     let (out, code) = run_p3("p3-dedup-adjacent-ranges-in-place");
     assert!(out.is_empty());
     assert_eq!(code, 5);
+}
+
+// ── Bundle E: stream IO sugar (ADR 0067) ─────────────────────────────────────
+
+#[test]
+fn buf_rev_reverses_in_place() {
+    // Reverse "Hello" (bytes 0..5), keep trailing '\n' intact (byte 5),
+    // then write the whole 6-byte buffer → "olleH\n".
+    let (out, code) = run_p3("p3-buf-rev");
+    assert_eq!(out, b"olleH\n");
+    assert_eq!(code, 0);
+}
+
+#[test]
+fn buf_rev_zero_len_leaves_buffer_unchanged() {
+    // buf[0]='A' (65), buf[1]='B' (66); reverse 0 bytes → buf[0] still 'A'.
+    let (out, code) = run_p3("p3-buf-rev-len-zero");
+    assert!(out.is_empty());
+    assert_eq!(code, 65);
+}
+
+#[test]
+fn write_range_emits_slice() {
+    // "Hello\n" in buf; write off=1 len=4 → "ello".
+    let (out, code) = run_p3("p3-write-range");
+    assert_eq!(out, b"ello");
+    assert_eq!(code, 0);
+}
+
+#[test]
+fn write_range_zero_len_writes_nothing() {
+    // write-range with len=0 emits no bytes; buf[0]=90 ('Z') unchanged.
+    let (out, code) = run_p3("p3-write-range-zero-len");
+    assert!(out.is_empty());
+    assert_eq!(code, 90);
+}
+
+#[test]
+fn stdin_slurp_reads_input_and_echoes_via_write_range() {
+    // slurp piped stdin into a 16-byte buffer, write back exactly what we read.
+    let (out, code) = run_p3_with_stdin("p3-stdin-slurp", b"hello\n");
+    assert_eq!(out, b"hello\n");
+    assert_eq!(code, 0);
+}
+
+#[test]
+fn stdin_slurp_empty_input_returns_zero() {
+    // No bytes on stdin → @stdin-slurp returns 0 (and 0 becomes the exit code).
+    let (out, code) = run_p3_with_stdin("p3-stdin-slurp-empty", b"");
+    assert!(out.is_empty());
+    assert_eq!(code, 0);
 }

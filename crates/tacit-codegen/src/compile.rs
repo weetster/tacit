@@ -583,6 +583,9 @@ impl<'ctx> Compiler<'ctx> {
             PrimKind::LowerBoundI64 => self.emit_lower_bound_i64(args, env, cur_fn),
             PrimKind::CountEqualRanges => self.emit_count_equal_ranges(args, env, cur_fn),
             PrimKind::DedupAdjacentRanges => self.emit_dedup_adjacent_ranges(args, env, cur_fn),
+            PrimKind::StdinSlurp => self.emit_stdin_slurp(args, env, cur_fn),
+            PrimKind::WriteRange => self.emit_write_range(args, env, cur_fn),
+            PrimKind::BufRev => self.emit_buf_rev(args, env, cur_fn),
         }
     }
 
@@ -2338,6 +2341,294 @@ impl<'ctx> Compiler<'ctx> {
 
         self.builder.position_at_end(ret_bb);
         Ok(out_count_val)
+    }
+
+    /// `@stdin-slurp buf cap` → repeatedly `read(0, buf+total, cap-total)` until
+    /// EOF or `cap` bytes have been written; returns total bytes read (ADR 0067).
+    fn emit_stdin_slurp(
+        &mut self,
+        args: &[&Node],
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<IntValue<'ctx>> {
+        let buf = self.compile_buf_ptr_arg(args[0], env)?;
+        let cap = self.compile_expr(args[1], env, cur_fn)?;
+
+        let i64_t = self.context.i64_type();
+        let i32_t = self.context.i32_type();
+        let zero64 = i64_t.const_zero();
+
+        let entry_bb = self.builder.get_insert_block().unwrap();
+        let hdr_bb = self.context.append_basic_block(cur_fn, "slurp_hdr");
+        let body_bb = self.context.append_basic_block(cur_fn, "slurp_body");
+        let cont_bb = self.context.append_basic_block(cur_fn, "slurp_cont");
+        let exit_bb = self.context.append_basic_block(cur_fn, "slurp_exit");
+
+        self.builder
+            .build_unconditional_branch(hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        // header: total = phi(0, total + n)
+        self.builder.position_at_end(hdr_bb);
+        let total_phi = self
+            .builder
+            .build_phi(i64_t, "slurp_total")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let total_val = total_phi.as_basic_value().into_int_value();
+        let room = self
+            .builder
+            .build_int_compare(IntPredicate::SLT, total_val, cap, "slurp_room")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(room, body_bb, exit_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        // body: n = read(0, buf + total, cap - total)
+        self.builder.position_at_end(body_bb);
+        let dst_ptr = self.ptr_at(buf, total_val, "slurp_dst")?;
+        let remaining = self
+            .builder
+            .build_int_sub(cap, total_val, "slurp_rem")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let zero_fd = i32_t.const_zero();
+        let read_fn = self.libc_read();
+        let n_call = self
+            .builder
+            .build_call(
+                read_fn,
+                &[
+                    BasicMetadataValueEnum::IntValue(zero_fd),
+                    BasicMetadataValueEnum::PointerValue(dst_ptr),
+                    BasicMetadataValueEnum::IntValue(remaining),
+                ],
+                "slurp_n",
+            )
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let n = n_call
+            .try_as_basic_value()
+            .basic()
+            .ok_or_else(|| CodegenError::Llvm("read returned no value".into()))?
+            .into_int_value();
+        let progress = self
+            .builder
+            .build_int_compare(IntPredicate::SGT, n, zero64, "slurp_progress")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(progress, cont_bb, exit_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        // cont: total += n; loop
+        self.builder.position_at_end(cont_bb);
+        let total_next = self
+            .builder
+            .build_int_add(total_val, n, "slurp_total_next")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_unconditional_branch(hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        total_phi.add_incoming(&[
+            (&zero64 as &dyn BasicValue<'ctx>, entry_bb),
+            (&total_next as &dyn BasicValue<'ctx>, cont_bb),
+        ]);
+
+        // exit: return whichever total was current when we stopped.
+        // Both predecessors (hdr full-cap, body short-read) carry total_val.
+        self.builder.position_at_end(exit_bb);
+        let res_phi = self
+            .builder
+            .build_phi(i64_t, "slurp_res")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        res_phi.add_incoming(&[
+            (&total_val as &dyn BasicValue<'ctx>, hdr_bb),
+            (&total_val as &dyn BasicValue<'ctx>, body_bb),
+        ]);
+        Ok(res_phi.as_basic_value().into_int_value())
+    }
+
+    /// `@write-range fd buf off len` → repeatedly `write(fd, buf+off+written,
+    /// len-written)` until `len` bytes have been emitted or a write returns
+    /// `<= 0`; returns 0 (ADR 0067).
+    fn emit_write_range(
+        &mut self,
+        args: &[&Node],
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<IntValue<'ctx>> {
+        let fd = self.compile_expr(args[0], env, cur_fn)?;
+        let buf = self.compile_buf_ptr_arg(args[1], env)?;
+        let off = self.compile_expr(args[2], env, cur_fn)?;
+        let len = self.compile_expr(args[3], env, cur_fn)?;
+
+        let i64_t = self.context.i64_type();
+        let zero64 = i64_t.const_zero();
+
+        let fd_i32 = self
+            .builder
+            .build_int_truncate(fd, self.context.i32_type(), "wrng_fd_i32")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        let entry_bb = self.builder.get_insert_block().unwrap();
+        let hdr_bb = self.context.append_basic_block(cur_fn, "wrng_hdr");
+        let body_bb = self.context.append_basic_block(cur_fn, "wrng_body");
+        let cont_bb = self.context.append_basic_block(cur_fn, "wrng_cont");
+        let exit_bb = self.context.append_basic_block(cur_fn, "wrng_exit");
+
+        self.builder
+            .build_unconditional_branch(hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(hdr_bb);
+        let written_phi = self
+            .builder
+            .build_phi(i64_t, "wrng_written")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let written_val = written_phi.as_basic_value().into_int_value();
+        let more = self
+            .builder
+            .build_int_compare(IntPredicate::SLT, written_val, len, "wrng_more")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(more, body_bb, exit_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        // body: cur = off + written; remaining = len - written; n = write(...)
+        self.builder.position_at_end(body_bb);
+        let cur_off = self
+            .builder
+            .build_int_add(off, written_val, "wrng_cur_off")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let src_ptr = self.ptr_at(buf, cur_off, "wrng_src")?;
+        let remaining = self
+            .builder
+            .build_int_sub(len, written_val, "wrng_rem")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let write_fn = self.libc_write();
+        let n_call = self
+            .builder
+            .build_call(
+                write_fn,
+                &[
+                    BasicMetadataValueEnum::IntValue(fd_i32),
+                    BasicMetadataValueEnum::PointerValue(src_ptr),
+                    BasicMetadataValueEnum::IntValue(remaining),
+                ],
+                "wrng_n",
+            )
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let n = n_call
+            .try_as_basic_value()
+            .basic()
+            .ok_or_else(|| CodegenError::Llvm("write returned no value".into()))?
+            .into_int_value();
+        let progress = self
+            .builder
+            .build_int_compare(IntPredicate::SGT, n, zero64, "wrng_progress")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(progress, cont_bb, exit_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(cont_bb);
+        let written_next = self
+            .builder
+            .build_int_add(written_val, n, "wrng_written_next")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_unconditional_branch(hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        written_phi.add_incoming(&[
+            (&zero64 as &dyn BasicValue<'ctx>, entry_bb),
+            (&written_next as &dyn BasicValue<'ctx>, cont_bb),
+        ]);
+
+        self.builder.position_at_end(exit_bb);
+        Ok(zero64)
+    }
+
+    /// `@buf-rev buf off len` → reverse `buf[off..off+len)` in place; return 0 (ADR 0067).
+    fn emit_buf_rev(
+        &mut self,
+        args: &[&Node],
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<IntValue<'ctx>> {
+        let buf = self.compile_buf_ptr_arg(args[0], env)?;
+        let off = self.compile_expr(args[1], env, cur_fn)?;
+        let len = self.compile_expr(args[2], env, cur_fn)?;
+
+        let i64_t = self.context.i64_type();
+        let one64 = i64_t.const_int(1, false);
+
+        // j_init = off + len - 1
+        let off_plus_len = self
+            .builder
+            .build_int_add(off, len, "rev_end")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let j_init = self
+            .builder
+            .build_int_sub(off_plus_len, one64, "rev_j_init")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        let entry_bb = self.builder.get_insert_block().unwrap();
+        let hdr_bb = self.context.append_basic_block(cur_fn, "rev_hdr");
+        let body_bb = self.context.append_basic_block(cur_fn, "rev_body");
+        let exit_bb = self.context.append_basic_block(cur_fn, "rev_exit");
+
+        self.builder
+            .build_unconditional_branch(hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        // header: i = phi(off, i+1); j = phi(j_init, j-1); loop while i < j
+        self.builder.position_at_end(hdr_bb);
+        let i_phi = self
+            .builder
+            .build_phi(i64_t, "rev_i")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let j_phi = self
+            .builder
+            .build_phi(i64_t, "rev_j")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let i_val = i_phi.as_basic_value().into_int_value();
+        let j_val = j_phi.as_basic_value().into_int_value();
+        let cont = self
+            .builder
+            .build_int_compare(IntPredicate::SLT, i_val, j_val, "rev_cont")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(cont, body_bb, exit_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        // body: swap buf[i] and buf[j]
+        self.builder.position_at_end(body_bb);
+        let a = self.load_byte(buf, i_val, "rev_a")?;
+        let b = self.load_byte(buf, j_val, "rev_b")?;
+        self.store_byte(buf, i_val, b)?;
+        self.store_byte(buf, j_val, a)?;
+        let i_next = self
+            .builder
+            .build_int_add(i_val, one64, "rev_i_next")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let j_next = self
+            .builder
+            .build_int_sub(j_val, one64, "rev_j_next")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_unconditional_branch(hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        i_phi.add_incoming(&[
+            (&off as &dyn BasicValue<'ctx>, entry_bb),
+            (&i_next as &dyn BasicValue<'ctx>, body_bb),
+        ]);
+        j_phi.add_incoming(&[
+            (&j_init as &dyn BasicValue<'ctx>, entry_bb),
+            (&j_next as &dyn BasicValue<'ctx>, body_bb),
+        ]);
+
+        self.builder.position_at_end(exit_bb);
+        Ok(i64_t.const_zero())
     }
 
     /// `@range-start table index` → load `table[2 * index]`.

@@ -1,4 +1,4 @@
-//! `@name` primitive allowlist and classification (ADR 0028, 0030, 0038, 0047, 0061, 0062, 0063, 0064).
+//! `@name` primitive allowlist and classification (ADR 0028, 0030, 0038, 0047, 0061, 0062, 0063, 0064, 0067).
 //!
 //! Categories per ADR 0028 + 0030 + 0038 + 0047:
 //! - LIBC: external libc call (`write`, `read`, `exit`).
@@ -16,6 +16,8 @@
 //! - ORDER: inline ordering operations over I64Vec and range tables.
 //! - SEARCH: inline binary search over sorted I64Vec prefixes (ADR 0064).
 //! - RANGE-GROUP: inline adjacent range grouping helpers (ADR 0064).
+//! - STREAM-IO: full-stream `read`/`write` framing wrappers (ADR 0067).
+//! - BUF-MUT: in-place byte-range mutation helpers (ADR 0067).
 //!
 //! Codegen pattern-matches an `App` left-spine whose head is `Sym(name)`,
 //! looks up `name` here, collects right-spine args, and emits accordingly.
@@ -78,6 +80,13 @@ pub enum PrimKind {
     CountEqualRanges,
     /// Deduplicate adjacent equal byte ranges into start/length pairs.
     DedupAdjacentRanges,
+    /// Read fd 0 until EOF or `cap` bytes (ADR 0067): `buf cap → i64`.
+    StdinSlurp,
+    /// Write a byte-range slice to a file descriptor (ADR 0067):
+    /// `fd buf off len → i64` (returns 0).
+    WriteRange,
+    /// Reverse a byte-range in place (ADR 0067): `buf off len → i64` (returns 0).
+    BufRev,
     /// Binary `i64 → i64 → i64` arithmetic, lowering as a single LLVM op.
     Arith(ArithOp),
     /// Binary `i64 → i64 → i64` comparison: emits `icmp` + `zext`.
@@ -134,6 +143,9 @@ impl PrimKind {
             "lower-bound-i64" => PrimKind::LowerBoundI64,
             "count-equal-ranges" => PrimKind::CountEqualRanges,
             "dedup-adjacent-ranges" => PrimKind::DedupAdjacentRanges,
+            "stdin-slurp" => PrimKind::StdinSlurp,
+            "write-range" => PrimKind::WriteRange,
+            "buf-rev" => PrimKind::BufRev,
             "add" => PrimKind::Arith(ArithOp::Add),
             "sub" => PrimKind::Arith(ArithOp::Sub),
             "mul" => PrimKind::Arith(ArithOp::Mul),
@@ -155,7 +167,7 @@ impl PrimKind {
             PrimKind::Write | PrimKind::Read => 3,
             PrimKind::Exit | PrimKind::BufAlloc | PrimKind::BufAllocDyn | PrimKind::I64Alloc => 1,
             PrimKind::BufGet | PrimKind::I64Get | PrimKind::RangeStart | PrimKind::RangeLen => 2,
-            PrimKind::SortI64 => 2,
+            PrimKind::SortI64 | PrimKind::StdinSlurp => 2,
             PrimKind::BufSet
             | PrimKind::ParseI64
             | PrimKind::FmtI64
@@ -164,8 +176,12 @@ impl PrimKind {
             | PrimKind::LineIndex
             | PrimKind::SortRangesByBytes
             | PrimKind::StableSortPairsI64
-            | PrimKind::LowerBoundI64 => 3,
-            PrimKind::ScanByte | PrimKind::CountEqualRanges | PrimKind::DedupAdjacentRanges => 4,
+            | PrimKind::LowerBoundI64
+            | PrimKind::BufRev => 3,
+            PrimKind::ScanByte
+            | PrimKind::CountEqualRanges
+            | PrimKind::DedupAdjacentRanges
+            | PrimKind::WriteRange => 4,
             PrimKind::BufCopy | PrimKind::BufEq | PrimKind::I64Copy | PrimKind::TokenIndex => 5,
             PrimKind::TokenIndexAny => 6,
             PrimKind::Arith(_) | PrimKind::Cmp(_) => 2,
@@ -261,6 +277,9 @@ mod tests {
             PrimKind::lookup("dedup-adjacent-ranges"),
             Some(PrimKind::DedupAdjacentRanges)
         );
+        assert_eq!(PrimKind::lookup("stdin-slurp"), Some(PrimKind::StdinSlurp));
+        assert_eq!(PrimKind::lookup("write-range"), Some(PrimKind::WriteRange));
+        assert_eq!(PrimKind::lookup("buf-rev"), Some(PrimKind::BufRev));
     }
 
     #[test]
@@ -292,6 +311,9 @@ mod tests {
         assert_eq!(PrimKind::LowerBoundI64.arity(), 3);
         assert_eq!(PrimKind::CountEqualRanges.arity(), 4);
         assert_eq!(PrimKind::DedupAdjacentRanges.arity(), 4);
+        assert_eq!(PrimKind::StdinSlurp.arity(), 2);
+        assert_eq!(PrimKind::WriteRange.arity(), 4);
+        assert_eq!(PrimKind::BufRev.arity(), 3);
         assert_eq!(PrimKind::Arith(ArithOp::Add).arity(), 2);
         assert_eq!(PrimKind::Cmp(CmpOp::Lt).arity(), 2);
     }
