@@ -1,0 +1,5248 @@
+{
+  "aggregates": {
+    "full": {
+      "compile_pass_rate": 0.5957446808510638,
+      "primer_amortized_total": 34782,
+      "python_tokens_total": 4584,
+      "tacit_tokens_total": 919408,
+      "task_count": 47,
+      "tests_pass_rate": 0.2127659574468085,
+      "tests_pass_total": 100,
+      "tests_total_total": 190,
+      "token_delta": 199.56893542757416,
+      "typecheck_pass_rate": 0.5957446808510638
+    },
+    "non_stdlib_dominated": {
+      "compile_pass_rate": 0.5869565217391305,
+      "primer_amortized_total": 34561,
+      "python_tokens_total": 4466,
+      "tacit_tokens_total": 899956,
+      "task_count": 46,
+      "tests_pass_rate": 0.21739130434782608,
+      "tests_pass_total": 100,
+      "tests_total_total": 182,
+      "token_delta": 200.51276309897,
+      "typecheck_pass_rate": 0.5869565217391305
+    },
+    "repair": {
+      "average_model_calls_per_task": 2.3404255319148937,
+      "behavioral_initial_failure_count": 18,
+      "behavioral_recovery_rate": 0.3888888888888889,
+      "behavioral_repaired_count": 7,
+      "compile_typecheck_initial_failure_count": 18,
+      "compile_typecheck_recovered_count": 13,
+      "compile_typecheck_recovery_rate": 0.7222222222222222,
+      "final_compile_pass_rate": 0.8085106382978723,
+      "final_task_pass_rate": 0.46808510638297873,
+      "final_typecheck_pass_rate": 0.851063829787234,
+      "initially_failed_count": 37,
+      "invalid_initial_failure_count": 19,
+      "invalid_recovery_rate": 0.2631578947368421,
+      "invalid_repaired_count": 5,
+      "one_shot_task_pass_rate": 0.2127659574468085,
+      "python_tokens_total": 4584,
+      "repair_primer_amortized_total": 58409,
+      "repair_primer_tokens_total": 2115410,
+      "repair_recovery_rate": 0.32432432432432434,
+      "repair_success_count": 12,
+      "repair_tacit_tokens_total": 2154588,
+      "repair_token_delta": 469.0235602094241,
+      "task_count": 47,
+      "total_api_calls": 110,
+      "total_generation_tokens": 39178,
+      "total_model_calls": 110
+    },
+    "stdlib_dominated": {
+      "compile_pass_rate": 1.0,
+      "primer_amortized_total": 19452,
+      "python_tokens_total": 118,
+      "tacit_tokens_total": 19452,
+      "task_count": 1,
+      "tests_pass_rate": 0.0,
+      "tests_pass_total": 0,
+      "tests_total_total": 8,
+      "token_delta": 163.84745762711864,
+      "typecheck_pass_rate": 1.0
+    }
+  },
+  "gates": {
+    "passed_overall": false,
+    "primary_pass_rate_gate": {
+      "applies": true,
+      "metric": "tests_pass_rate",
+      "passed": false,
+      "scope": "full",
+      "threshold": 0.7,
+      "value": 0.2127659574468085
+    },
+    "primary_token_gate_full": {
+      "applies": true,
+      "metric": "token_delta",
+      "passed": false,
+      "scope": "full",
+      "threshold": -0.3,
+      "value": 199.56893542757416
+    },
+    "primary_token_gate_non_stdlib": {
+      "applies": true,
+      "metric": "token_delta",
+      "passed": false,
+      "scope": "non_stdlib_dominated",
+      "threshold": -0.3,
+      "value": 200.51276309897
+    },
+    "repair_behavioral_recovery_gate": {
+      "applies": true,
+      "metric": "behavioral_recovery_rate",
+      "passed": true,
+      "scope": "repair",
+      "threshold": 0.3333333333333333,
+      "value": 0.3888888888888889
+    },
+    "repair_final_pass_rate_gate": {
+      "applies": true,
+      "metric": "final_task_pass_rate",
+      "passed": false,
+      "scope": "repair",
+      "threshold": 0.7,
+      "value": 0.46808510638297873
+    },
+    "repair_invalid_recovery_gate": {
+      "applies": true,
+      "metric": "invalid_recovery_rate",
+      "passed": false,
+      "scope": "repair",
+      "threshold": 0.5,
+      "value": 0.2631578947368421
+    },
+    "repair_promising_overall": false
+  },
+  "model": {
+    "id": "claude-haiku-4-5-20251001",
+    "primer_hash": "3834b1bcfadba383d1292fb9fefeedda63706d69ecd0ba692c1258f2690cea6b",
+    "primer_tokens": 19231,
+    "provider": "anthropic"
+  },
+  "result_label": "core-language",
+  "run_id": "019df610-7146-7a16-b216-82a20f37ae5d",
+  "schema_version": "p3.0",
+  "scope": "open",
+  "tasks": [
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "diagnostics_by_turn": {
+        "turn-0": null
+      },
+      "duration_ms": 1830,
+      "failure_stage_by_turn": {
+        "turn-0": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": true,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 111,
+      "generation_tokens_by_turn": {
+        "turn-0": 111
+      },
+      "python_baseline_tokens": 60,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "arithmetic/001-sum-to-n",
+      "tests_pass": 5,
+      "tests_total": 5,
+      "turns_used": 0,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "test-failure",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "nonzero exit -11; stderr=b''",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "diagnostics_by_turn": {
+        "turn-0": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "nonzero exit -11; stderr=b''",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-1": null
+      },
+      "duration_ms": 4340,
+      "failure_stage_by_turn": {
+        "turn-0": "test",
+        "turn-1": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": false,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 152,
+      "generation_tokens_by_turn": {
+        "turn-0": 152,
+        "turn-1": 146
+      },
+      "python_baseline_tokens": 72,
+      "repair_success": true,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "arithmetic/003-factorial",
+      "tests_pass": 4,
+      "tests_total": 5,
+      "turns_used": 1,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "diagnostics_by_turn": {
+        "turn-0": null
+      },
+      "duration_ms": 2622,
+      "failure_stage_by_turn": {
+        "turn-0": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": true,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 160,
+      "generation_tokens_by_turn": {
+        "turn-0": 160
+      },
+      "python_baseline_tokens": 51,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "arithmetic/004-gcd",
+      "tests_pass": 10,
+      "tests_total": 10,
+      "turns_used": 0,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": {
+              "sym": "Str"
+            },
+            "expected": {
+              "sym": "Buf"
+            },
+            "fix": null,
+            "kind": "type-mismatch",
+            "location": {
+              "ast_path": [
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 1
+                }
+              ],
+              "source_span": null
+            },
+            "message": "type mismatch: expected Buf, got Str",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "diagnostics_by_turn": {
+        "turn-0": {
+          "errors": [
+            {
+              "actual": {
+                "sym": "Str"
+              },
+              "expected": {
+                "sym": "Buf"
+              },
+              "fix": null,
+              "kind": "type-mismatch",
+              "location": {
+                "ast_path": [
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 1
+                  }
+                ],
+                "source_span": null
+              },
+              "message": "type mismatch: expected Buf, got Str",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-1": {
+          "errors": [
+            {
+              "actual": {
+                "sym": "Str"
+              },
+              "expected": {
+                "sym": "Buf"
+              },
+              "fix": null,
+              "kind": "type-mismatch",
+              "location": {
+                "ast_path": [
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 1
+                  }
+                ],
+                "source_span": null
+              },
+              "message": "type mismatch: expected Buf, got Str",
+              "related": [],
+              "severity": "error"
+            },
+            {
+              "actual": {
+                "sym": "Str"
+              },
+              "expected": {
+                "sym": "Buf"
+              },
+              "fix": null,
+              "kind": "type-mismatch",
+              "location": {
+                "ast_path": [
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 2
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 1
+                  }
+                ],
+                "source_span": null
+              },
+              "message": "type mismatch: expected Buf, got Str",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-2": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "stdout mismatch for zero: expected 'no\\n', got b'no'; stdout mismatch for one: expected 'no\\n', got b'no'; stdout mismatch for two: expected 'yes\\n', got b'yes'; 7 more failure(s)",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        }
+      },
+      "duration_ms": 7262,
+      "failure_stage_by_turn": {
+        "turn-0": "typecheck",
+        "turn-1": "typecheck",
+        "turn-2": "test"
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": false,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": false,
+      "first_pass_tests_pass": false,
+      "first_pass_typecheck_pass": false,
+      "generation_tokens": 209,
+      "generation_tokens_by_turn": {
+        "turn-0": 209,
+        "turn-1": 230,
+        "turn-2": 254
+      },
+      "python_baseline_tokens": 125,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "arithmetic/005-is-prime",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "turns_used": null,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "test-failure",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "stdout mismatch for basic: expected '6\\n', got b'-32\\n'; stdout mismatch for zero: expected '0\\n', got b'-38\\n'; stdout mismatch for single: expected '7\\n', got b'-31\\n'; 4 more failure(s)",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "diagnostics_by_turn": {
+        "turn-0": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "stdout mismatch for basic: expected '6\\n', got b'-32\\n'; stdout mismatch for zero: expected '0\\n', got b'-38\\n'; stdout mismatch for single: expected '7\\n', got b'-31\\n'; 4 more failure(s)",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-1": null
+      },
+      "duration_ms": 3552,
+      "failure_stage_by_turn": {
+        "turn-0": "test",
+        "turn-1": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": false,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 145,
+      "generation_tokens_by_turn": {
+        "turn-0": 145,
+        "turn-1": 157
+      },
+      "python_baseline_tokens": 57,
+      "repair_success": true,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "arithmetic/006-digit-sum",
+      "tests_pass": 0,
+      "tests_total": 7,
+      "turns_used": 1,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "test-failure",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "stdout mismatch for basic: expected '1010\\n', got b'0'; stdout mismatch for zero: expected '0\\n', got b'/0/0'; stdout mismatch for one: expected '1\\n', got b'/00/'; 3 more failure(s)",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "diagnostics_by_turn": {
+        "turn-0": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "stdout mismatch for basic: expected '1010\\n', got b'0'; stdout mismatch for zero: expected '0\\n', got b'/0/0'; stdout mismatch for one: expected '1\\n', got b'/00/'; 3 more failure(s)",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-1": null
+      },
+      "duration_ms": 4982,
+      "failure_stage_by_turn": {
+        "turn-0": "test",
+        "turn-1": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": false,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 263,
+      "generation_tokens_by_turn": {
+        "turn-0": 263,
+        "turn-1": 272
+      },
+      "python_baseline_tokens": 90,
+      "repair_success": true,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "arithmetic/007-to-binary",
+      "tests_pass": 0,
+      "tests_total": 6,
+      "turns_used": 1,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "test-failure",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "stdout mismatch for prime: expected '1\\n', got b'1 3\\n'; stdout mismatch for one: expected '\\n', got b'1\\n'; stdout mismatch for square: expected '1 2 3 4 6 9 12 18\\n', got b'1 2 3 4 6 7 9 12 18\\n'; 1 more failure(s)",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "diagnostics_by_turn": {
+        "turn-0": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "stdout mismatch for prime: expected '1\\n', got b'1 3\\n'; stdout mismatch for one: expected '\\n', got b'1\\n'; stdout mismatch for square: expected '1 2 3 4 6 9 12 18\\n', got b'1 2 3 4 6 7 9 12 18\\n'; 1 more failure(s)",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-1": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "stdout mismatch for prime: expected '1\\n', got b'1 3\\n'; stdout mismatch for one: expected '\\n', got b'1\\n'; stdout mismatch for square: expected '1 2 3 4 6 9 12 18\\n', got b'1 2 3 4 6 7 9 12 18\\n'; 1 more failure(s)",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-2": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "stdout mismatch for prime: expected '1\\n', got b'1 3\\n'; stdout mismatch for square: expected '1 2 3 4 6 9 12 18\\n', got b'1 2 3 4 6 7 9 12 18\\n'; stdout mismatch for large-prime: expected '1\\n', got b'1 1000 1001 1002 1003 1005 1006 1007 1008 1009 1010 1011 1012 1013 1014 1015 1016 1017 1018 1019 1020 1021 1022 1023 1024 1025 1026 1027 1028 1029 1030 1031 1033 1034 1035 1036 1037 1038 1039 1040 1041 1042 1043 1044 1046 1047 1048 1049 1050 1051 1052 1053 1054 1055 1057 1058 1059 1060 1061 1062 1063 1064 1066 1067 1068 1069 1070 1071 1072 1074 1075 1076 1077 1078 1079 1081 1082 1083 1084 1085 1086 1088 1089 1090 1091 1092 1094 1095 1096 1097 1098 1100 1101 1102 1103 1104 1106 1107 1108 1109 1111 1112 1113 1114 1116 1117 1118 1119 1121 1122 1123 1124 1126 1127 1128 1129 1131 1132 1133 1135 1136 1137 1138 1140 1141 1142 1144 1145 1146 1148 1149 1150 1152 1153 1154 1156 1157 1158 1160 1161 1162 1164 1165 1166 1168 1169 1170 1172 1173 1175 1176 1177 1179 1180 1182 1183 1184 1186 1187 1189 1190 1191 1193 1194 1196 1197 1199 1200 1201 1203 1204 1206 1207 1209 1210 1212 1213 1215 1216 1218 1219 1220 1222 1223 1225 1226 1228 1229 1231 1233 1234 1236 1237 1239 1240 1242 1243 1245 1246 1248 1249 1251 1253 1254 1256 1257 1259 1261 1262 1264 1265 1267 1269 1270 1272 1273 1275 1277 1278 1280 1282 1283 1285 1286 1288 1290 1291 1293 1295 1296 1298 1300 1302 1303 1305 1307 1308 1310 1312 1314 1315 1317 1319 1320 1322 1324 1326 1327 1329 1331 1333 1335 1336 1338 1340 1342 1344 1345 1347 1349 1351 1353 1354 1356 1358 1360 1362 1364 1366 1367 1369 1371 1373 1375 1377 1379 1381 1383 1385 1386 1388 1390 1392 1394 1396 1398 1400 1402 1404 1406 1408 1410 1412 1414 1416 1418 1420 1422 1424 1426 1428 1430 1432 1434 1436 1438 1440 1442 1445 1447 1449 1451 1453 1455 1457 1459 1461 1464 1466 1468 1470 1472 1474 1477 1479 1481 1483 1485 1488 1490 1492 1494 1496 1499 1501 1503 1505 1508 1510 1512 1515 1517 1519 1522 1524 1526 1529 1531 1533 1536 1538 1540 1543 1545 1547 1550 1552 1555 1557 1560 1562 1564 1567 1569 1572 1574 1577 1579 1582 1584 1587 1589 1592 1594 1597 1599 1602 1605 1607 1610 1612 1615 1618 1620 1623 1625 1628 1631 1633 1636 1639 1642 1644 1647 1650 1652 1655 1658 1661 1663 1666 1669 1672 1675 1677 1680 1683 1686 1689 1692 1694 1697 1700 1703 1706 1709 1712 1715 1718 1721 1724 1727 1730 1733 1736 1739 1742 1745 1748 1751 1754 1757 1760 1763 1766 1769 1773 1776 1779 1782 1785 1788 1792 1795 1798 1801 1805 1808 1811 1814 1818 1821 1824 1828 1831 1834 1838 1841 1844 1848 1851 1855 1858 1862 1865 1869 1872 1876 1879 1883 1886 1890 1893 1897 1901 1904 1908 1912 1915 1919 1923 1926 1930 1934 1937 1941 1945 1949 1953 1956 1960 1964 1968 1972 1976 1980 1984 1988 1991 1995 1999 2003 2007 2012 2016 2020 2024 2028 2032 2036 2040 2044 2049 2053 2057 2061 2066 2070 2074 2078 2083 2087 2092 2096 2100 2105 2109 2114 2118 2123 2127 2132 2136 2141 2145 2150 2155 2159 2164 2169 2173 2178 2183 2188 2192 2197 2202 2207 2212 2217 2222 2227 2232 2237 2242 2247 2252 2257 2262 2267 2272 2277 2283 2288 2293 2298 2304 2309 2314 2320 2325 2330 2336 2341 2347 2352 2358 2364 2369 2375 2380 2386 2392 2398 2403 2409 2415 2421 2427 2433 2438 2444 2450 2456 2463 2469 2475 2481 2487 2493 2499 2506 2512 2518 2525 2531 2538 2544 2550 2557 2564 2570 2577 2583 2590 2597 2604 2610 2617 2624 2631 2638 2645 2652 2659 2666 2673 2680 2688 2695 2702 2709 2717 2724 2732 2739 2747 2754 2762 2770 2777 2785 2793 2801 2808 2816 2824 2832 2840 2848 2857 2865 2873 2881 2890 2898 2906 2915 2923 2932 2941 2949 2958 2967 2976 2985 2993 3002 3011 3021 3030 3039 3048 3058 3067 3076 3086 3095 3105 3115 3124 3134 3144 3154 3164 3174 3184 3194 3205 3215 3225 3236 3246 3257 3267 3278 3289 3300 3311 3322 3333 3344 3355 3366 3378 3389 3401 3412 3424 3436 3448 3460 3472 3484 3496 3508 3521 3533 3546 3558 3571 3584 3597 3610 3623 3636 3649 3662 3676 3689 3703 3717 3731 3745 3759 3773 3787 3802 3816 3831 3846 3860 3875 3890 3906 3921 3936 3952 3968 3983 3999 4015 4032 4048 4064 4081 4098 4115 4132 4149 4166 4184 4201 4219 4237 4255 4273 4291 4310 4328 4347 4366 4385 4405 4424 4444 4464 4484 4504 4524 4545 4566 4587 4608 4629 4651 4672 4694 4716 4739 4761 4784 4807 4830 4854 4877 4901 4926 4950 4975 4999 5025 5050 5076 5101 5128 5154 5181 5208 5235 5263 5290 5319 5347 5376 5405 5434 5464 5494 5524 5555 5586 5617 5649 5681 5714 5747 5780 5813 5847 5882 5917 5952 5987 6023 6060 6097 6134 6172 6211 6249 6289 6329 6369 6410 6451 6493 6535 6578 6622 6666 6711 6756 6802 6849 6896 6944 6992 7042 7092 7142 7194 7246 7299 7352 7407 7462 7518 7575 7633 7692 7751 7812 7873 7936 7999 8064 8129 8196 8264 8333 8403 8474 8546 8620 8695 8771 8849 8928 9008 9090 9174 9259 9345 9433 9523 9615 9708 9803 9900 9999 10100 10203 10309 10416 10526 10638 10752 10869 10988 11110 11235 11363 11494 11627 11764 11904 12047 12194 12345 12499 12658 12820 12986 13157 13333 13513 13698 13888 14084 14285 14492 14705 14925 15151 15384 15624 15872 16128 16393 16666 16948 17241 17543 17856 18181 18518 18867 19230 19607 19999 20407 20832 21276 21738 22221 22726 23255 23809 24389 24999 25640 26315 27026 27777 28570 29411 30302 31249 32257 33332 34482 35713 37036 38460 39999 41665 43477 45453 47618 49999 52630 55554 58822 62498 66665 71427 76921 83331 90907 99998 111109 124997 142854 166663 199996 249995 333327 499991\\n'",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        }
+      },
+      "duration_ms": 8959,
+      "failure_stage_by_turn": {
+        "turn-0": "test",
+        "turn-1": "test",
+        "turn-2": "test"
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": false,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": false,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 373,
+      "generation_tokens_by_turn": {
+        "turn-0": 373,
+        "turn-1": 407,
+        "turn-2": 437
+      },
+      "python_baseline_tokens": 145,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "arithmetic/009-divisors",
+      "tests_pass": 3,
+      "tests_total": 7,
+      "turns_used": null,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "diagnostics_by_turn": {
+        "turn-0": null
+      },
+      "duration_ms": 2109,
+      "failure_stage_by_turn": {
+        "turn-0": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": true,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 175,
+      "generation_tokens_by_turn": {
+        "turn-0": 175
+      },
+      "python_baseline_tokens": 88,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "arithmetic/010-power",
+      "tests_pass": 7,
+      "tests_total": 7,
+      "turns_used": 0,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "typecheck-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: /tmp/tmpgzg0smq4/generated.tac: expected 'else' but got Semicolon",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "diagnostics_by_turn": {
+        "turn-0": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "typecheck-error",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "error: /tmp/tmpgzg0smq4/generated.tac: expected 'else' but got Semicolon",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-1": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "unbound-name",
+              "location": {
+                "ast_path": [
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 2
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 1
+                  }
+                ],
+                "source_span": null
+              },
+              "message": "identifier 'out' not in scope",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-2": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "stdout mismatch for basic: expected 'olleh\\n', got b'\\n'; stdout mismatch for single: expected 'a\\n', got b'\\n'; stdout mismatch for palindrome: expected 'racecar\\n', got b'\\n'; 2 more failure(s)",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        }
+      },
+      "duration_ms": 7070,
+      "failure_stage_by_turn": {
+        "turn-0": "typecheck",
+        "turn-1": "typecheck",
+        "turn-2": "test"
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": false,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": false,
+      "first_pass_tests_pass": false,
+      "first_pass_typecheck_pass": false,
+      "generation_tokens": 270,
+      "generation_tokens_by_turn": {
+        "turn-0": 270,
+        "turn-1": 256,
+        "turn-2": 256
+      },
+      "python_baseline_tokens": 37,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "strings/011-reverse-string",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "turns_used": null,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "diagnostics_by_turn": {
+        "turn-0": null
+      },
+      "duration_ms": 2685,
+      "failure_stage_by_turn": {
+        "turn-0": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": true,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 271,
+      "generation_tokens_by_turn": {
+        "turn-0": 271
+      },
+      "python_baseline_tokens": 60,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "strings/012-count-vowels",
+      "tests_pass": 6,
+      "tests_total": 6,
+      "turns_used": 0,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "test-failure",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "stdout mismatch for unicode: expected 'yes\\n', got b'no\\n'",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "diagnostics_by_turn": {
+        "turn-0": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "stdout mismatch for unicode: expected 'yes\\n', got b'no\\n'",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-1": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "typecheck-error",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "error: /tmp/tmprhmnk7i6/generated.tac: expected 'else' but got RBrace",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-2": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "typecheck-error",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "error: /tmp/tmpvk52i262/generated.tac: expected 'else' but got Semicolon",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        }
+      },
+      "duration_ms": 9303,
+      "failure_stage_by_turn": {
+        "turn-0": "test",
+        "turn-1": "typecheck",
+        "turn-2": "typecheck"
+      },
+      "final_compile_pass": false,
+      "final_tests_pass": false,
+      "final_typecheck_pass": false,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": false,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 266,
+      "generation_tokens_by_turn": {
+        "turn-0": 266,
+        "turn-1": 463,
+        "turn-2": 434
+      },
+      "python_baseline_tokens": 65,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "strings/013-is-palindrome",
+      "tests_pass": 7,
+      "tests_total": 8,
+      "turns_used": null,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "typecheck-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: /tmp/tmp66xpvstd/generated.tac: expected 'else' but got RBrace",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "diagnostics_by_turn": {
+        "turn-0": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "typecheck-error",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "error: /tmp/tmp66xpvstd/generated.tac: expected 'else' but got RBrace",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-1": null
+      },
+      "duration_ms": 6447,
+      "failure_stage_by_turn": {
+        "turn-0": "typecheck",
+        "turn-1": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": false,
+      "first_pass_tests_pass": false,
+      "first_pass_typecheck_pass": false,
+      "generation_tokens": 369,
+      "generation_tokens_by_turn": {
+        "turn-0": 369,
+        "turn-1": 372
+      },
+      "python_baseline_tokens": 63,
+      "repair_success": true,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "strings/015-title-case",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "turns_used": 1,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "test-failure",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "stdout mismatch for tie-first: expected 'cat\\n', got b'hat\\n\\n'; stdout mismatch for two-word-tie: expected 'hello\\n', got b'world\\n\\n'; stdout mismatch for single: expected 'programming\\n', got b'programming\\n\\n'; 1 more failure(s)",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "diagnostics_by_turn": {
+        "turn-0": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "stdout mismatch for tie-first: expected 'cat\\n', got b'hat\\n\\n'; stdout mismatch for two-word-tie: expected 'hello\\n', got b'world\\n\\n'; stdout mismatch for single: expected 'programming\\n', got b'programming\\n\\n'; 1 more failure(s)",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-1": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "stdout mismatch for tie-first: expected 'cat\\n', got b'hat\\n\\n'; stdout mismatch for two-word-tie: expected 'hello\\n', got b'world\\n\\n'; stdout mismatch for single: expected 'programming\\n', got b'programming\\n\\n'; 1 more failure(s)",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-2": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "stdout mismatch for tie-first: expected 'cat\\n', got b'hat\\n\\n'; stdout mismatch for two-word-tie: expected 'hello\\n', got b'world\\n\\n'; stdout mismatch for single: expected 'programming\\n', got b'programming\\n\\n'; 1 more failure(s)",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        }
+      },
+      "duration_ms": 6851,
+      "failure_stage_by_turn": {
+        "turn-0": "test",
+        "turn-1": "test",
+        "turn-2": "test"
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": false,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": false,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 264,
+      "generation_tokens_by_turn": {
+        "turn-0": 264,
+        "turn-1": 264,
+        "turn-2": 264
+      },
+      "python_baseline_tokens": 89,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "strings/016-longest-word",
+      "tests_pass": 2,
+      "tests_total": 6,
+      "turns_used": null,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "diagnostics_by_turn": {
+        "turn-0": null
+      },
+      "duration_ms": 3258,
+      "failure_stage_by_turn": {
+        "turn-0": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": true,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 322,
+      "generation_tokens_by_turn": {
+        "turn-0": 322
+      },
+      "python_baseline_tokens": 123,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "strings/017-common-prefix",
+      "tests_pass": 6,
+      "tests_total": 6,
+      "turns_used": 0,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "unbound-name",
+            "location": {
+              "ast_path": [
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 2
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 2
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                }
+              ],
+              "source_span": null
+            },
+            "message": "identifier 'count' not in scope",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "diagnostics_by_turn": {
+        "turn-0": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "unbound-name",
+              "location": {
+                "ast_path": [
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 2
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 2
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  }
+                ],
+                "source_span": null
+              },
+              "message": "identifier 'count' not in scope",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-1": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "stdout mismatch for basic: expected '2a3b2c\\n', got b'2a3b2c1\\n'; stdout mismatch for no-runs: expected '1a1b1c\\n', got b'1a1b1c1\\n'; stdout mismatch for all-same: expected '4a\\n', got b'4a1\\n'; 4 more failure(s)",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-2": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "stdout mismatch for basic: expected '2a3b2c\\n', got b'2a3b2c1\\n\\n'; stdout mismatch for no-runs: expected '1a1b1c\\n', got b'1a1b1c1\\n\\n'; stdout mismatch for all-same: expected '4a\\n', got b'4a1\\n\\n'; 4 more failure(s)",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        }
+      },
+      "duration_ms": 6032,
+      "failure_stage_by_turn": {
+        "turn-0": "typecheck",
+        "turn-1": "test",
+        "turn-2": "test"
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": false,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": false,
+      "first_pass_tests_pass": false,
+      "first_pass_typecheck_pass": false,
+      "generation_tokens": 219,
+      "generation_tokens_by_turn": {
+        "turn-0": 219,
+        "turn-1": 220,
+        "turn-2": 234
+      },
+      "python_baseline_tokens": 137,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "strings/018-run-length-encode",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "turns_used": null,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "test-failure",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "stdout mismatch for basic: expected 'true\\n', got b'false\\n'; stdout mismatch for identical: expected 'true\\n', got b'false\\n'; stdout mismatch for spaces-count: expected 'true\\n', got b'false\\n'; 2 more failure(s)",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "diagnostics_by_turn": {
+        "turn-0": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "stdout mismatch for basic: expected 'true\\n', got b'false\\n'; stdout mismatch for identical: expected 'true\\n', got b'false\\n'; stdout mismatch for spaces-count: expected 'true\\n', got b'false\\n'; 2 more failure(s)",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-1": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "stdout mismatch for basic: expected 'true\\n', got b'false\\n'; stdout mismatch for identical: expected 'true\\n', got b'false\\n'; stdout mismatch for spaces-count: expected 'true\\n', got b'false\\n'; 2 more failure(s)",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-2": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "stdout mismatch for basic: expected 'true\\n', got b'false\\n'; stdout mismatch for identical: expected 'true\\n', got b'false\\n'; stdout mismatch for spaces-count: expected 'true\\n', got b'false\\n'; 2 more failure(s)",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        }
+      },
+      "duration_ms": 9882,
+      "failure_stage_by_turn": {
+        "turn-0": "test",
+        "turn-1": "test",
+        "turn-2": "test"
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": false,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": false,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 476,
+      "generation_tokens_by_turn": {
+        "turn-0": 476,
+        "turn-1": 482,
+        "turn-2": 481
+      },
+      "python_baseline_tokens": 103,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "strings/020-is-anagram",
+      "tests_pass": 5,
+      "tests_total": 10,
+      "turns_used": null,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "typecheck-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: /tmp/tmp55cmptvt/generated.tac: expected 'else' but got RBrace",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "diagnostics_by_turn": {
+        "turn-0": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "typecheck-error",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "error: /tmp/tmp55cmptvt/generated.tac: expected 'else' but got RBrace",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-1": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "stdout mismatch for basic: expected '1 2 3 2 1\\n', got b'1 1 1 1 1 '; nonzero exit 1; stderr=b''; stdout mismatch for single: expected '7\\n', got b'7 '; 3 more failure(s)",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-2": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "stdout mismatch for basic: expected '1 2 3 2 1\\n', got b'1 1 1 1 1\\n'; stdout mismatch for none-duplicated: expected '1 2 3 4 5\\n', got b'1 1 1 1 1\\n'; stdout mismatch for negatives: expected '-1 0 -1\\n', got b'-1 - -1\\n'",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        }
+      },
+      "duration_ms": 7649,
+      "failure_stage_by_turn": {
+        "turn-0": "typecheck",
+        "turn-1": "test",
+        "turn-2": "test"
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": false,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": false,
+      "first_pass_tests_pass": false,
+      "first_pass_typecheck_pass": false,
+      "generation_tokens": 328,
+      "generation_tokens_by_turn": {
+        "turn-0": 328,
+        "turn-1": 327,
+        "turn-2": 309
+      },
+      "python_baseline_tokens": 111,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "collections/021-unique-in-order",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "turns_used": null,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "diagnostics_by_turn": {
+        "turn-0": null
+      },
+      "duration_ms": 3065,
+      "failure_stage_by_turn": {
+        "turn-0": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": true,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 254,
+      "generation_tokens_by_turn": {
+        "turn-0": 254
+      },
+      "python_baseline_tokens": 60,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "collections/023-flatten-one-level",
+      "tests_pass": 7,
+      "tests_total": 7,
+      "turns_used": 0,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "typecheck-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: /tmp/tmpgbvk_juf/generated.tac: expected 'else' but got RBrace",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "diagnostics_by_turn": {
+        "turn-0": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "typecheck-error",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "error: /tmp/tmpgbvk_juf/generated.tac: expected 'else' but got RBrace",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-1": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "stdout mismatch for mixed: expected '2 4\\n1 3 5\\n', got b'2 4 \\n1 3 5\\n'; stdout mismatch for negatives: expected '-2 -4\\n-1 -3\\n', got b'-2 -4\\n-1 -3 \\n'; stdout mismatch for with-zero: expected '0 2\\n1\\n', got b'0 2\\n1 \\n'",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-2": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "stdout mismatch for mixed: expected '2 4\\n1 3 5\\n', got b'2 4 \\n1 3 5\\n'; stdout mismatch for negatives: expected '-2 -4\\n-1 -3\\n', got b'-2 -4\\n-1 -3 \\n'; stdout mismatch for with-zero: expected '0 2\\n1\\n', got b'0 2\\n1 \\n'",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        }
+      },
+      "duration_ms": 10782,
+      "failure_stage_by_turn": {
+        "turn-0": "typecheck",
+        "turn-1": "test",
+        "turn-2": "test"
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": false,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": false,
+      "first_pass_tests_pass": false,
+      "first_pass_typecheck_pass": false,
+      "generation_tokens": 454,
+      "generation_tokens_by_turn": {
+        "turn-0": 454,
+        "turn-1": 441,
+        "turn-2": 436
+      },
+      "python_baseline_tokens": 100,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "collections/025-partition-eo",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "turns_used": null,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "diagnostics_by_turn": {
+        "turn-0": null
+      },
+      "duration_ms": 3484,
+      "failure_stage_by_turn": {
+        "turn-0": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": true,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 364,
+      "generation_tokens_by_turn": {
+        "turn-0": 364
+      },
+      "python_baseline_tokens": 103,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "collections/026-group-counts",
+      "tests_pass": 5,
+      "tests_total": 5,
+      "turns_used": 0,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "test-failure",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "stdout mismatch for basic: expected '3 4 5 1 2\\n', got b' 3 4 5 1 2\\n'; stdout mismatch for larger-than-len: expected '2 3 1\\n', got b' 2 3 1\\n'; nonzero exit -11; stderr=b''; 3 more failure(s)",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "diagnostics_by_turn": {
+        "turn-0": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "stdout mismatch for basic: expected '3 4 5 1 2\\n', got b' 3 4 5 1 2\\n'; stdout mismatch for larger-than-len: expected '2 3 1\\n', got b' 2 3 1\\n'; nonzero exit -11; stderr=b''; 3 more failure(s)",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-1": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "nonzero exit -11; stderr=b''; nonzero exit -11; stderr=b''",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-2": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "nonzero exit -11; stderr=b''; nonzero exit -11; stderr=b''",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        }
+      },
+      "duration_ms": 12176,
+      "failure_stage_by_turn": {
+        "turn-0": "test",
+        "turn-1": "test",
+        "turn-2": "test"
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": false,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": false,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 622,
+      "generation_tokens_by_turn": {
+        "turn-0": 622,
+        "turn-1": 600,
+        "turn-2": 600
+      },
+      "python_baseline_tokens": 113,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "collections/027-rotate-left",
+      "tests_pass": 4,
+      "tests_total": 10,
+      "turns_used": null,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "test-failure",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "stdout mismatch for basic: expected '1 2\\n3 4\\n5\\n', got b'1 2\\n3 4\\n5\\n\\n\\n'; stdout mismatch for exact-fit: expected '1 2 3\\n', got b'1 2 3\\n\\n\\n'; stdout mismatch for size-two-even: expected '1 2\\n3 4\\n', got b'1 2\\n3 4\\n\\n\\n'",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "diagnostics_by_turn": {
+        "turn-0": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "stdout mismatch for basic: expected '1 2\\n3 4\\n5\\n', got b'1 2\\n3 4\\n5\\n\\n\\n'; stdout mismatch for exact-fit: expected '1 2 3\\n', got b'1 2 3\\n\\n\\n'; stdout mismatch for size-two-even: expected '1 2\\n3 4\\n', got b'1 2\\n3 4\\n\\n\\n'",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-1": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "stdout mismatch for basic: expected '1 2\\n3 4\\n5\\n', got b'1 2\\n3 4\\n5\\n\\n\\n'; stdout mismatch for exact-fit: expected '1 2 3\\n', got b'1 2 3\\n\\n\\n'; stdout mismatch for size-two-even: expected '1 2\\n3 4\\n', got b'1 2\\n3 4\\n\\n\\n'",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-2": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "stdout mismatch for basic: expected '1 2\\n3 4\\n5\\n', got b'1 2\\n3 4\\n5\\n\\n\\n'; stdout mismatch for exact-fit: expected '1 2 3\\n', got b'1 2 3\\n\\n\\n'; stdout mismatch for size-two-even: expected '1 2\\n3 4\\n', got b'1 2\\n3 4\\n\\n\\n'",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        }
+      },
+      "duration_ms": 9595,
+      "failure_stage_by_turn": {
+        "turn-0": "test",
+        "turn-1": "test",
+        "turn-2": "test"
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": false,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": false,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 397,
+      "generation_tokens_by_turn": {
+        "turn-0": 397,
+        "turn-1": 409,
+        "turn-2": 409
+      },
+      "python_baseline_tokens": 123,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "collections/028-chunks",
+      "tests_pass": 2,
+      "tests_total": 5,
+      "turns_used": null,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "typecheck-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: /tmp/tmpxh4rfgrm/generated.tac: trailing tokens after position 237",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "diagnostics_by_turn": {
+        "turn-0": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "typecheck-error",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "error: /tmp/tmpxh4rfgrm/generated.tac: trailing tokens after position 237",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-1": null
+      },
+      "duration_ms": 8730,
+      "failure_stage_by_turn": {
+        "turn-0": "typecheck",
+        "turn-1": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": false,
+      "first_pass_tests_pass": false,
+      "first_pass_typecheck_pass": false,
+      "generation_tokens": 603,
+      "generation_tokens_by_turn": {
+        "turn-0": 603,
+        "turn-1": 600
+      },
+      "python_baseline_tokens": 68,
+      "repair_success": true,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "collections/030-transpose-matrix",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "turns_used": 1,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "test-failure",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "nonzero exit 3; stderr=b''; stdout mismatch for present-first: expected '0\\n', got b''; nonzero exit 5; stderr=b''; 5 more failure(s)",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "diagnostics_by_turn": {
+        "turn-0": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "nonzero exit 3; stderr=b''; stdout mismatch for present-first: expected '0\\n', got b''; nonzero exit 5; stderr=b''; 5 more failure(s)",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-1": null
+      },
+      "duration_ms": 7039,
+      "failure_stage_by_turn": {
+        "turn-0": "test",
+        "turn-1": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": false,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 221,
+      "generation_tokens_by_turn": {
+        "turn-0": 221,
+        "turn-1": 277
+      },
+      "python_baseline_tokens": 118,
+      "repair_success": true,
+      "retries": 0,
+      "stdlib_dominated": true,
+      "task_id": "algorithms/031-binary-search",
+      "tests_pass": 0,
+      "tests_total": 8,
+      "turns_used": 1,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": {
+              "sym": "Int"
+            },
+            "expected": {
+              "sym": "Bool"
+            },
+            "fix": null,
+            "kind": "type-mismatch",
+            "location": {
+              "ast_path": [
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 2
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 2
+                }
+              ],
+              "source_span": null
+            },
+            "message": "type mismatch: expected Bool, got Int",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "diagnostics_by_turn": {
+        "turn-0": {
+          "errors": [
+            {
+              "actual": {
+                "sym": "Int"
+              },
+              "expected": {
+                "sym": "Bool"
+              },
+              "fix": null,
+              "kind": "type-mismatch",
+              "location": {
+                "ast_path": [
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 2
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 2
+                  }
+                ],
+                "source_span": null
+              },
+              "message": "type mismatch: expected Bool, got Int",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-1": null
+      },
+      "duration_ms": 4759,
+      "failure_stage_by_turn": {
+        "turn-0": "typecheck",
+        "turn-1": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": false,
+      "first_pass_tests_pass": false,
+      "first_pass_typecheck_pass": false,
+      "generation_tokens": 256,
+      "generation_tokens_by_turn": {
+        "turn-0": 256,
+        "turn-1": 224
+      },
+      "python_baseline_tokens": 109,
+      "repair_success": true,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/032-fizzbuzz",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "turns_used": 1,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "typecheck-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: /tmp/tmpxs4ggs9t/generated.tac: expected 'else' but got RBrace",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "diagnostics_by_turn": {
+        "turn-0": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "typecheck-error",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "error: /tmp/tmpxs4ggs9t/generated.tac: expected 'else' but got RBrace",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-1": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "typecheck-error",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "error: /tmp/tmpiv12ejzv/generated.tac: expected 'else' but got RBrace",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-2": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "stdout mismatch for no-solution: expected '-1\\n', got b'-1'; stdout mismatch for empty: expected '-1\\n', got b'-1'; stdout mismatch for single: expected '-1\\n', got b'-1'",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        }
+      },
+      "duration_ms": 10782,
+      "failure_stage_by_turn": {
+        "turn-0": "typecheck",
+        "turn-1": "typecheck",
+        "turn-2": "test"
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": false,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": false,
+      "first_pass_tests_pass": false,
+      "first_pass_typecheck_pass": false,
+      "generation_tokens": 558,
+      "generation_tokens_by_turn": {
+        "turn-0": 558,
+        "turn-1": 559,
+        "turn-2": 560
+      },
+      "python_baseline_tokens": 152,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/033-two-sum",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "turns_used": null,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "diagnostics_by_turn": {
+        "turn-0": null
+      },
+      "duration_ms": 4286,
+      "failure_stage_by_turn": {
+        "turn-0": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": true,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 485,
+      "generation_tokens_by_turn": {
+        "turn-0": 485
+      },
+      "python_baseline_tokens": 141,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/035-bubble-sort",
+      "tests_pass": 8,
+      "tests_total": 8,
+      "turns_used": 0,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "test-failure",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "stdout mismatch for basic: expected '1 2 3 5 8 9\\n', got b'2 3 5 1 8 9\\n'; stdout mismatch for already-sorted: expected '1 2 3 4 5\\n', got b'1 2 3 5 4\\n'; stdout mismatch for reverse-sorted: expected '1 2 3 4 5\\n', got b'2 3 4 5 1\\n'; 2 more failure(s)",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "diagnostics_by_turn": {
+        "turn-0": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "stdout mismatch for basic: expected '1 2 3 5 8 9\\n', got b'2 3 5 1 8 9\\n'; stdout mismatch for already-sorted: expected '1 2 3 4 5\\n', got b'1 2 3 5 4\\n'; stdout mismatch for reverse-sorted: expected '1 2 3 4 5\\n', got b'2 3 4 5 1\\n'; 2 more failure(s)",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-1": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "stdout mismatch for basic: expected '1 2 3 5 8 9\\n', got b'2 3 5 1 8 9\\n'; stdout mismatch for already-sorted: expected '1 2 3 4 5\\n', got b'1 2 3 5 4\\n'; stdout mismatch for reverse-sorted: expected '1 2 3 4 5\\n', got b'2 3 4 5 1\\n'; 2 more failure(s)",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-2": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "stdout mismatch for basic: expected '1 2 3 5 8 9\\n', got b'2 3 5 1 8 9\\n'; stdout mismatch for reverse-sorted: expected '1 2 3 4 5\\n', got b'2 1 3 5 4\\n'; stdout mismatch for two-elements: expected '1 9\\n', got b'9 1\\n'; 1 more failure(s)",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        }
+      },
+      "duration_ms": 11098,
+      "failure_stage_by_turn": {
+        "turn-0": "test",
+        "turn-1": "test",
+        "turn-2": "test"
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": false,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": false,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 543,
+      "generation_tokens_by_turn": {
+        "turn-0": 543,
+        "turn-1": 540,
+        "turn-2": 566
+      },
+      "python_baseline_tokens": 143,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/036-quicksort",
+      "tests_pass": 3,
+      "tests_total": 8,
+      "turns_used": null,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "typecheck-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: /tmp/tmphxxjdb_v/generated.tac: expected 'else' but got RBrace",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "diagnostics_by_turn": {
+        "turn-0": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "typecheck-error",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "error: /tmp/tmphxxjdb_v/generated.tac: expected 'else' but got RBrace",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-1": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "typecheck-error",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "error: /tmp/tmppj34sxo2/generated.tac: expected 'else' but got RBrace",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-2": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "typecheck-error",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "error: /tmp/tmp15xaxd90/generated.tac: expected 'else' but got RBrace",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        }
+      },
+      "duration_ms": 12835,
+      "failure_stage_by_turn": {
+        "turn-0": "typecheck",
+        "turn-1": "typecheck",
+        "turn-2": "typecheck"
+      },
+      "final_compile_pass": false,
+      "final_tests_pass": false,
+      "final_typecheck_pass": false,
+      "first_pass_compile_pass": false,
+      "first_pass_tests_pass": false,
+      "first_pass_typecheck_pass": false,
+      "generation_tokens": 686,
+      "generation_tokens_by_turn": {
+        "turn-0": 686,
+        "turn-1": 670,
+        "turn-2": 668
+      },
+      "python_baseline_tokens": 201,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/037-merge-sort",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "turns_used": null,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "test-failure",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "nonzero exit 1; stderr=b''; nonzero exit 5; stderr=b''; stdout mismatch for single-found: expected '0\\n', got b''; 3 more failure(s)",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "diagnostics_by_turn": {
+        "turn-0": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "nonzero exit 1; stderr=b''; nonzero exit 5; stderr=b''; stdout mismatch for single-found: expected '0\\n', got b''; 3 more failure(s)",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-1": null
+      },
+      "duration_ms": 4808,
+      "failure_stage_by_turn": {
+        "turn-0": "test",
+        "turn-1": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": false,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 190,
+      "generation_tokens_by_turn": {
+        "turn-0": 190,
+        "turn-1": 244
+      },
+      "python_baseline_tokens": 111,
+      "repair_success": true,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/038-linear-search",
+      "tests_pass": 0,
+      "tests_total": 6,
+      "turns_used": 1,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "unbound-name",
+            "location": {
+              "ast_path": [
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 2
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 2
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                }
+              ],
+              "source_span": null
+            },
+            "message": "identifier 'new_pos' not in scope",
+            "related": [],
+            "severity": "error"
+          },
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "unbound-name",
+            "location": {
+              "ast_path": [
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 2
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 2
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 2
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                }
+              ],
+              "source_span": null
+            },
+            "message": "identifier 'new_pos' not in scope",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "diagnostics_by_turn": {
+        "turn-0": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "unbound-name",
+              "location": {
+                "ast_path": [
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 2
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 2
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  }
+                ],
+                "source_span": null
+              },
+              "message": "identifier 'new_pos' not in scope",
+              "related": [],
+              "severity": "error"
+            },
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "unbound-name",
+              "location": {
+                "ast_path": [
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 2
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 2
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 2
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  }
+                ],
+                "source_span": null
+              },
+              "message": "identifier 'new_pos' not in scope",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-1": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "stdout mismatch for classic-5-2: expected '2\\n', got b'3\\n'; stdout mismatch for seven-three: expected '3\\n', got b'2\\n'; stdout mismatch for large-step: expected '1\\n', got b'2\\n'; 1 more failure(s)",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-2": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "stdout mismatch for classic-5-2: expected '2\\n', got b'1\\n'; stdout mismatch for seven-three: expected '3\\n', got b'1\\n'; stdout mismatch for ten-two: expected '4\\n', got b'1\\n'",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        }
+      },
+      "duration_ms": 10912,
+      "failure_stage_by_turn": {
+        "turn-0": "typecheck",
+        "turn-1": "test",
+        "turn-2": "test"
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": false,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": false,
+      "first_pass_tests_pass": false,
+      "first_pass_typecheck_pass": false,
+      "generation_tokens": 424,
+      "generation_tokens_by_turn": {
+        "turn-0": 424,
+        "turn-1": 405,
+        "turn-2": 366
+      },
+      "python_baseline_tokens": 105,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/040-josephus",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "turns_used": null,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "test-failure",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "stdout mismatch for basic: expected 'aabbbcc\\n', got b'\\n\\n\\n'; stdout mismatch for no-runs: expected 'abc\\n', got b'\\n\\n'; stdout mismatch for all-same: expected 'aaaa\\n', got b'\\n\\n\\n\\n\\n'; 2 more failure(s)",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "diagnostics_by_turn": {
+        "turn-0": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "stdout mismatch for basic: expected 'aabbbcc\\n', got b'\\n\\n\\n'; stdout mismatch for no-runs: expected 'abc\\n', got b'\\n\\n'; stdout mismatch for all-same: expected 'aaaa\\n', got b'\\n\\n\\n\\n\\n'; 2 more failure(s)",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-1": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "stdout mismatch for basic: expected 'aabbbcc\\n', got b'\\n\\n\\n'; stdout mismatch for no-runs: expected 'abc\\n', got b'\\n\\n'; stdout mismatch for all-same: expected 'aaaa\\n', got b'\\n\\n\\n\\n\\n'; 2 more failure(s)",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-2": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "stdout mismatch for basic: expected 'aabbbcc\\n', got b'\\n\\n\\n'; stdout mismatch for no-runs: expected 'abc\\n', got b'\\n\\n'; stdout mismatch for all-same: expected 'aaaa\\n', got b'\\n\\n\\n\\n\\n'; 2 more failure(s)",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        }
+      },
+      "duration_ms": 7494,
+      "failure_stage_by_turn": {
+        "turn-0": "test",
+        "turn-1": "test",
+        "turn-2": "test"
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": false,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": false,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 289,
+      "generation_tokens_by_turn": {
+        "turn-0": 289,
+        "turn-1": 292,
+        "turn-2": 285
+      },
+      "python_baseline_tokens": 125,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/041-rle-decode",
+      "tests_pass": 1,
+      "tests_total": 6,
+      "turns_used": null,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": {
+              "sym": "Str"
+            },
+            "expected": {
+              "sym": "Buf"
+            },
+            "fix": null,
+            "kind": "type-mismatch",
+            "location": {
+              "ast_path": [
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 1
+                }
+              ],
+              "source_span": null
+            },
+            "message": "type mismatch: expected Buf, got Str",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "diagnostics_by_turn": {
+        "turn-0": {
+          "errors": [
+            {
+              "actual": {
+                "sym": "Str"
+              },
+              "expected": {
+                "sym": "Buf"
+              },
+              "fix": null,
+              "kind": "type-mismatch",
+              "location": {
+                "ast_path": [
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 1
+                  }
+                ],
+                "source_span": null
+              },
+              "message": "type mismatch: expected Buf, got Str",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-1": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "compile-error",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "error: Phase 1 codegen does not yet support buffer-like handle used in integer-value position",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-2": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "typecheck-error",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "error: /tmp/tmpv3i5r1iu/generated.tac: expected 'else' but got RBrace",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        }
+      },
+      "duration_ms": 9191,
+      "failure_stage_by_turn": {
+        "turn-0": "typecheck",
+        "turn-1": "compile",
+        "turn-2": "typecheck"
+      },
+      "final_compile_pass": false,
+      "final_tests_pass": false,
+      "final_typecheck_pass": false,
+      "first_pass_compile_pass": false,
+      "first_pass_tests_pass": false,
+      "first_pass_typecheck_pass": false,
+      "generation_tokens": 308,
+      "generation_tokens_by_turn": {
+        "turn-0": 308,
+        "turn-1": 471,
+        "turn-2": 476
+      },
+      "python_baseline_tokens": 92,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/042-valid-sudoku-row",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "turns_used": null,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "typecheck-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: /tmp/tmpghdbhto4/generated.tac: expected 'else' but got end of input",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "diagnostics_by_turn": {
+        "turn-0": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "typecheck-error",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "error: /tmp/tmpghdbhto4/generated.tac: expected 'else' but got end of input",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-1": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "unbound-name",
+              "location": {
+                "ast_path": [
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 2
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  }
+                ],
+                "source_span": null
+              },
+              "message": "identifier 'parse_grid' not in scope",
+              "related": [],
+              "severity": "error"
+            },
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "unbound-name",
+              "location": {
+                "ast_path": [
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 2
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 2
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  }
+                ],
+                "source_span": null
+              },
+              "message": "identifier 'parse_grid' not in scope",
+              "related": [],
+              "severity": "error"
+            },
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "unbound-name",
+              "location": {
+                "ast_path": [
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 2
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 2
+                  },
+                  {
+                    "child": 2
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  }
+                ],
+                "source_span": null
+              },
+              "message": "identifier 'parse_grid' not in scope",
+              "related": [],
+              "severity": "error"
+            },
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "unbound-name",
+              "location": {
+                "ast_path": [
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 2
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 2
+                  },
+                  {
+                    "child": 2
+                  },
+                  {
+                    "child": 2
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  }
+                ],
+                "source_span": null
+              },
+              "message": "identifier 'parse_grid' not in scope",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-2": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "stdout mismatch for two-islands: expected '2\\n', got b'0\\n'; stdout mismatch for four-islands: expected '4\\n', got b'0\\n'; stdout mismatch for all-land: expected '1\\n', got b'0\\n'; 4 more failure(s)",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        }
+      },
+      "duration_ms": 15922,
+      "failure_stage_by_turn": {
+        "turn-0": "typecheck",
+        "turn-1": "typecheck",
+        "turn-2": "test"
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": false,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": false,
+      "first_pass_tests_pass": false,
+      "first_pass_typecheck_pass": false,
+      "generation_tokens": 727,
+      "generation_tokens_by_turn": {
+        "turn-0": 727,
+        "turn-1": 730,
+        "turn-2": 733
+      },
+      "python_baseline_tokens": 280,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/044-count-islands",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "turns_used": null,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "test-failure",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "stdout mismatch for basic: expected 'fox brown quick the\\n', got b'fox\\n brown quick khe\\n'; stdout mismatch for single: expected 'hello\\n', got b'hello\\n\\n'; stdout mismatch for two-words: expected 'two one\\n', got b'two\\n \\nne\\n'; 2 more failure(s)",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "diagnostics_by_turn": {
+        "turn-0": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "stdout mismatch for basic: expected 'fox brown quick the\\n', got b'fox\\n brown quick khe\\n'; stdout mismatch for single: expected 'hello\\n', got b'hello\\n\\n'; stdout mismatch for two-words: expected 'two one\\n', got b'two\\n \\nne\\n'; 2 more failure(s)",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-1": null
+      },
+      "duration_ms": 5528,
+      "failure_stage_by_turn": {
+        "turn-0": "test",
+        "turn-1": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": false,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 261,
+      "generation_tokens_by_turn": {
+        "turn-0": 261,
+        "turn-1": 264
+      },
+      "python_baseline_tokens": 48,
+      "repair_success": true,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/045-reverse-words",
+      "tests_pass": 0,
+      "tests_total": 5,
+      "turns_used": 1,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "diagnostics_by_turn": {
+        "turn-0": null
+      },
+      "duration_ms": 5488,
+      "failure_stage_by_turn": {
+        "turn-0": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": true,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 368,
+      "generation_tokens_by_turn": {
+        "turn-0": 368
+      },
+      "python_baseline_tokens": 95,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/046-max-subarray",
+      "tests_pass": 10,
+      "tests_total": 10,
+      "turns_used": 0,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": {
+              "sym": "Int"
+            },
+            "expected": {
+              "fn-ty": {
+                "arg": {
+                  "sym": "Int"
+                },
+                "eff": [],
+                "ret": {
+                  "meta": 5
+                }
+              }
+            },
+            "fix": null,
+            "kind": "type-mismatch",
+            "location": {
+              "ast_path": [
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 2
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 1
+                },
+                {
+                  "child": 0
+                },
+                {
+                  "child": 0
+                }
+              ],
+              "source_span": null
+            },
+            "message": "type mismatch: expected Int -> ?5 / {}, got Int",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "diagnostics_by_turn": {
+        "turn-0": {
+          "errors": [
+            {
+              "actual": {
+                "sym": "Int"
+              },
+              "expected": {
+                "fn-ty": {
+                  "arg": {
+                    "sym": "Int"
+                  },
+                  "eff": [],
+                  "ret": {
+                    "meta": 5
+                  }
+                }
+              },
+              "fix": null,
+              "kind": "type-mismatch",
+              "location": {
+                "ast_path": [
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 2
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  }
+                ],
+                "source_span": null
+              },
+              "message": "type mismatch: expected Int -> ?5 / {}, got Int",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-1": {
+          "errors": [
+            {
+              "actual": {
+                "sym": "Int"
+              },
+              "expected": {
+                "fn-ty": {
+                  "arg": {
+                    "sym": "Int"
+                  },
+                  "eff": [],
+                  "ret": {
+                    "meta": 5
+                  }
+                }
+              },
+              "fix": null,
+              "kind": "type-mismatch",
+              "location": {
+                "ast_path": [
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 2
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  }
+                ],
+                "source_span": null
+              },
+              "message": "type mismatch: expected Int -> ?5 / {}, got Int",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-2": {
+          "errors": [
+            {
+              "actual": {
+                "sym": "Int"
+              },
+              "expected": {
+                "fn-ty": {
+                  "arg": {
+                    "sym": "Int"
+                  },
+                  "eff": [],
+                  "ret": {
+                    "meta": 5
+                  }
+                }
+              },
+              "fix": null,
+              "kind": "type-mismatch",
+              "location": {
+                "ast_path": [
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 2
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  }
+                ],
+                "source_span": null
+              },
+              "message": "type mismatch: expected Int -> ?5 / {}, got Int",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        }
+      },
+      "duration_ms": 7460,
+      "failure_stage_by_turn": {
+        "turn-0": "typecheck",
+        "turn-1": "typecheck",
+        "turn-2": "typecheck"
+      },
+      "final_compile_pass": false,
+      "final_tests_pass": false,
+      "final_typecheck_pass": false,
+      "first_pass_compile_pass": false,
+      "first_pass_tests_pass": false,
+      "first_pass_typecheck_pass": false,
+      "generation_tokens": 338,
+      "generation_tokens_by_turn": {
+        "turn-0": 338,
+        "turn-1": 333,
+        "turn-2": 333
+      },
+      "python_baseline_tokens": 83,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/047-stable-sort-pairs",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "turns_used": null,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "test-failure",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "stdout mismatch for 2x3-by-3x2: expected '28 14\\n79 44\\n', got b'24 140253521914774\\n30 140734992604451\\n'; stdout mismatch for identity: expected '5 6\\n7 8\\n', got b'\\n\\n'; stdout mismatch for 1x1: expected '12\\n', got b'\\n'; 3 more failure(s)",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "diagnostics_by_turn": {
+        "turn-0": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "stdout mismatch for 2x3-by-3x2: expected '28 14\\n79 44\\n', got b'24 140253521914774\\n30 140734992604451\\n'; stdout mismatch for identity: expected '5 6\\n7 8\\n', got b'\\n\\n'; stdout mismatch for 1x1: expected '12\\n', got b'\\n'; 3 more failure(s)",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-1": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "stdout mismatch for 2x3-by-3x2: expected '28 14\\n79 44\\n', got b'24 140706619399062\\n30 140732571428275\\n'; stdout mismatch for identity: expected '5 6\\n7 8\\n', got b'\\n\\n'; stdout mismatch for 1x1: expected '12\\n', got b'\\n'; 3 more failure(s)",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-2": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "compile-error",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "error: rec group lowering failed at member 1: function expects arity 4, got 3",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        }
+      },
+      "duration_ms": 16818,
+      "failure_stage_by_turn": {
+        "turn-0": "test",
+        "turn-1": "test",
+        "turn-2": "compile"
+      },
+      "final_compile_pass": false,
+      "final_tests_pass": false,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": false,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 849,
+      "generation_tokens_by_turn": {
+        "turn-0": 849,
+        "turn-1": 905,
+        "turn-2": 894
+      },
+      "python_baseline_tokens": 243,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/049-matrix-multiply",
+      "tests_pass": 0,
+      "tests_total": 6,
+      "turns_used": null,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "typecheck-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: /tmp/tmpnb7j45tv/generated.tac: expected 'else' but got RBrace",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "diagnostics_by_turn": {
+        "turn-0": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "typecheck-error",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "error: /tmp/tmpnb7j45tv/generated.tac: expected 'else' but got RBrace",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-1": null
+      },
+      "duration_ms": 5191,
+      "failure_stage_by_turn": {
+        "turn-0": "typecheck",
+        "turn-1": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": false,
+      "first_pass_tests_pass": false,
+      "first_pass_typecheck_pass": false,
+      "generation_tokens": 336,
+      "generation_tokens_by_turn": {
+        "turn-0": 336,
+        "turn-1": 338
+      },
+      "python_baseline_tokens": 119,
+      "repair_success": true,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/050-longest-run",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "turns_used": 1,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "test-failure",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "nonzero exit -11; stderr=b''; nonzero exit -11; stderr=b''; nonzero exit -11; stderr=b''; 2 more failure(s)",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "diagnostics_by_turn": {
+        "turn-0": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "nonzero exit -11; stderr=b''; nonzero exit -11; stderr=b''; nonzero exit -11; stderr=b''; 2 more failure(s)",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-1": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "stdout mismatch for no-trailing-newline: expected '3\\n', got b'2\\n'",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-2": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "typecheck-error",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "error: /tmp/tmpve8tw8vm/generated.tac: expected 'else' but got RParen",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        }
+      },
+      "duration_ms": 5127,
+      "failure_stage_by_turn": {
+        "turn-0": "test",
+        "turn-1": "test",
+        "turn-2": "typecheck"
+      },
+      "final_compile_pass": false,
+      "final_tests_pass": false,
+      "final_typecheck_pass": false,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": false,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 156,
+      "generation_tokens_by_turn": {
+        "turn-0": 156,
+        "turn-1": 154,
+        "turn-2": 216
+      },
+      "python_baseline_tokens": 66,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "io/051-line-count",
+      "tests_pass": 0,
+      "tests_total": 5,
+      "turns_used": null,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "test-failure",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "nonzero exit -11; stderr=b''; nonzero exit -11; stderr=b''; nonzero exit -11; stderr=b''; 3 more failure(s)",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "diagnostics_by_turn": {
+        "turn-0": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "nonzero exit -11; stderr=b''; nonzero exit -11; stderr=b''; nonzero exit -11; stderr=b''; 3 more failure(s)",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-1": null
+      },
+      "duration_ms": 3954,
+      "failure_stage_by_turn": {
+        "turn-0": "test",
+        "turn-1": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": false,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 213,
+      "generation_tokens_by_turn": {
+        "turn-0": 213,
+        "turn-1": 209
+      },
+      "python_baseline_tokens": 40,
+      "repair_success": true,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "io/052-sum-numbers",
+      "tests_pass": 0,
+      "tests_total": 6,
+      "turns_used": 1,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "typecheck-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: /tmp/tmp66saokw_/generated.tac: expected 'in' but got RParen",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "diagnostics_by_turn": {
+        "turn-0": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "typecheck-error",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "error: /tmp/tmp66saokw_/generated.tac: expected 'in' but got RParen",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-1": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "stdout mismatch for basic: expected 'the quick brown fox\\nthe fox trot\\n', got b'fffffffffffffffffff\\nffffffffffff\\n'; stdout mismatch for all-match: expected 'cat\\nbat\\nhat\\n', got b'aaa\\naaa\\naaa\\n'; stdout mismatch for pattern-at-start: expected 'hello\\nhey\\n', got b'hhhhh\\nhhh\\n'; 1 more failure(s)",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-2": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "compile-error",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "error: rec group lowering failed at member 0: rec group lowering failed at member 0: Phase 1 codegen does not yet support buffer argument must be a string literal or @buf-alloc binding",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        }
+      },
+      "duration_ms": 9440,
+      "failure_stage_by_turn": {
+        "turn-0": "typecheck",
+        "turn-1": "test",
+        "turn-2": "compile"
+      },
+      "final_compile_pass": false,
+      "final_tests_pass": false,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": false,
+      "first_pass_tests_pass": false,
+      "first_pass_typecheck_pass": false,
+      "generation_tokens": 333,
+      "generation_tokens_by_turn": {
+        "turn-0": 333,
+        "turn-1": 339,
+        "turn-2": 351
+      },
+      "python_baseline_tokens": 56,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "io/054-grep-substring",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "turns_used": null,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "test-failure",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "nonzero exit -11; stderr=b''; nonzero exit -11; stderr=b''; nonzero exit -11; stderr=b''; 4 more failure(s)",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "diagnostics_by_turn": {
+        "turn-0": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "nonzero exit -11; stderr=b''; nonzero exit -11; stderr=b''; nonzero exit -11; stderr=b''; 4 more failure(s)",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-1": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "nonzero exit -11; stderr=b''; nonzero exit -11; stderr=b''; nonzero exit -11; stderr=b''; 4 more failure(s)",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-2": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "extraction-error",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "model response contained multiple ```tacit fenced blocks",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        }
+      },
+      "duration_ms": 13584,
+      "failure_stage_by_turn": {
+        "turn-0": "test",
+        "turn-1": "test",
+        "turn-2": "extract"
+      },
+      "final_compile_pass": false,
+      "final_tests_pass": false,
+      "final_typecheck_pass": false,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": false,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 227,
+      "generation_tokens_by_turn": {
+        "turn-0": 227,
+        "turn-1": 167,
+        "turn-2": 0
+      },
+      "python_baseline_tokens": 41,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "io/055-sort-lines",
+      "tests_pass": 0,
+      "tests_total": 7,
+      "turns_used": null,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "typecheck-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: /tmp/tmp8griqsxd/generated.tac: expected 'else' but got RBrace",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "diagnostics_by_turn": {
+        "turn-0": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "typecheck-error",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "error: /tmp/tmp8griqsxd/generated.tac: expected 'else' but got RBrace",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-1": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "typecheck-error",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "error: /tmp/tmp5t1jzk_w/generated.tac: expected 'else' but got Semicolon",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-2": {
+          "errors": [
+            {
+              "actual": {
+                "sym": "Int"
+              },
+              "expected": {
+                "fn-ty": {
+                  "arg": {
+                    "sym": "Int"
+                  },
+                  "eff": [],
+                  "ret": {
+                    "meta": 10
+                  }
+                }
+              },
+              "fix": null,
+              "kind": "type-mismatch",
+              "location": {
+                "ast_path": [
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 2
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 2
+                  },
+                  {
+                    "child": 1
+                  },
+                  {
+                    "child": 0
+                  },
+                  {
+                    "child": 0
+                  }
+                ],
+                "source_span": null
+              },
+              "message": "type mismatch: expected Int -> ?10 / {}, got Int",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        }
+      },
+      "duration_ms": 7561,
+      "failure_stage_by_turn": {
+        "turn-0": "typecheck",
+        "turn-1": "typecheck",
+        "turn-2": "typecheck"
+      },
+      "final_compile_pass": false,
+      "final_tests_pass": false,
+      "final_typecheck_pass": false,
+      "first_pass_compile_pass": false,
+      "first_pass_tests_pass": false,
+      "first_pass_typecheck_pass": false,
+      "generation_tokens": 263,
+      "generation_tokens_by_turn": {
+        "turn-0": 263,
+        "turn-1": 268,
+        "turn-2": 282
+      },
+      "python_baseline_tokens": 38,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "io/056-unique-lines",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "turns_used": null,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "typecheck-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: /tmp/tmpnruejhd3/generated.tac: lex: bad escape: \\f",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "diagnostics_by_turn": {
+        "turn-0": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "typecheck-error",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "error: /tmp/tmpnruejhd3/generated.tac: lex: bad escape: \\f",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-1": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "stdout mismatch for two-lines: expected '9\\n', got b'9'; stdout mismatch for empty: expected '0\\n', got b'0'; stdout mismatch for whitespace-only: expected '0\\n', got b'0'; 4 more failure(s)",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-2": null
+      },
+      "duration_ms": 4537,
+      "failure_stage_by_turn": {
+        "turn-0": "typecheck",
+        "turn-1": "test",
+        "turn-2": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": false,
+      "first_pass_tests_pass": false,
+      "first_pass_typecheck_pass": false,
+      "generation_tokens": 77,
+      "generation_tokens_by_turn": {
+        "turn-0": 77,
+        "turn-1": 194,
+        "turn-2": 208
+      },
+      "python_baseline_tokens": 30,
+      "repair_success": true,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "io/057-word-count",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "turns_used": 2,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "extraction-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "model response contained multiple ```tacit fenced blocks",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "diagnostics_by_turn": {
+        "turn-0": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "extraction-error",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "model response contained multiple ```tacit fenced blocks",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-1": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "stdout mismatch for basic: expected 'three\\ntwo\\none\\n', got b'one\\nt\\none\\none\\n'; stdout mismatch for two-lines: expected 'b\\na\\n', got b'a\\na\\n'; stdout mismatch for already-reversed: expected 'a\\nb\\nc\\n', got b'c\\nc\\nc\\n'",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-2": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "test-failure",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "stdout mismatch for basic: expected 'three\\ntwo\\none\\n', got b'one\\ntwo\\nthree\\none\\ntwo\\none\\n'; stdout mismatch for two-lines: expected 'b\\na\\n', got b'a\\nb\\na\\n'; stdout mismatch for already-reversed: expected 'a\\nb\\nc\\n', got b'c\\nb\\na\\nc\\nb\\nc\\n'",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        }
+      },
+      "duration_ms": 9657,
+      "failure_stage_by_turn": {
+        "turn-0": "extract",
+        "turn-1": "test",
+        "turn-2": "test"
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": false,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": false,
+      "first_pass_tests_pass": false,
+      "first_pass_typecheck_pass": false,
+      "generation_tokens": 0,
+      "generation_tokens_by_turn": {
+        "turn-0": 0,
+        "turn-1": 203,
+        "turn-2": 143
+      },
+      "python_baseline_tokens": 41,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "io/059-echo-reverse",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "turns_used": null,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "diagnostics_by_turn": {
+        "turn-0": null
+      },
+      "duration_ms": 4111,
+      "failure_stage_by_turn": {
+        "turn-0": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": true,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 376,
+      "generation_tokens_by_turn": {
+        "turn-0": 376
+      },
+      "python_baseline_tokens": 64,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "io/060-longest-line",
+      "tests_pass": 5,
+      "tests_total": 5,
+      "turns_used": 0,
+      "typecheck_pass": true
+    }
+  ],
+  "track": "primary"
+}
