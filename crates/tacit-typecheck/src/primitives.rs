@@ -1,4 +1,4 @@
-//! Type and effect signatures for built-in @name primitives (ADR 0028, 0030, 0042, 0047, 0061, 0062, 0063, 0064, 0067, 0068).
+//! Type and effect signatures for built-in @name primitives (ADR 0028, 0030, 0042, 0047, 0061, 0062, 0063, 0064, 0067, 0068, 0069).
 //!
 //! Effect sets mirror `stdlib/libc-effects.toml` (ADR 0025, consumed in Stage 3).
 //! The canonical source for primitive effects is that TOML file; values here match it.
@@ -12,6 +12,8 @@
 //! - ADR 0067: Bundle E stream IO sugar (`stdin-slurp`, `write-range`, `buf-rev`).
 //! - ADR 0068: Bundle F ASCII case (`ascii-tolower`, `ascii-toupper`) and
 //!   classification (`ascii-is-alpha`, `ascii-is-digit`, `ascii-is-space`).
+//! - ADR 0069: Bundle G UTF-8 codepoint primitives (`utf8-decode`,
+//!   `utf8-encode`, `utf8-len`).
 
 use crate::ty::{EffAtom, EffSet, FnEff, Ty};
 
@@ -102,6 +104,12 @@ pub fn prim_type(name: &str) -> Option<Ty> {
         "ascii-is-digit" => fn1_pure(Ty::Int, Ty::Int),
         // ASCII-CLASS: ascii-is-space(b: Int) -> Int (pure, ADR 0068)
         "ascii-is-space" => fn1_pure(Ty::Int, Ty::Int),
+        // UTF8: utf8-decode(buf: Buf, off: Int) -> Int (pure, ADR 0069)
+        "utf8-decode" => fn2_pure(Ty::Buf, Ty::Int, Ty::Int),
+        // UTF8: utf8-encode(buf: Buf, off: Int, cp: Int) -> Int / {Mut} (ADR 0069)
+        "utf8-encode" => fn3_mut(Ty::Buf, Ty::Int, Ty::Int, Ty::Int),
+        // UTF8: utf8-len(cp: Int) -> Int (pure, ADR 0069)
+        "utf8-len" => fn1_pure(Ty::Int, Ty::Int),
         // ARITH: Int → Int → Int (pure)
         "add" | "sub" | "mul" | "div" | "mod" => fn2_pure(Ty::Int, Ty::Int, Ty::Int),
         // CMP: Int → Int → Bool (pure, ADR 0042)
@@ -153,6 +161,7 @@ pub fn is_mut_prim(name: &str) -> bool {
             | "dedup-adjacent-ranges"
             | "stdin-slurp"
             | "buf-rev"
+            | "utf8-encode"
     )
 }
 
@@ -806,6 +815,72 @@ mod tests {
             assert!(!is_mut_prim(name), "{name} should not be Mut");
             assert!(!is_alloc_prim(name), "{name} should not be Alloc");
         }
+    }
+
+    #[test]
+    fn utf8_decode_is_pure_buf_int_to_int() {
+        let t = prim_type("utf8-decode").unwrap();
+        // utf8-decode :: Buf → Int → Int (pure)
+        if let Ty::Fn(a, mid, e1) = &t {
+            assert_eq!(a.as_ref(), &Ty::Buf);
+            assert_eq!(e1, &FnEff::pure_());
+            if let Ty::Fn(b, r, e2) = mid.as_ref() {
+                assert_eq!(b.as_ref(), &Ty::Int);
+                assert_eq!(r.as_ref(), &Ty::Int);
+                assert_eq!(e2, &FnEff::pure_());
+                return;
+            }
+        }
+        panic!("unexpected type shape for utf8-decode");
+    }
+
+    #[test]
+    fn utf8_encode_has_mut_at_innermost() {
+        let t = prim_type("utf8-encode").unwrap();
+        // utf8-encode :: Buf → Int → Int → Int / {Mut}
+        fn args_and_eff(t: &Ty, args: &mut Vec<Ty>) -> FnEff {
+            match t {
+                Ty::Fn(a, b, eff) => {
+                    args.push(a.as_ref().clone());
+                    if matches!(b.as_ref(), Ty::Fn(_, _, _)) {
+                        args_and_eff(b, args)
+                    } else {
+                        eff.clone()
+                    }
+                }
+                _ => panic!("not a Fn"),
+            }
+        }
+        let mut args = Vec::new();
+        let eff = args_and_eff(&t, &mut args);
+        assert_eq!(args, vec![Ty::Buf, Ty::Int, Ty::Int]);
+        assert_eq!(eff, FnEff::from_set(EffSet::of([EffAtom::Mut])));
+    }
+
+    #[test]
+    fn utf8_len_is_pure_int_to_int() {
+        let t = prim_type("utf8-len").unwrap();
+        match &t {
+            Ty::Fn(a, r, eff) => {
+                assert_eq!(a.as_ref(), &Ty::Int);
+                assert_eq!(r.as_ref(), &Ty::Int);
+                assert_eq!(eff, &FnEff::pure_());
+            }
+            _ => panic!("expected Fn for utf8-len"),
+        }
+    }
+
+    #[test]
+    fn bundle_g_classification() {
+        assert!(!is_io_prim("utf8-decode"));
+        assert!(!is_io_prim("utf8-encode"));
+        assert!(!is_io_prim("utf8-len"));
+        assert!(!is_mut_prim("utf8-decode"));
+        assert!(is_mut_prim("utf8-encode"));
+        assert!(!is_mut_prim("utf8-len"));
+        assert!(!is_alloc_prim("utf8-decode"));
+        assert!(!is_alloc_prim("utf8-encode"));
+        assert!(!is_alloc_prim("utf8-len"));
     }
 
     #[test]

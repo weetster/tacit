@@ -581,3 +581,56 @@ fn ascii_class_extended_inputs_return_zero() {
     assert_eq!(out, b"000000000");
     assert_eq!(code, 0);
 }
+
+// ── Bundle G: UTF-8 codepoint primitives (ADR 0069) ──────────────────────────
+
+#[test]
+fn utf8_decode_each_width() {
+    // Decode 1, 2, 3, 4-byte sequences for U+0041, U+00E9, U+4E2D, U+1F600.
+    // Each test asserts packed = cp*8 + byte_len; exit count = 4 if all four pass.
+    let (out, code) = run_p3("p3-utf8-decode-widths");
+    assert!(out.is_empty());
+    assert_eq!(code, 4);
+}
+
+#[test]
+fn utf8_decode_returns_zero_for_invalid_inputs() {
+    // Five malformed byte sequences must each decode to 0:
+    //   lone continuation 0x80, overlong U+0000 (0xC0 0x80),
+    //   truncated 4-byte (0xF0 0x9F 0x00 0x00),
+    //   surrogate U+D800 (0xED 0xA0 0x80),
+    //   above-Unicode (0xF4 0x90 0x80 0x80 → cp 0x110000).
+    let (out, code) = run_p3("p3-utf8-decode-invalid");
+    assert!(out.is_empty());
+    assert_eq!(code, 5);
+}
+
+#[test]
+fn utf8_encode_round_trips_each_width() {
+    // Encode U+0041, U+00E9, U+4E2D, U+1F600 into a 10-byte buffer and write
+    // it back; exit code = 1+2+3+4 = 10 if every encode returned its width.
+    let (out, code) = run_p3("p3-utf8-encode-roundtrip");
+    assert_eq!(
+        out,
+        &[0x41u8, 0xC3, 0xA9, 0xE4, 0xB8, 0xAD, 0xF0, 0x9F, 0x98, 0x80][..]
+    );
+    assert_eq!(code, 10);
+}
+
+#[test]
+fn utf8_encode_rejects_invalid_codepoints_without_writing() {
+    // -1, 0xD800 (surrogate), and 0x110000 (above Unicode) must each return 0
+    // and leave the sentinel buffer "cccc" untouched.
+    let (out, code) = run_p3("p3-utf8-encode-invalid");
+    assert_eq!(out, b"cccc");
+    assert_eq!(code, 0);
+}
+
+#[test]
+fn utf8_len_agrees_with_encode_and_rejects_invalid() {
+    // utf8-len returns 1..=4 for each valid codepoint and 0 for invalid;
+    // exit count = 7 if all seven assertions hold.
+    let (out, code) = run_p3("p3-utf8-len");
+    assert!(out.is_empty());
+    assert_eq!(code, 7);
+}

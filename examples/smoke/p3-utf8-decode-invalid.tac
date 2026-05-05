@@ -1,0 +1,25 @@
+let b1 = @buf-alloc 1 in
+let _ = @buf-set b1 0 128 in
+let r1 = @eq (@utf8-decode b1 0) 0 in
+let b2 = @buf-alloc 2 in
+let _ = @buf-set b2 0 192 in
+let _ = @buf-set b2 1 128 in
+let r2 = @eq (@utf8-decode b2 0) 0 in
+let b3 = @buf-alloc 4 in
+let _ = @buf-set b3 0 240 in
+let _ = @buf-set b3 1 159 in
+let _ = @buf-set b3 2 0 in
+let _ = @buf-set b3 3 0 in
+let r3 = @eq (@utf8-decode b3 0) 0 in
+let b4 = @buf-alloc 3 in
+let _ = @buf-set b4 0 237 in
+let _ = @buf-set b4 1 160 in
+let _ = @buf-set b4 2 128 in
+let r4 = @eq (@utf8-decode b4 0) 0 in
+let b5 = @buf-alloc 4 in
+let _ = @buf-set b5 0 244 in
+let _ = @buf-set b5 1 144 in
+let _ = @buf-set b5 2 128 in
+let _ = @buf-set b5 3 128 in
+let r5 = @eq (@utf8-decode b5 0) 0 in
+@add r1 (@add r2 (@add r3 (@add r4 r5)))

@@ -1,4 +1,4 @@
-//! `@name` primitive allowlist and classification (ADR 0028, 0030, 0038, 0047, 0061, 0062, 0063, 0064, 0067, 0068).
+//! `@name` primitive allowlist and classification (ADR 0028, 0030, 0038, 0047, 0061, 0062, 0063, 0064, 0067, 0068, 0069).
 //!
 //! Categories per ADR 0028 + 0030 + 0038 + 0047:
 //! - LIBC: external libc call (`write`, `read`, `exit`).
@@ -20,6 +20,7 @@
 //! - BUF-MUT: in-place byte-range mutation helpers (ADR 0067).
 //! - ASCII-CASE: pure ASCII case shifts (ADR 0068).
 //! - ASCII-CLASS: pure ASCII character classification predicates (ADR 0068).
+//! - UTF8: codepoint decode/encode/length helpers (ADR 0069).
 //!
 //! Codegen pattern-matches an `App` left-spine whose head is `Sym(name)`,
 //! looks up `name` here, collects right-spine args, and emits accordingly.
@@ -99,6 +100,14 @@ pub enum PrimKind {
     AsciiIsDigit,
     /// ASCII classification: 1 if TAB, LF, VT, FF, CR, or SP, else 0 (ADR 0068).
     AsciiIsSpace,
+    /// UTF-8 decode one codepoint (ADR 0069): `buf off → i64`,
+    /// returns packed `cp * 8 + byte_len` or 0 on invalid.
+    Utf8Decode,
+    /// UTF-8 encode one codepoint (ADR 0069): `buf off cp → i64`,
+    /// returns bytes written (1..=4) or 0 if `cp` is invalid.
+    Utf8Encode,
+    /// UTF-8 byte length of a codepoint (ADR 0069): `cp → i64` in 1..=4 or 0 on invalid.
+    Utf8Len,
     /// Binary `i64 → i64 → i64` arithmetic, lowering as a single LLVM op.
     Arith(ArithOp),
     /// Binary `i64 → i64 → i64` comparison: emits `icmp` + `zext`.
@@ -163,6 +172,9 @@ impl PrimKind {
             "ascii-is-alpha" => PrimKind::AsciiIsAlpha,
             "ascii-is-digit" => PrimKind::AsciiIsDigit,
             "ascii-is-space" => PrimKind::AsciiIsSpace,
+            "utf8-decode" => PrimKind::Utf8Decode,
+            "utf8-encode" => PrimKind::Utf8Encode,
+            "utf8-len" => PrimKind::Utf8Len,
             "add" => PrimKind::Arith(ArithOp::Add),
             "sub" => PrimKind::Arith(ArithOp::Sub),
             "mul" => PrimKind::Arith(ArithOp::Mul),
@@ -190,9 +202,10 @@ impl PrimKind {
             | PrimKind::AsciiToupper
             | PrimKind::AsciiIsAlpha
             | PrimKind::AsciiIsDigit
-            | PrimKind::AsciiIsSpace => 1,
+            | PrimKind::AsciiIsSpace
+            | PrimKind::Utf8Len => 1,
             PrimKind::BufGet | PrimKind::I64Get | PrimKind::RangeStart | PrimKind::RangeLen => 2,
-            PrimKind::SortI64 | PrimKind::StdinSlurp => 2,
+            PrimKind::SortI64 | PrimKind::StdinSlurp | PrimKind::Utf8Decode => 2,
             PrimKind::BufSet
             | PrimKind::ParseI64
             | PrimKind::FmtI64
@@ -202,7 +215,8 @@ impl PrimKind {
             | PrimKind::SortRangesByBytes
             | PrimKind::StableSortPairsI64
             | PrimKind::LowerBoundI64
-            | PrimKind::BufRev => 3,
+            | PrimKind::BufRev
+            | PrimKind::Utf8Encode => 3,
             PrimKind::ScanByte
             | PrimKind::CountEqualRanges
             | PrimKind::DedupAdjacentRanges
@@ -325,6 +339,9 @@ mod tests {
             PrimKind::lookup("ascii-is-space"),
             Some(PrimKind::AsciiIsSpace)
         );
+        assert_eq!(PrimKind::lookup("utf8-decode"), Some(PrimKind::Utf8Decode));
+        assert_eq!(PrimKind::lookup("utf8-encode"), Some(PrimKind::Utf8Encode));
+        assert_eq!(PrimKind::lookup("utf8-len"), Some(PrimKind::Utf8Len));
     }
 
     #[test]
@@ -364,6 +381,9 @@ mod tests {
         assert_eq!(PrimKind::AsciiIsAlpha.arity(), 1);
         assert_eq!(PrimKind::AsciiIsDigit.arity(), 1);
         assert_eq!(PrimKind::AsciiIsSpace.arity(), 1);
+        assert_eq!(PrimKind::Utf8Decode.arity(), 2);
+        assert_eq!(PrimKind::Utf8Encode.arity(), 3);
+        assert_eq!(PrimKind::Utf8Len.arity(), 1);
         assert_eq!(PrimKind::Arith(ArithOp::Add).arity(), 2);
         assert_eq!(PrimKind::Cmp(CmpOp::Lt).arity(), 2);
     }

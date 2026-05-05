@@ -602,6 +602,9 @@ impl<'ctx> Compiler<'ctx> {
             PrimKind::AsciiIsAlpha => self.emit_ascii_is_alpha(args, env, cur_fn),
             PrimKind::AsciiIsDigit => self.emit_ascii_is_digit(args, env, cur_fn),
             PrimKind::AsciiIsSpace => self.emit_ascii_is_space(args, env, cur_fn),
+            PrimKind::Utf8Decode => self.emit_utf8_decode(args, env, cur_fn),
+            PrimKind::Utf8Encode => self.emit_utf8_encode(args, env, cur_fn),
+            PrimKind::Utf8Len => self.emit_utf8_len(args, env, cur_fn),
         }
     }
 
@@ -2826,6 +2829,802 @@ impl<'ctx> Compiler<'ctx> {
         self.builder
             .build_int_z_extend(any, i64_t, "is_res")
             .map_err(|e| CodegenError::Llvm(e.to_string()))
+    }
+
+    /// `@utf8-decode buf off` → decode one UTF-8 codepoint and return packed
+    /// `cp * 8 + byte_len`, or 0 on malformed input (ADR 0069).
+    ///
+    /// Branches on the lead byte's high bits, validates each continuation
+    /// byte against `10xxxxxx`, rejects overlong encodings, surrogate
+    /// codepoints (0xD800..=0xDFFF), and codepoints above 0x10FFFF.
+    fn emit_utf8_decode(
+        &mut self,
+        args: &[&Node],
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<IntValue<'ctx>> {
+        let buf = self.compile_buf_ptr_arg(args[0], env)?;
+        let off = self.compile_expr(args[1], env, cur_fn)?;
+
+        let i64_t = self.context.i64_type();
+        let zero64 = i64_t.const_zero();
+        let one64 = i64_t.const_int(1, false);
+        let two64 = i64_t.const_int(2, false);
+        let three64 = i64_t.const_int(3, false);
+        let four64 = i64_t.const_int(4, false);
+        let eight64 = i64_t.const_int(8, false);
+        let mask_3f = i64_t.const_int(0x3F, false);
+        let mask_c0 = i64_t.const_int(0xC0, false);
+        let cont_marker = i64_t.const_int(0x80, false);
+
+        let lead_b0 = self.load_byte(buf, off, "ud_b0")?;
+
+        // Block layout: dispatch ladder + per-width validate/compute + final phi.
+        let ascii_bb = self.context.append_basic_block(cur_fn, "ud_ascii");
+        let dispatch_2plus_bb = self.context.append_basic_block(cur_fn, "ud_2plus");
+        let lead_2or_more_bb = self.context.append_basic_block(cur_fn, "ud_2orMore");
+        let decode_2_bb = self.context.append_basic_block(cur_fn, "ud_dec2");
+        let compute_2_bb = self.context.append_basic_block(cur_fn, "ud_cmp2");
+        let accept_2_bb = self.context.append_basic_block(cur_fn, "ud_acc2");
+        let lead_3or_more_bb = self.context.append_basic_block(cur_fn, "ud_3orMore");
+        let decode_3_bb = self.context.append_basic_block(cur_fn, "ud_dec3");
+        let compute_3_bb = self.context.append_basic_block(cur_fn, "ud_cmp3");
+        let accept_3_bb = self.context.append_basic_block(cur_fn, "ud_acc3");
+        let lead_4_bb = self.context.append_basic_block(cur_fn, "ud_4");
+        let decode_4_bb = self.context.append_basic_block(cur_fn, "ud_dec4");
+        let compute_4_bb = self.context.append_basic_block(cur_fn, "ud_cmp4");
+        let accept_4_bb = self.context.append_basic_block(cur_fn, "ud_acc4");
+        let malformed_bb = self.context.append_basic_block(cur_fn, "ud_malformed");
+        let exit_bb = self.context.append_basic_block(cur_fn, "ud_exit");
+
+        // entry: ASCII (b0 < 0x80)?
+        let is_ascii = self
+            .builder
+            .build_int_compare(IntPredicate::ULT, lead_b0, cont_marker, "ud_is_ascii")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(is_ascii, ascii_bb, dispatch_2plus_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        // ascii_bb: result = b0 * 8 + 1
+        self.builder.position_at_end(ascii_bb);
+        let result_ascii_mul = self
+            .builder
+            .build_int_nsw_mul(lead_b0, eight64, "ud_ascii_cp")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let result_ascii = self
+            .builder
+            .build_int_nsw_add(result_ascii_mul, one64, "ud_ascii_res")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_unconditional_branch(exit_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        // dispatch_2plus_bb: lone continuation? (b0 < 0xC0 ⇒ in 0x80..=0xBF)
+        self.builder.position_at_end(dispatch_2plus_bb);
+        let is_lone_cont = self
+            .builder
+            .build_int_compare(IntPredicate::ULT, lead_b0, mask_c0, "ud_lone_cont")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(is_lone_cont, malformed_bb, lead_2or_more_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        // lead_2or_more_bb: 2-byte? (b0 < 0xE0 ⇒ in 0xC0..=0xDF)
+        self.builder.position_at_end(lead_2or_more_bb);
+        let lead_3plus_threshold = i64_t.const_int(0xE0, false);
+        let is_2 = self
+            .builder
+            .build_int_compare(IntPredicate::ULT, lead_b0, lead_3plus_threshold, "ud_is_2")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(is_2, decode_2_bb, lead_3or_more_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        // decode_2_bb: read b1, validate 10xxxxxx
+        self.builder.position_at_end(decode_2_bb);
+        let off_plus_1 = self
+            .builder
+            .build_int_nsw_add(off, one64, "ud_off1")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let b1_2 = self.load_byte(buf, off_plus_1, "ud_b1_2")?;
+        let cont1_2_ok = self.utf8_continuation_ok(b1_2, mask_c0, cont_marker, "ud_c1_2")?;
+        self.builder
+            .build_conditional_branch(cont1_2_ok, compute_2_bb, malformed_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        // compute_2_bb: cp = ((b0 & 0x1F) << 6) | (b1 & 0x3F); reject overlong
+        self.builder.position_at_end(compute_2_bb);
+        let mask_1f = i64_t.const_int(0x1F, false);
+        let six64 = i64_t.const_int(6, false);
+        let b0_low_2 = self
+            .builder
+            .build_and(lead_b0, mask_1f, "ud_b0lo_2")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let b0_shift_2 = self
+            .builder
+            .build_left_shift(b0_low_2, six64, "ud_b0sh_2")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let b1_low_2 = self
+            .builder
+            .build_and(b1_2, mask_3f, "ud_b1lo_2")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let cp_2 = self
+            .builder
+            .build_or(b0_shift_2, b1_low_2, "ud_cp_2")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let min_2 = i64_t.const_int(0x80, false);
+        let not_overlong_2 = self
+            .builder
+            .build_int_compare(IntPredicate::SGE, cp_2, min_2, "ud_not_over_2")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(not_overlong_2, accept_2_bb, malformed_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        // accept_2_bb: result = cp * 8 + 2
+        self.builder.position_at_end(accept_2_bb);
+        let cp_2_mul = self
+            .builder
+            .build_int_nsw_mul(cp_2, eight64, "ud_cp2_mul")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let result_2 = self
+            .builder
+            .build_int_nsw_add(cp_2_mul, two64, "ud_res_2")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_unconditional_branch(exit_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        // lead_3or_more_bb: 3-byte? (b0 < 0xF0 ⇒ in 0xE0..=0xEF)
+        self.builder.position_at_end(lead_3or_more_bb);
+        let lead_4plus_threshold = i64_t.const_int(0xF0, false);
+        let is_3 = self
+            .builder
+            .build_int_compare(IntPredicate::ULT, lead_b0, lead_4plus_threshold, "ud_is_3")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(is_3, decode_3_bb, lead_4_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        // decode_3_bb: read b1, b2 and validate both
+        self.builder.position_at_end(decode_3_bb);
+        let off_plus_1_b3 = self
+            .builder
+            .build_int_nsw_add(off, one64, "ud_off1_b3")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let off_plus_2_b3 = self
+            .builder
+            .build_int_nsw_add(off, two64, "ud_off2_b3")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let b1_3 = self.load_byte(buf, off_plus_1_b3, "ud_b1_3")?;
+        let b2_3 = self.load_byte(buf, off_plus_2_b3, "ud_b2_3")?;
+        let c1_3 = self.utf8_continuation_ok(b1_3, mask_c0, cont_marker, "ud_c1_3")?;
+        let c2_3 = self.utf8_continuation_ok(b2_3, mask_c0, cont_marker, "ud_c2_3")?;
+        let conts_3_ok = self
+            .builder
+            .build_and(c1_3, c2_3, "ud_conts_3")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(conts_3_ok, compute_3_bb, malformed_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        // compute_3_bb: assemble cp; reject overlong (<0x800) and surrogates (0xD800..=0xDFFF)
+        self.builder.position_at_end(compute_3_bb);
+        let mask_0f = i64_t.const_int(0x0F, false);
+        let twelve64 = i64_t.const_int(12, false);
+        let b0_low_3 = self
+            .builder
+            .build_and(lead_b0, mask_0f, "ud_b0lo_3")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let b0_shift_3 = self
+            .builder
+            .build_left_shift(b0_low_3, twelve64, "ud_b0sh_3")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let b1_low_3 = self
+            .builder
+            .build_and(b1_3, mask_3f, "ud_b1lo_3")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let b1_shift_3 = self
+            .builder
+            .build_left_shift(b1_low_3, six64, "ud_b1sh_3")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let b2_low_3 = self
+            .builder
+            .build_and(b2_3, mask_3f, "ud_b2lo_3")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let cp_3_partial = self
+            .builder
+            .build_or(b0_shift_3, b1_shift_3, "ud_cp3_p")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let cp_3 = self
+            .builder
+            .build_or(cp_3_partial, b2_low_3, "ud_cp_3")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let min_3 = i64_t.const_int(0x800, false);
+        let surrogate_lo = i64_t.const_int(0xD800, false);
+        let surrogate_hi = i64_t.const_int(0xDFFF, false);
+        let not_overlong_3 = self
+            .builder
+            .build_int_compare(IntPredicate::SGE, cp_3, min_3, "ud_not_over_3")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let ge_surrogate = self
+            .builder
+            .build_int_compare(IntPredicate::SGE, cp_3, surrogate_lo, "ud_ge_sur")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let le_surrogate = self
+            .builder
+            .build_int_compare(IntPredicate::SLE, cp_3, surrogate_hi, "ud_le_sur")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let is_surrogate = self
+            .builder
+            .build_and(ge_surrogate, le_surrogate, "ud_is_sur")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let not_surrogate = self
+            .builder
+            .build_not(is_surrogate, "ud_not_sur")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let ok_3 = self
+            .builder
+            .build_and(not_overlong_3, not_surrogate, "ud_ok_3")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(ok_3, accept_3_bb, malformed_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        // accept_3_bb: result = cp * 8 + 3
+        self.builder.position_at_end(accept_3_bb);
+        let cp_3_mul = self
+            .builder
+            .build_int_nsw_mul(cp_3, eight64, "ud_cp3_mul")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let result_3 = self
+            .builder
+            .build_int_nsw_add(cp_3_mul, three64, "ud_res_3")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_unconditional_branch(exit_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        // lead_4_bb: 4-byte? (b0 < 0xF8 ⇒ in 0xF0..=0xF7); else malformed
+        self.builder.position_at_end(lead_4_bb);
+        let lead_5plus_threshold = i64_t.const_int(0xF8, false);
+        let is_4 = self
+            .builder
+            .build_int_compare(IntPredicate::ULT, lead_b0, lead_5plus_threshold, "ud_is_4")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(is_4, decode_4_bb, malformed_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        // decode_4_bb: read b1, b2, b3; validate
+        self.builder.position_at_end(decode_4_bb);
+        let off_plus_1_b4 = self
+            .builder
+            .build_int_nsw_add(off, one64, "ud_off1_b4")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let off_plus_2_b4 = self
+            .builder
+            .build_int_nsw_add(off, two64, "ud_off2_b4")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let off_plus_3_b4 = self
+            .builder
+            .build_int_nsw_add(off, three64, "ud_off3_b4")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let b1_4 = self.load_byte(buf, off_plus_1_b4, "ud_b1_4")?;
+        let b2_4 = self.load_byte(buf, off_plus_2_b4, "ud_b2_4")?;
+        let b3_4 = self.load_byte(buf, off_plus_3_b4, "ud_b3_4")?;
+        let c1_4 = self.utf8_continuation_ok(b1_4, mask_c0, cont_marker, "ud_c1_4")?;
+        let c2_4 = self.utf8_continuation_ok(b2_4, mask_c0, cont_marker, "ud_c2_4")?;
+        let c3_4 = self.utf8_continuation_ok(b3_4, mask_c0, cont_marker, "ud_c3_4")?;
+        let c12_4 = self
+            .builder
+            .build_and(c1_4, c2_4, "ud_c12_4")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let conts_4_ok = self
+            .builder
+            .build_and(c12_4, c3_4, "ud_conts_4")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(conts_4_ok, compute_4_bb, malformed_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        // compute_4_bb: assemble cp; require 0x10000 <= cp <= 0x10FFFF
+        self.builder.position_at_end(compute_4_bb);
+        let mask_07 = i64_t.const_int(0x07, false);
+        let eighteen64 = i64_t.const_int(18, false);
+        let b0_low_4 = self
+            .builder
+            .build_and(lead_b0, mask_07, "ud_b0lo_4")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let b0_shift_4 = self
+            .builder
+            .build_left_shift(b0_low_4, eighteen64, "ud_b0sh_4")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let b1_low_4 = self
+            .builder
+            .build_and(b1_4, mask_3f, "ud_b1lo_4")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let b1_shift_4 = self
+            .builder
+            .build_left_shift(b1_low_4, twelve64, "ud_b1sh_4")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let b2_low_4 = self
+            .builder
+            .build_and(b2_4, mask_3f, "ud_b2lo_4")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let b2_shift_4 = self
+            .builder
+            .build_left_shift(b2_low_4, six64, "ud_b2sh_4")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let b3_low_4 = self
+            .builder
+            .build_and(b3_4, mask_3f, "ud_b3lo_4")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let cp_4_p1 = self
+            .builder
+            .build_or(b0_shift_4, b1_shift_4, "ud_cp4_p1")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let cp_4_p2 = self
+            .builder
+            .build_or(cp_4_p1, b2_shift_4, "ud_cp4_p2")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let cp_4 = self
+            .builder
+            .build_or(cp_4_p2, b3_low_4, "ud_cp_4")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let min_4 = i64_t.const_int(0x10000, false);
+        let max_cp = i64_t.const_int(0x10FFFF, false);
+        let ge_min_4 = self
+            .builder
+            .build_int_compare(IntPredicate::SGE, cp_4, min_4, "ud_ge_min_4")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let le_max_4 = self
+            .builder
+            .build_int_compare(IntPredicate::SLE, cp_4, max_cp, "ud_le_max_4")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let in_range_4 = self
+            .builder
+            .build_and(ge_min_4, le_max_4, "ud_in_range_4")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(in_range_4, accept_4_bb, malformed_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        // accept_4_bb: result = cp * 8 + 4
+        self.builder.position_at_end(accept_4_bb);
+        let cp_4_mul = self
+            .builder
+            .build_int_nsw_mul(cp_4, eight64, "ud_cp4_mul")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let result_4 = self
+            .builder
+            .build_int_nsw_add(cp_4_mul, four64, "ud_res_4")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_unconditional_branch(exit_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        // malformed_bb: result = 0
+        self.builder.position_at_end(malformed_bb);
+        self.builder
+            .build_unconditional_branch(exit_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        // exit_bb: phi over the five accept paths + malformed sentinel
+        self.builder.position_at_end(exit_bb);
+        let res_phi = self
+            .builder
+            .build_phi(i64_t, "ud_res")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        res_phi.add_incoming(&[
+            (&result_ascii as &dyn BasicValue<'ctx>, ascii_bb),
+            (&result_2 as &dyn BasicValue<'ctx>, accept_2_bb),
+            (&result_3 as &dyn BasicValue<'ctx>, accept_3_bb),
+            (&result_4 as &dyn BasicValue<'ctx>, accept_4_bb),
+            (&zero64 as &dyn BasicValue<'ctx>, malformed_bb),
+        ]);
+        Ok(res_phi.as_basic_value().into_int_value())
+    }
+
+    /// Helper for UTF-8 continuation-byte validation: `(b & 0xC0) == 0x80`.
+    fn utf8_continuation_ok(
+        &mut self,
+        b: IntValue<'ctx>,
+        mask_c0: IntValue<'ctx>,
+        cont_marker: IntValue<'ctx>,
+        name: &str,
+    ) -> Result<IntValue<'ctx>> {
+        let masked = self
+            .builder
+            .build_and(b, mask_c0, name)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_int_compare(IntPredicate::EQ, masked, cont_marker, name)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))
+    }
+
+    /// `@utf8-encode buf off cp` → write the UTF-8 encoding of `cp` to
+    /// `buf[off..off+n)` and return `n`. Returns 0 without writing for
+    /// invalid codepoints (negative, surrogate, > 0x10FFFF). (ADR 0069)
+    fn emit_utf8_encode(
+        &mut self,
+        args: &[&Node],
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<IntValue<'ctx>> {
+        let buf = self.compile_buf_ptr_arg(args[0], env)?;
+        let off = self.compile_expr(args[1], env, cur_fn)?;
+        let cp = self.compile_expr(args[2], env, cur_fn)?;
+
+        let i64_t = self.context.i64_type();
+        let zero64 = i64_t.const_zero();
+        let one64 = i64_t.const_int(1, false);
+        let two64 = i64_t.const_int(2, false);
+        let three64 = i64_t.const_int(3, false);
+        let four64 = i64_t.const_int(4, false);
+        let mask_3f = i64_t.const_int(0x3F, false);
+        let cont_marker = i64_t.const_int(0x80, false);
+
+        let valid_bb = self.context.append_basic_block(cur_fn, "ue_valid");
+        let reject_bb = self.context.append_basic_block(cur_fn, "ue_reject");
+        let try_2_bb = self.context.append_basic_block(cur_fn, "ue_try2");
+        let try_3_bb = self.context.append_basic_block(cur_fn, "ue_try3");
+        let enc1_bb = self.context.append_basic_block(cur_fn, "ue_enc1");
+        let enc2_bb = self.context.append_basic_block(cur_fn, "ue_enc2");
+        let enc3_bb = self.context.append_basic_block(cur_fn, "ue_enc3");
+        let enc4_bb = self.context.append_basic_block(cur_fn, "ue_enc4");
+        let exit_bb = self.context.append_basic_block(cur_fn, "ue_exit");
+
+        // Validity gate: cp ≥ 0 && cp ≤ 0x10FFFF && !(0xD800 ≤ cp ≤ 0xDFFF)
+        let max_cp = i64_t.const_int(0x10FFFF, false);
+        let surrogate_lo = i64_t.const_int(0xD800, false);
+        let surrogate_hi = i64_t.const_int(0xDFFF, false);
+        let cp_neg = self
+            .builder
+            .build_int_compare(IntPredicate::SLT, cp, zero64, "ue_neg")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let cp_too_high = self
+            .builder
+            .build_int_compare(IntPredicate::SGT, cp, max_cp, "ue_too_high")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let ge_sur = self
+            .builder
+            .build_int_compare(IntPredicate::SGE, cp, surrogate_lo, "ue_ge_sur")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let le_sur = self
+            .builder
+            .build_int_compare(IntPredicate::SLE, cp, surrogate_hi, "ue_le_sur")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let is_sur = self
+            .builder
+            .build_and(ge_sur, le_sur, "ue_is_sur")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let invalid_low = self
+            .builder
+            .build_or(cp_neg, cp_too_high, "ue_inv_lo")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let invalid = self
+            .builder
+            .build_or(invalid_low, is_sur, "ue_invalid")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(invalid, reject_bb, valid_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        // valid_bb: ladder on cp size.
+        self.builder.position_at_end(valid_bb);
+        let thresh_2 = i64_t.const_int(0x80, false);
+        let cp_lt_2 = self
+            .builder
+            .build_int_compare(IntPredicate::SLT, cp, thresh_2, "ue_lt_80")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(cp_lt_2, enc1_bb, try_2_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        // try_2_bb
+        self.builder.position_at_end(try_2_bb);
+        let thresh_3 = i64_t.const_int(0x800, false);
+        let cp_lt_3 = self
+            .builder
+            .build_int_compare(IntPredicate::SLT, cp, thresh_3, "ue_lt_800")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(cp_lt_3, enc2_bb, try_3_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        // try_3_bb
+        self.builder.position_at_end(try_3_bb);
+        let thresh_4 = i64_t.const_int(0x10000, false);
+        let cp_lt_4 = self
+            .builder
+            .build_int_compare(IntPredicate::SLT, cp, thresh_4, "ue_lt_10000")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(cp_lt_4, enc3_bb, enc4_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        // enc1_bb: buf[off] = cp; return 1
+        self.builder.position_at_end(enc1_bb);
+        self.store_byte(buf, off, cp)?;
+        self.builder
+            .build_unconditional_branch(exit_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        // enc2_bb
+        self.builder.position_at_end(enc2_bb);
+        let six64 = i64_t.const_int(6, false);
+        let lead2_pre = self
+            .builder
+            .build_right_shift(cp, six64, false, "ue2_pre")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let mask_c0_marker = i64_t.const_int(0xC0, false);
+        let lead2 = self
+            .builder
+            .build_or(lead2_pre, mask_c0_marker, "ue2_lead")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let cont2_low = self
+            .builder
+            .build_and(cp, mask_3f, "ue2_clo")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let cont2 = self
+            .builder
+            .build_or(cont2_low, cont_marker, "ue2_cont")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let off_plus_1_e2 = self
+            .builder
+            .build_int_nsw_add(off, one64, "ue2_off1")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.store_byte(buf, off, lead2)?;
+        self.store_byte(buf, off_plus_1_e2, cont2)?;
+        self.builder
+            .build_unconditional_branch(exit_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        // enc3_bb
+        self.builder.position_at_end(enc3_bb);
+        let twelve64 = i64_t.const_int(12, false);
+        let lead3_pre = self
+            .builder
+            .build_right_shift(cp, twelve64, false, "ue3_pre")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let mask_e0_marker = i64_t.const_int(0xE0, false);
+        let lead3 = self
+            .builder
+            .build_or(lead3_pre, mask_e0_marker, "ue3_lead")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let mid3_pre = self
+            .builder
+            .build_right_shift(cp, six64, false, "ue3_midpre")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let mid3_low = self
+            .builder
+            .build_and(mid3_pre, mask_3f, "ue3_midlo")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let mid3 = self
+            .builder
+            .build_or(mid3_low, cont_marker, "ue3_mid")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let cont3_low = self
+            .builder
+            .build_and(cp, mask_3f, "ue3_clo")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let cont3 = self
+            .builder
+            .build_or(cont3_low, cont_marker, "ue3_cont")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let off_plus_1_e3 = self
+            .builder
+            .build_int_nsw_add(off, one64, "ue3_off1")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let off_plus_2_e3 = self
+            .builder
+            .build_int_nsw_add(off, two64, "ue3_off2")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.store_byte(buf, off, lead3)?;
+        self.store_byte(buf, off_plus_1_e3, mid3)?;
+        self.store_byte(buf, off_plus_2_e3, cont3)?;
+        self.builder
+            .build_unconditional_branch(exit_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        // enc4_bb
+        self.builder.position_at_end(enc4_bb);
+        let eighteen64 = i64_t.const_int(18, false);
+        let lead4_pre = self
+            .builder
+            .build_right_shift(cp, eighteen64, false, "ue4_pre")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let mask_f0_marker = i64_t.const_int(0xF0, false);
+        let lead4 = self
+            .builder
+            .build_or(lead4_pre, mask_f0_marker, "ue4_lead")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let mid_a_pre = self
+            .builder
+            .build_right_shift(cp, twelve64, false, "ue4_apre")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let mid_a_low = self
+            .builder
+            .build_and(mid_a_pre, mask_3f, "ue4_alo")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let mid_a = self
+            .builder
+            .build_or(mid_a_low, cont_marker, "ue4_a")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let mid_b_pre = self
+            .builder
+            .build_right_shift(cp, six64, false, "ue4_bpre")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let mid_b_low = self
+            .builder
+            .build_and(mid_b_pre, mask_3f, "ue4_blo")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let mid_b = self
+            .builder
+            .build_or(mid_b_low, cont_marker, "ue4_b")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let cont4_low = self
+            .builder
+            .build_and(cp, mask_3f, "ue4_clo")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let cont4 = self
+            .builder
+            .build_or(cont4_low, cont_marker, "ue4_c")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let off_plus_1_e4 = self
+            .builder
+            .build_int_nsw_add(off, one64, "ue4_off1")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let off_plus_2_e4 = self
+            .builder
+            .build_int_nsw_add(off, two64, "ue4_off2")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let off_plus_3_e4 = self
+            .builder
+            .build_int_nsw_add(off, three64, "ue4_off3")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.store_byte(buf, off, lead4)?;
+        self.store_byte(buf, off_plus_1_e4, mid_a)?;
+        self.store_byte(buf, off_plus_2_e4, mid_b)?;
+        self.store_byte(buf, off_plus_3_e4, cont4)?;
+        self.builder
+            .build_unconditional_branch(exit_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        // reject_bb
+        self.builder.position_at_end(reject_bb);
+        self.builder
+            .build_unconditional_branch(exit_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        // exit_bb
+        self.builder.position_at_end(exit_bb);
+        let res_phi = self
+            .builder
+            .build_phi(i64_t, "ue_res")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        res_phi.add_incoming(&[
+            (&one64 as &dyn BasicValue<'ctx>, enc1_bb),
+            (&two64 as &dyn BasicValue<'ctx>, enc2_bb),
+            (&three64 as &dyn BasicValue<'ctx>, enc3_bb),
+            (&four64 as &dyn BasicValue<'ctx>, enc4_bb),
+            (&zero64 as &dyn BasicValue<'ctx>, reject_bb),
+        ]);
+        Ok(res_phi.as_basic_value().into_int_value())
+    }
+
+    /// `@utf8-len cp` → byte length (1..=4) for valid codepoints, 0 otherwise.
+    fn emit_utf8_len(
+        &mut self,
+        args: &[&Node],
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<IntValue<'ctx>> {
+        let cp = self.compile_expr(args[0], env, cur_fn)?;
+        let i64_t = self.context.i64_type();
+        let zero64 = i64_t.const_zero();
+        let one64 = i64_t.const_int(1, false);
+        let two64 = i64_t.const_int(2, false);
+        let three64 = i64_t.const_int(3, false);
+        let four64 = i64_t.const_int(4, false);
+
+        let valid_bb = self.context.append_basic_block(cur_fn, "ul_valid");
+        let try_2_bb = self.context.append_basic_block(cur_fn, "ul_try2");
+        let try_3_bb = self.context.append_basic_block(cur_fn, "ul_try3");
+        let len_1_bb = self.context.append_basic_block(cur_fn, "ul_len1");
+        let len_2_bb = self.context.append_basic_block(cur_fn, "ul_len2");
+        let len_3_bb = self.context.append_basic_block(cur_fn, "ul_len3");
+        let len_4_bb = self.context.append_basic_block(cur_fn, "ul_len4");
+        let reject_bb = self.context.append_basic_block(cur_fn, "ul_reject");
+        let exit_bb = self.context.append_basic_block(cur_fn, "ul_exit");
+
+        let max_cp = i64_t.const_int(0x10FFFF, false);
+        let surrogate_lo = i64_t.const_int(0xD800, false);
+        let surrogate_hi = i64_t.const_int(0xDFFF, false);
+        let cp_neg = self
+            .builder
+            .build_int_compare(IntPredicate::SLT, cp, zero64, "ul_neg")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let cp_too_high = self
+            .builder
+            .build_int_compare(IntPredicate::SGT, cp, max_cp, "ul_too_high")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let ge_sur = self
+            .builder
+            .build_int_compare(IntPredicate::SGE, cp, surrogate_lo, "ul_ge_sur")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let le_sur = self
+            .builder
+            .build_int_compare(IntPredicate::SLE, cp, surrogate_hi, "ul_le_sur")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let is_sur = self
+            .builder
+            .build_and(ge_sur, le_sur, "ul_is_sur")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let invalid_low = self
+            .builder
+            .build_or(cp_neg, cp_too_high, "ul_inv_lo")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let invalid = self
+            .builder
+            .build_or(invalid_low, is_sur, "ul_invalid")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(invalid, reject_bb, valid_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(valid_bb);
+        let thresh_2 = i64_t.const_int(0x80, false);
+        let cp_lt_2 = self
+            .builder
+            .build_int_compare(IntPredicate::SLT, cp, thresh_2, "ul_lt_80")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(cp_lt_2, len_1_bb, try_2_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(try_2_bb);
+        let thresh_3 = i64_t.const_int(0x800, false);
+        let cp_lt_3 = self
+            .builder
+            .build_int_compare(IntPredicate::SLT, cp, thresh_3, "ul_lt_800")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(cp_lt_3, len_2_bb, try_3_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(try_3_bb);
+        let thresh_4 = i64_t.const_int(0x10000, false);
+        let cp_lt_4 = self
+            .builder
+            .build_int_compare(IntPredicate::SLT, cp, thresh_4, "ul_lt_10000")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(cp_lt_4, len_3_bb, len_4_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        for bb in [len_1_bb, len_2_bb, len_3_bb, len_4_bb, reject_bb] {
+            self.builder.position_at_end(bb);
+            self.builder
+                .build_unconditional_branch(exit_bb)
+                .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        }
+
+        self.builder.position_at_end(exit_bb);
+        let res_phi = self
+            .builder
+            .build_phi(i64_t, "ul_res")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        res_phi.add_incoming(&[
+            (&one64 as &dyn BasicValue<'ctx>, len_1_bb),
+            (&two64 as &dyn BasicValue<'ctx>, len_2_bb),
+            (&three64 as &dyn BasicValue<'ctx>, len_3_bb),
+            (&four64 as &dyn BasicValue<'ctx>, len_4_bb),
+            (&zero64 as &dyn BasicValue<'ctx>, reject_bb),
+        ]);
+        Ok(res_phi.as_basic_value().into_int_value())
     }
 
     /// `@range-start table index` → load `table[2 * index]`.

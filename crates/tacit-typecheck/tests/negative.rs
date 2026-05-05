@@ -531,3 +531,26 @@ fn neg_ascii_is_space_rejects_buf_argument() {
         "type-mismatch",
     );
 }
+
+// ── Bundle G (ADR 0069) ──────────────────────────────────────────────────────
+
+#[test]
+fn neg_utf8_decode_rejects_i64_vector_buffer() {
+    expect_authoring_error(
+        "let xs = @i64-alloc 4 in @utf8-decode xs 0",
+        "type-mismatch",
+    );
+}
+
+#[test]
+fn neg_utf8_encode_rejects_i64_vector_buffer() {
+    expect_authoring_error(
+        "let xs = @i64-alloc 4 in @utf8-encode xs 0 65",
+        "type-mismatch",
+    );
+}
+
+#[test]
+fn neg_utf8_len_rejects_buf_argument() {
+    expect_authoring_error("let buf = @buf-alloc 1 in @utf8-len buf", "type-mismatch");
+}
