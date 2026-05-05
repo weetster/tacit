@@ -318,6 +318,37 @@ Phase 3 Stage 2 added eight new `@name` primitives across four categories
 Conformance tests for all eight primitives: `crates/tacit-codegen/tests/p3_primitives.rs`
 (positive + boundary case per primitive). Source programs under `examples/smoke/p3-*.tac`.
 
+### Primitive lowerings vs. source stdlib
+
+The Phase 1-3 `@name` surface is a compiler-primitive surface, not a final
+commitment that every library operation must remain hand-lowered in
+`tacit-codegen`. The current design keeps Phase 3 implementation bounded by
+recognising each primitive in `compile_primitive_call` and emitting LLVM IR
+directly. That is acceptable for the corpus phase, but it deliberately mixes
+two layers that should separate once Tacit has a real stdlib import/prelude
+and bundled-library compilation path.
+
+Long term, keep only the irreducible substrate as backend primitives:
+
+- Machine operations: arithmetic, comparison, and target-level integer
+  semantics.
+- Runtime representation operations: stack allocation, raw buffer loads/stores,
+  raw i64-vector loads/stores, and block-memory intrinsics.
+- ABI/OS boundaries: `read`, `write`, `exit`, and other explicitly admitted
+  external calls.
+
+Prefer source-level Tacit stdlib definitions for operations expressible over
+that substrate. Likely migration candidates include decimal parse/format,
+ASCII classification and case conversion, UTF-8 helpers, line/token indexing,
+sorting/search/grouping helpers, and stream-framing wrappers such as
+`stdin-slurp` and `write-range`. After that split, the compiler should compile
+the bundled stdlib together with the user program, and codegen should see these
+operations as ordinary Tacit functions rather than bespoke primitive emitters.
+
+This migration is not part of the Phase 3 codegen contract. It depends on a
+module/import or prelude mechanism, a stable bundled-stdlib story, and clear
+effect signatures for source-defined stdlib functions.
+
 Phase 3 Stage 4 lifts the direct-call lowering from unary-only to
 multi-argument lambda chains (ADR 0058). Stage 5 adds hidden capture
 parameters for `rec` members (ADR 0059): runtime `i64` values and buffer
