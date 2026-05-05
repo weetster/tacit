@@ -122,6 +122,13 @@ enum PtrKind {
     I64Vec,
 }
 
+/// Direction for ASCII case shift primitives (ADR 0068).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum AsciiCase {
+    Lower,
+    Upper,
+}
+
 #[derive(Clone)]
 struct FunctionBinding<'ctx> {
     value: FunctionValue<'ctx>,
@@ -586,6 +593,15 @@ impl<'ctx> Compiler<'ctx> {
             PrimKind::StdinSlurp => self.emit_stdin_slurp(args, env, cur_fn),
             PrimKind::WriteRange => self.emit_write_range(args, env, cur_fn),
             PrimKind::BufRev => self.emit_buf_rev(args, env, cur_fn),
+            PrimKind::AsciiTolower => {
+                self.emit_ascii_case_shift(args, env, cur_fn, AsciiCase::Lower)
+            }
+            PrimKind::AsciiToupper => {
+                self.emit_ascii_case_shift(args, env, cur_fn, AsciiCase::Upper)
+            }
+            PrimKind::AsciiIsAlpha => self.emit_ascii_is_alpha(args, env, cur_fn),
+            PrimKind::AsciiIsDigit => self.emit_ascii_is_digit(args, env, cur_fn),
+            PrimKind::AsciiIsSpace => self.emit_ascii_is_space(args, env, cur_fn),
         }
     }
 
@@ -2629,6 +2645,187 @@ impl<'ctx> Compiler<'ctx> {
 
         self.builder.position_at_end(exit_bb);
         Ok(i64_t.const_zero())
+    }
+
+    /// `@ascii-tolower b` / `@ascii-toupper b` → if `b` is in the source
+    /// case range, return the shifted byte; otherwise return `b` unchanged
+    /// (ADR 0068). Pure straight-line `icmp + and + select`.
+    fn emit_ascii_case_shift(
+        &mut self,
+        args: &[&Node],
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+        case: AsciiCase,
+    ) -> Result<IntValue<'ctx>> {
+        let b = self.compile_expr(args[0], env, cur_fn)?;
+        let i64_t = self.context.i64_type();
+        let (lo, hi, delta, lo_name, hi_name, in_name, shifted_name, sel_name) = match case {
+            // tolower: A..=Z (65..=90) → +32
+            AsciiCase::Lower => (
+                i64_t.const_int(65, false),
+                i64_t.const_int(90, false),
+                i64_t.const_int(32, false),
+                "tol_lo",
+                "tol_hi",
+                "tol_in",
+                "tol_shift",
+                "tol_res",
+            ),
+            // toupper: a..=z (97..=122) → -32
+            AsciiCase::Upper => (
+                i64_t.const_int(97, false),
+                i64_t.const_int(122, false),
+                i64_t.const_int(32, false),
+                "tou_lo",
+                "tou_hi",
+                "tou_in",
+                "tou_shift",
+                "tou_res",
+            ),
+        };
+        let ge_lo = self
+            .builder
+            .build_int_compare(IntPredicate::SGE, b, lo, lo_name)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let le_hi = self
+            .builder
+            .build_int_compare(IntPredicate::SLE, b, hi, hi_name)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let in_range = self
+            .builder
+            .build_and(ge_lo, le_hi, in_name)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let shifted = match case {
+            AsciiCase::Lower => self
+                .builder
+                .build_int_add(b, delta, shifted_name)
+                .map_err(|e| CodegenError::Llvm(e.to_string()))?,
+            AsciiCase::Upper => self
+                .builder
+                .build_int_sub(b, delta, shifted_name)
+                .map_err(|e| CodegenError::Llvm(e.to_string()))?,
+        };
+        Ok(self
+            .builder
+            .build_select(in_range, shifted, b, sel_name)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?
+            .into_int_value())
+    }
+
+    /// `@ascii-is-alpha b` → 1 if `b` is in 65..=90 or 97..=122, else 0
+    /// (ADR 0068). Two range checks, OR'd, zero-extended.
+    fn emit_ascii_is_alpha(
+        &mut self,
+        args: &[&Node],
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<IntValue<'ctx>> {
+        let b = self.compile_expr(args[0], env, cur_fn)?;
+        let i64_t = self.context.i64_type();
+        let upper_lo = i64_t.const_int(65, false);
+        let upper_hi = i64_t.const_int(90, false);
+        let lower_lo = i64_t.const_int(97, false);
+        let lower_hi = i64_t.const_int(122, false);
+
+        let ge_u = self
+            .builder
+            .build_int_compare(IntPredicate::SGE, b, upper_lo, "ia_uge")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let le_u = self
+            .builder
+            .build_int_compare(IntPredicate::SLE, b, upper_hi, "ia_ule")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let in_upper = self
+            .builder
+            .build_and(ge_u, le_u, "ia_upper")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        let ge_l = self
+            .builder
+            .build_int_compare(IntPredicate::SGE, b, lower_lo, "ia_lge")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let le_l = self
+            .builder
+            .build_int_compare(IntPredicate::SLE, b, lower_hi, "ia_lle")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let in_lower = self
+            .builder
+            .build_and(ge_l, le_l, "ia_lower")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        let any = self
+            .builder
+            .build_or(in_upper, in_lower, "ia_any")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_int_z_extend(any, i64_t, "ia_res")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))
+    }
+
+    /// `@ascii-is-digit b` → 1 if `b` is in 48..=57, else 0 (ADR 0068).
+    fn emit_ascii_is_digit(
+        &mut self,
+        args: &[&Node],
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<IntValue<'ctx>> {
+        let b = self.compile_expr(args[0], env, cur_fn)?;
+        let i64_t = self.context.i64_type();
+        let lo = i64_t.const_int(48, false);
+        let hi = i64_t.const_int(57, false);
+        let ge = self
+            .builder
+            .build_int_compare(IntPredicate::SGE, b, lo, "id_ge")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let le = self
+            .builder
+            .build_int_compare(IntPredicate::SLE, b, hi, "id_le")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let in_range = self
+            .builder
+            .build_and(ge, le, "id_in")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_int_z_extend(in_range, i64_t, "id_res")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))
+    }
+
+    /// `@ascii-is-space b` → 1 if `b` is one of {9, 10, 11, 12, 13, 32}, else 0
+    /// (ADR 0068). Implemented as `(b == 32) || (b >= 9 && b <= 13)`.
+    fn emit_ascii_is_space(
+        &mut self,
+        args: &[&Node],
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<IntValue<'ctx>> {
+        let b = self.compile_expr(args[0], env, cur_fn)?;
+        let i64_t = self.context.i64_type();
+        let lo = i64_t.const_int(9, false);
+        let hi = i64_t.const_int(13, false);
+        let sp = i64_t.const_int(32, false);
+        let ge = self
+            .builder
+            .build_int_compare(IntPredicate::SGE, b, lo, "is_ge")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let le = self
+            .builder
+            .build_int_compare(IntPredicate::SLE, b, hi, "is_le")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let in_ctrl = self
+            .builder
+            .build_and(ge, le, "is_ctrl")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let is_sp = self
+            .builder
+            .build_int_compare(IntPredicate::EQ, b, sp, "is_sp")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let any = self
+            .builder
+            .build_or(in_ctrl, is_sp, "is_any")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_int_z_extend(any, i64_t, "is_res")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))
     }
 
     /// `@range-start table index` → load `table[2 * index]`.

@@ -489,3 +489,45 @@ fn neg_write_range_rejects_i64_vector() {
 fn neg_buf_rev_rejects_i64_vector() {
     expect_authoring_error("let xs = @i64-alloc 1 in @buf-rev xs 0 1", "type-mismatch");
 }
+
+// ── Bundle F (ADR 0068) ──────────────────────────────────────────────────────
+
+#[test]
+fn neg_ascii_tolower_rejects_buf_argument() {
+    expect_authoring_error(
+        "let buf = @buf-alloc 1 in @ascii-tolower buf",
+        "type-mismatch",
+    );
+}
+
+#[test]
+fn neg_ascii_toupper_rejects_buf_argument() {
+    expect_authoring_error(
+        "let buf = @buf-alloc 1 in @ascii-toupper buf",
+        "type-mismatch",
+    );
+}
+
+#[test]
+fn neg_ascii_is_alpha_rejects_i64_vector_argument() {
+    expect_authoring_error(
+        "let xs = @i64-alloc 1 in @ascii-is-alpha xs",
+        "type-mismatch",
+    );
+}
+
+#[test]
+fn neg_ascii_is_digit_rejects_i64_vector_argument() {
+    expect_authoring_error(
+        "let xs = @i64-alloc 1 in @ascii-is-digit xs",
+        "type-mismatch",
+    );
+}
+
+#[test]
+fn neg_ascii_is_space_rejects_buf_argument() {
+    expect_authoring_error(
+        "let buf = @buf-alloc 1 in @ascii-is-space buf",
+        "type-mismatch",
+    );
+}

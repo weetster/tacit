@@ -1,4 +1,4 @@
-//! `@name` primitive allowlist and classification (ADR 0028, 0030, 0038, 0047, 0061, 0062, 0063, 0064, 0067).
+//! `@name` primitive allowlist and classification (ADR 0028, 0030, 0038, 0047, 0061, 0062, 0063, 0064, 0067, 0068).
 //!
 //! Categories per ADR 0028 + 0030 + 0038 + 0047:
 //! - LIBC: external libc call (`write`, `read`, `exit`).
@@ -18,6 +18,8 @@
 //! - RANGE-GROUP: inline adjacent range grouping helpers (ADR 0064).
 //! - STREAM-IO: full-stream `read`/`write` framing wrappers (ADR 0067).
 //! - BUF-MUT: in-place byte-range mutation helpers (ADR 0067).
+//! - ASCII-CASE: pure ASCII case shifts (ADR 0068).
+//! - ASCII-CLASS: pure ASCII character classification predicates (ADR 0068).
 //!
 //! Codegen pattern-matches an `App` left-spine whose head is `Sym(name)`,
 //! looks up `name` here, collects right-spine args, and emits accordingly.
@@ -87,6 +89,16 @@ pub enum PrimKind {
     WriteRange,
     /// Reverse a byte-range in place (ADR 0067): `buf off len → i64` (returns 0).
     BufRev,
+    /// ASCII case shift: lowercase letter → uppercase, identity otherwise (ADR 0068).
+    AsciiToupper,
+    /// ASCII case shift: uppercase letter → lowercase, identity otherwise (ADR 0068).
+    AsciiTolower,
+    /// ASCII classification: 1 if A-Z or a-z, else 0 (ADR 0068).
+    AsciiIsAlpha,
+    /// ASCII classification: 1 if 0-9, else 0 (ADR 0068).
+    AsciiIsDigit,
+    /// ASCII classification: 1 if TAB, LF, VT, FF, CR, or SP, else 0 (ADR 0068).
+    AsciiIsSpace,
     /// Binary `i64 → i64 → i64` arithmetic, lowering as a single LLVM op.
     Arith(ArithOp),
     /// Binary `i64 → i64 → i64` comparison: emits `icmp` + `zext`.
@@ -146,6 +158,11 @@ impl PrimKind {
             "stdin-slurp" => PrimKind::StdinSlurp,
             "write-range" => PrimKind::WriteRange,
             "buf-rev" => PrimKind::BufRev,
+            "ascii-tolower" => PrimKind::AsciiTolower,
+            "ascii-toupper" => PrimKind::AsciiToupper,
+            "ascii-is-alpha" => PrimKind::AsciiIsAlpha,
+            "ascii-is-digit" => PrimKind::AsciiIsDigit,
+            "ascii-is-space" => PrimKind::AsciiIsSpace,
             "add" => PrimKind::Arith(ArithOp::Add),
             "sub" => PrimKind::Arith(ArithOp::Sub),
             "mul" => PrimKind::Arith(ArithOp::Mul),
@@ -165,7 +182,15 @@ impl PrimKind {
     pub fn arity(self) -> usize {
         match self {
             PrimKind::Write | PrimKind::Read => 3,
-            PrimKind::Exit | PrimKind::BufAlloc | PrimKind::BufAllocDyn | PrimKind::I64Alloc => 1,
+            PrimKind::Exit
+            | PrimKind::BufAlloc
+            | PrimKind::BufAllocDyn
+            | PrimKind::I64Alloc
+            | PrimKind::AsciiTolower
+            | PrimKind::AsciiToupper
+            | PrimKind::AsciiIsAlpha
+            | PrimKind::AsciiIsDigit
+            | PrimKind::AsciiIsSpace => 1,
             PrimKind::BufGet | PrimKind::I64Get | PrimKind::RangeStart | PrimKind::RangeLen => 2,
             PrimKind::SortI64 | PrimKind::StdinSlurp => 2,
             PrimKind::BufSet
@@ -280,6 +305,26 @@ mod tests {
         assert_eq!(PrimKind::lookup("stdin-slurp"), Some(PrimKind::StdinSlurp));
         assert_eq!(PrimKind::lookup("write-range"), Some(PrimKind::WriteRange));
         assert_eq!(PrimKind::lookup("buf-rev"), Some(PrimKind::BufRev));
+        assert_eq!(
+            PrimKind::lookup("ascii-tolower"),
+            Some(PrimKind::AsciiTolower)
+        );
+        assert_eq!(
+            PrimKind::lookup("ascii-toupper"),
+            Some(PrimKind::AsciiToupper)
+        );
+        assert_eq!(
+            PrimKind::lookup("ascii-is-alpha"),
+            Some(PrimKind::AsciiIsAlpha)
+        );
+        assert_eq!(
+            PrimKind::lookup("ascii-is-digit"),
+            Some(PrimKind::AsciiIsDigit)
+        );
+        assert_eq!(
+            PrimKind::lookup("ascii-is-space"),
+            Some(PrimKind::AsciiIsSpace)
+        );
     }
 
     #[test]
@@ -314,6 +359,11 @@ mod tests {
         assert_eq!(PrimKind::StdinSlurp.arity(), 2);
         assert_eq!(PrimKind::WriteRange.arity(), 4);
         assert_eq!(PrimKind::BufRev.arity(), 3);
+        assert_eq!(PrimKind::AsciiTolower.arity(), 1);
+        assert_eq!(PrimKind::AsciiToupper.arity(), 1);
+        assert_eq!(PrimKind::AsciiIsAlpha.arity(), 1);
+        assert_eq!(PrimKind::AsciiIsDigit.arity(), 1);
+        assert_eq!(PrimKind::AsciiIsSpace.arity(), 1);
         assert_eq!(PrimKind::Arith(ArithOp::Add).arity(), 2);
         assert_eq!(PrimKind::Cmp(CmpOp::Lt).arity(), 2);
     }

@@ -494,3 +494,90 @@ fn stdin_slurp_empty_input_returns_zero() {
     assert!(out.is_empty());
     assert_eq!(code, 0);
 }
+
+// ── Bundle F: ASCII case + classification (ADR 0068) ─────────────────────────
+
+#[test]
+fn ascii_tolower_boundaries() {
+    // Inputs sweep the lower-source range (A-Z, 65..=90):
+    //   64='@' identity, 65='A'→97='a', 90='Z'→122='z',
+    //   91='[' identity, 96='`' identity, 97='a' identity,
+    //   122='z' identity, 123='{' identity.
+    let (out, code) = run_p3("p3-ascii-tolower");
+    assert_eq!(out, &[64u8, 97, 122, 91, 96, 97, 122, 123][..]);
+    assert_eq!(code, 0);
+}
+
+#[test]
+fn ascii_toupper_boundaries() {
+    // Inputs sweep the upper-source range (a-z, 97..=122):
+    //   64 identity, 65 identity, 90 identity, 91 identity,
+    //   96 identity, 97='a'→65='A', 122='z'→90='Z', 123 identity.
+    let (out, code) = run_p3("p3-ascii-toupper");
+    assert_eq!(out, &[64u8, 65, 90, 91, 96, 65, 90, 123][..]);
+    assert_eq!(code, 0);
+}
+
+#[test]
+fn ascii_case_extended_inputs_are_unchanged() {
+    // Case shifts must be identity on 0, 32, 127, 128, 255, and -1.
+    // -1 stored low-byte → 0xFF; 128/255 likewise pass through unchanged.
+    let (out, code) = run_p3("p3-ascii-case-extended");
+    assert_eq!(
+        out,
+        &[
+            0u8,  // tolower 0
+            32,   // tolower 32
+            127,  // tolower 127
+            128,  // tolower 128
+            0xFF, // tolower -1 (stored low byte)
+            0,    // toupper 0
+            32,   // toupper 32
+            127,  // toupper 127
+            255,  // toupper 255
+            0xFF, // toupper -1
+        ][..]
+    );
+    assert_eq!(code, 0);
+}
+
+#[test]
+fn ascii_is_alpha_boundaries() {
+    // Encoded as ASCII '0'/'1':
+    //   64='@'→0, 65='A'→1, 90='Z'→1, 91='['→0,
+    //   96='`'→0, 97='a'→1, 122='z'→1, 123='{'→0.
+    let (out, code) = run_p3("p3-ascii-is-alpha");
+    assert_eq!(out, b"01100110");
+    assert_eq!(code, 0);
+}
+
+#[test]
+fn ascii_is_digit_boundaries() {
+    // 47=':' identity 0, 48='0'→1, 53='5'→1, 57='9'→1,
+    // 58=':'→0, 65='A'→0.
+    let (out, code) = run_p3("p3-ascii-is-digit");
+    assert_eq!(out, b"011100");
+    assert_eq!(code, 0);
+}
+
+#[test]
+fn ascii_is_space_boundaries() {
+    // Bytes 9..=13 and 32 are whitespace; everything else is not.
+    //   8→0, 9→1, 10→1, 11→1, 12→1, 13→1, 14→0, 31→0, 32→1, 33→0, 65→0.
+    let (out, code) = run_p3("p3-ascii-is-space");
+    assert_eq!(out, b"01111100100");
+    assert_eq!(code, 0);
+}
+
+#[test]
+fn ascii_class_extended_inputs_return_zero() {
+    // Classification primitives return 0 for inputs outside 0..=127 and for
+    // ASCII bytes that aren't members of their class.
+    //   is-alpha 0→0, is-alpha 127→0, is-alpha 128→0, is-alpha 255→0,
+    //   is-digit 200→0, is-digit 0→0,
+    //   is-space 200→0, is-space 0→0,
+    //   is-alpha -1→0.
+    let (out, code) = run_p3("p3-ascii-class-extended");
+    assert_eq!(out, b"000000000");
+    assert_eq!(code, 0);
+}

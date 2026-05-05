@@ -1,4 +1,4 @@
-//! Type and effect signatures for built-in @name primitives (ADR 0028, 0030, 0042, 0047, 0061, 0062, 0063, 0064, 0067).
+//! Type and effect signatures for built-in @name primitives (ADR 0028, 0030, 0042, 0047, 0061, 0062, 0063, 0064, 0067, 0068).
 //!
 //! Effect sets mirror `stdlib/libc-effects.toml` (ADR 0025, consumed in Stage 3).
 //! The canonical source for primitive effects is that TOML file; values here match it.
@@ -10,6 +10,8 @@
 //! - Bundle C: ordering operations over I64Vec and range tables.
 //! - ADR 0064: search and adjacent range grouping helpers.
 //! - ADR 0067: Bundle E stream IO sugar (`stdin-slurp`, `write-range`, `buf-rev`).
+//! - ADR 0068: Bundle F ASCII case (`ascii-tolower`, `ascii-toupper`) and
+//!   classification (`ascii-is-alpha`, `ascii-is-digit`, `ascii-is-space`).
 
 use crate::ty::{EffAtom, EffSet, FnEff, Ty};
 
@@ -90,6 +92,16 @@ pub fn prim_type(name: &str) -> Option<Ty> {
         "write-range" => fn4_io(Ty::Int, Ty::Buf, Ty::Int, Ty::Int, Ty::Int),
         // BUF-MUT: buf-rev(buf: Buf, off: Int, len: Int) -> Int / {Mut} (ADR 0067)
         "buf-rev" => fn3_mut(Ty::Buf, Ty::Int, Ty::Int, Ty::Int),
+        // ASCII-CASE: ascii-tolower(b: Int) -> Int (pure, ADR 0068)
+        "ascii-tolower" => fn1_pure(Ty::Int, Ty::Int),
+        // ASCII-CASE: ascii-toupper(b: Int) -> Int (pure, ADR 0068)
+        "ascii-toupper" => fn1_pure(Ty::Int, Ty::Int),
+        // ASCII-CLASS: ascii-is-alpha(b: Int) -> Int (pure, ADR 0068)
+        "ascii-is-alpha" => fn1_pure(Ty::Int, Ty::Int),
+        // ASCII-CLASS: ascii-is-digit(b: Int) -> Int (pure, ADR 0068)
+        "ascii-is-digit" => fn1_pure(Ty::Int, Ty::Int),
+        // ASCII-CLASS: ascii-is-space(b: Int) -> Int (pure, ADR 0068)
+        "ascii-is-space" => fn1_pure(Ty::Int, Ty::Int),
         // ARITH: Int → Int → Int (pure)
         "add" | "sub" | "mul" | "div" | "mod" => fn2_pure(Ty::Int, Ty::Int, Ty::Int),
         // CMP: Int → Int → Bool (pure, ADR 0042)
@@ -218,7 +230,6 @@ fn fn3_io(a: Ty, b: Ty, c: Ty, r: Ty) -> Ty {
 }
 
 /// Unary pure function.
-#[allow(dead_code)]
 fn fn1_pure(a: Ty, r: Ty) -> Ty {
     Ty::Fn(Box::new(a), Box::new(r), FnEff::pure_())
 }
@@ -759,6 +770,42 @@ mod tests {
         assert!(is_mut_prim("stdin-slurp"));
         assert!(!is_mut_prim("write-range"));
         assert!(is_mut_prim("buf-rev"));
+    }
+
+    #[test]
+    fn ascii_primitives_are_pure_int_to_int() {
+        for name in [
+            "ascii-tolower",
+            "ascii-toupper",
+            "ascii-is-alpha",
+            "ascii-is-digit",
+            "ascii-is-space",
+        ] {
+            let t = prim_type(name).unwrap();
+            match &t {
+                Ty::Fn(a, r, eff) => {
+                    assert_eq!(a.as_ref(), &Ty::Int, "{name} arg");
+                    assert_eq!(r.as_ref(), &Ty::Int, "{name} return");
+                    assert_eq!(eff, &FnEff::pure_(), "{name} effect");
+                }
+                _ => panic!("{name}: expected Fn"),
+            }
+        }
+    }
+
+    #[test]
+    fn bundle_f_classification() {
+        for name in [
+            "ascii-tolower",
+            "ascii-toupper",
+            "ascii-is-alpha",
+            "ascii-is-digit",
+            "ascii-is-space",
+        ] {
+            assert!(!is_io_prim(name), "{name} should not be IO");
+            assert!(!is_mut_prim(name), "{name} should not be Mut");
+            assert!(!is_alloc_prim(name), "{name} should not be Alloc");
+        }
     }
 
     #[test]
