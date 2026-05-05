@@ -478,7 +478,11 @@ Per Q-P3-7 and Q-P3-8. Two parallel deliverables:
   prompt format. Run on Sonnet and Haiku; record metrics.
 - **Cross-family runs.** Run the primary corpus and the maintenance
   sub-track against the cross-family model set chosen in Q-P3-8 (one
-  Claude beyond Sonnet/Haiku, one GPT, one open-weight). Record per-family
+  Claude beyond Sonnet/Haiku, one GPT, one open-weight) as amended by
+  [ADR 0066](../decisions/0066-p3-cross-family-tier-matching.md) —
+  GPT axis is tier-matched (`openai/gpt-5.4` vs Sonnet,
+  `openai/gpt-5.4-mini` vs Haiku); open-weight axis stays
+  `deepseek/deepseek-v3.1` (Qwen fallback) vs Sonnet. Record per-family
   metrics. The harness changes are minimal — `corpus-eval` is already
   parameterised by model id from Stage 8.
 

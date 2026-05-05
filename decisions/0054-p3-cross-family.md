@@ -1,10 +1,18 @@
 # 0054 — Phase 3 cross-family evaluation sub-track scope
 
-**Status:** Accepted
+**Status:** Accepted (model set + threshold comparator amended by
+[ADR 0066](0066-p3-cross-family-tier-matching.md), 2026-05-04)
 **Date:** 2026-04-28
 **Phase:** 3, Stage 1
 **Closes:** [phase-3-plan.md Q-P3-8](../plans/phase-3-plan.md);
 [tacit-plan.md § Phase 3](../plans/tacit-plan.md) cross-family deferral
+**Amended by:** [ADR 0066](0066-p3-cross-family-tier-matching.md) —
+replaces the GPT-5.5 pick with tier-matched GPT-5.4 / GPT-5.4-mini
+pairs and restates the regression threshold against the matched-tier
+Anthropic baseline rather than always against Sonnet. Read ADR 0066
+for the current model set, run scope, and reporting table; this ADR
+remains the source of truth for the primer-portability rule and the
+reported-not-gating posture.
 
 ## Context
 
