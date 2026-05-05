@@ -81,3 +81,7 @@ Keep ADRs short. They record the decision, not the full analysis that led to it.
 - [0063 — Phase 3 stdlib Bundle B2: token-index-any](0063-p3-stdlib-bundle-b2-token-index-any.md)
 - [0064 — Phase 3 stdlib Bundle D: search and counting helpers](0064-p3-stdlib-bundle-d-search-counting.md)
 - [0065 — Retroactive Phase 3 stdlib Bundle C: ordering primitives](0065-p3-stdlib-bundle-c-ordering-primitives.md)
+- [0066 — Phase 3 cross-family model tier matching](0066-p3-cross-family-tier-matching.md)
+- [0067 — Phase 3 stdlib Bundle E: stream input and output sugar](0067-p3-stdlib-bundle-e-stream-io-sugar.md)
+- [0068 — Phase 3 stdlib Bundle F: ASCII classification and case](0068-p3-stdlib-bundle-f-ascii-classification.md)
+- [0069 — Phase 3 stdlib Bundle G: UTF-8 codepoint decode and encode](0069-p3-stdlib-bundle-g-utf8-codepoints.md)

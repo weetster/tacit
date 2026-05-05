@@ -1,8 +1,12 @@
 # Phase 3 Standard-Library Round 2 Plan
 
-**Status:** Draft (post-round-1 design pass)
+**Status:** Bundle ADRs accepted; implementation pending
 **Date:** 2026-05-04
+**Updated:** 2026-05-05
 **Predecessor:** [phase-3-stdlib-next-steps.md](phase-3-stdlib-next-steps.md) (round 1, completed 2026-05-04)
+**Bundle ADRs:** [ADR 0067](../decisions/0067-p3-stdlib-bundle-e-stream-io-sugar.md) (E),
+[ADR 0068](../decisions/0068-p3-stdlib-bundle-f-ascii-classification.md) (F),
+[ADR 0069](../decisions/0069-p3-stdlib-bundle-g-utf8-codepoints.md) (G)
 
 ## Summary
 
@@ -305,8 +309,12 @@ density") rather than option 1 ("more stdlib") for the long term.
 ## Resolved design questions
 
 The four design questions raised during round-2 plan drafting are resolved
-in this section. The ADR pinning bundle signatures restates these as
+in this section. The bundle ADRs pin the signatures and effect rows as
 decisions; the rationale lives here.
+
+- Bundle E: [ADR 0067](../decisions/0067-p3-stdlib-bundle-e-stream-io-sugar.md)
+- Bundle F: [ADR 0068](../decisions/0068-p3-stdlib-bundle-f-ascii-classification.md)
+- Bundle G: [ADR 0069](../decisions/0069-p3-stdlib-bundle-g-utf8-codepoints.md)
 
 - **`@stdin-slurp` cap is caller-passed.** Signature is
   `@stdin-slurp buf cap` (returns bytes-read). Keeps the model honest
@@ -328,9 +336,10 @@ decisions; the rationale lives here.
 
 ## Work plan
 
-1. Write the ADR pinning Bundle E / F / G signatures and effect rows.
-   ([decisions/0067-…] not yet allocated; next free number depends on
-   merge order.)
+1. ✅ Bundle E / F / G ADRs landed:
+   [ADR 0067](../decisions/0067-p3-stdlib-bundle-e-stream-io-sugar.md),
+   [ADR 0068](../decisions/0068-p3-stdlib-bundle-f-ascii-classification.md),
+   [ADR 0069](../decisions/0069-p3-stdlib-bundle-g-utf8-codepoints.md).
 2. Implement primitives in the codegen layer with codegen+typecheck
    tests. No model-facing primer changes yet.
 3. Author 10 round-2 `reference.stdlib.tac` files for the primary-target
