@@ -1,5 +1,1 @@
-let xs = @i64-alloc 2 in
-let _ = @i64-set xs 0 4 in
-let _ = @i64-set xs 1 9 in
-let _ = @i64-swap xs 0 1 in
-@add (@mul (@i64-get xs 0) 10) (@i64-get xs 1)
+(let (app (sym i64-alloc) (int 2)) (let (app (app (app (sym i64-set) (var 0)) (int 0)) (int 4)) (let (app (app (app (sym i64-set) (var 1)) (int 1)) (int 9)) (let (app (app (app (sym i64-swap) (var 2)) (int 0)) (int 1)) (app (app (sym add) (app (app (sym mul) (app (app (sym i64-get) (var 3)) (int 0))) (int 10))) (app (app (sym i64-get) (var 3)) (int 1)))))))

@@ -1,0 +1,57 @@
+{
+  "tacd_version": "1",
+  "targets_hash_blake3": "809cf30d904453bd7706abcdb0b68609ec8aa1c4732476d610c463ae9a757ea7",
+  "display": {
+    "binder": "text",
+    "children": [
+      {
+        "children": [
+          {},
+          {}
+        ]
+      },
+      {
+        "binder": "rows",
+        "children": [
+          {
+            "children": [
+              {},
+              {}
+            ]
+          },
+          {
+            "children": [
+              {
+                "children": [
+                  {
+                    "children": [
+                      {
+                        "children": [
+                          {
+                            "children": [
+                              {
+                                "children": [
+                                  {},
+                                  {}
+                                ]
+                              },
+                              {}
+                            ]
+                          },
+                          {}
+                        ]
+                      },
+                      {}
+                    ]
+                  },
+                  {}
+                ]
+              },
+              {}
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

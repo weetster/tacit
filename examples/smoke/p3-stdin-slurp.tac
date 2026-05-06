@@ -1,4 +1,1 @@
-let buf = @buf-alloc 16 in
-let n = @stdin-slurp buf 16 in
-let _ = @write-range 1 buf 0 n in
-0
+(let (app (sym buf-alloc) (int 16)) (let (app (app (sym stdin-slurp) (var 0)) (int 16)) (let (app (app (app (app (sym write-range) (int 1)) (var 1)) (int 0)) (var 0)) (int 0))))

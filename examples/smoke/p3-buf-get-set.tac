@@ -1,3 +1,1 @@
-let buf = @buf-alloc 4 in
-let _ = @buf-set buf 2 88 in
-@buf-get buf 2
+(let (app (sym buf-alloc) (int 4)) (let (app (app (app (sym buf-set) (var 0)) (int 2)) (int 88)) (app (app (sym buf-get) (var 1)) (int 2))))

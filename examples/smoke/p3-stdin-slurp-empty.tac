@@ -1,2 +1,1 @@
-let buf = @buf-alloc 16 in
-@stdin-slurp buf 16
+(let (app (sym buf-alloc) (int 16)) (app (app (sym stdin-slurp) (var 0)) (int 16)))

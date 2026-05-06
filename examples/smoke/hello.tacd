@@ -1,0 +1,30 @@
+{
+  "tacd_version": "1",
+  "targets_hash_blake3": "358094030a86e84d782a68cb39d2c43bded8789e4830311afabaf59689a8cda3",
+  "display": {
+    "binder": "_",
+    "type_hint": "Int",
+    "effect_hint": [
+      "IO"
+    ],
+    "children": [
+      {
+        "children": [
+          {
+            "children": [
+              {
+                "children": [
+                  {},
+                  {}
+                ]
+              },
+              {}
+            ]
+          },
+          {}
+        ]
+      },
+      {}
+    ]
+  }
+}

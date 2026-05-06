@@ -1,4 +1,1 @@
-let buf = @buf-alloc 1 in
-let _ = @buf-set buf 0 90 in
-let _ = @write-range 1 buf 0 0 in
-@buf-get buf 0
+(let (app (sym buf-alloc) (int 1)) (let (app (app (app (sym buf-set) (var 0)) (int 0)) (int 90)) (let (app (app (app (app (sym write-range) (int 1)) (var 1)) (int 0)) (int 0)) (app (app (sym buf-get) (var 2)) (int 0)))))

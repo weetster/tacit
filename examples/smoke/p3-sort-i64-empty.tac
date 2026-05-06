@@ -1,4 +1,1 @@
-let xs = @i64-alloc 1 in
-let _ = @i64-set xs 0 42 in
-let _ = @sort-i64 xs 0 in
-@i64-get xs 0
+(let (app (sym i64-alloc) (int 1)) (let (app (app (app (sym i64-set) (var 0)) (int 0)) (int 42)) (let (app (app (sym sort-i64) (var 1)) (int 0)) (app (app (sym i64-get) (var 2)) (int 0)))))

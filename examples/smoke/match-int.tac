@@ -1,1 +1,1 @@
-match 0 with | 0 => 42 | _ => 0
+(match (int 0) (arm (pat-int 0) (int 42)) (arm pat-wild (int 0)))

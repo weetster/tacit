@@ -1,2 +1,1 @@
-let xs = @i64-alloc 1 in
-@lower-bound-i64 xs 0 7
+(let (app (sym i64-alloc) (int 1)) (app (app (app (sym lower-bound-i64) (var 0)) (int 0)) (int 7)))

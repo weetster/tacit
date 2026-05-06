@@ -1,4 +1,1 @@
-let buf = @buf-alloc 32 in
-let n = @fmt-i64 buf 0 42 in
-let _ = @write 1 buf n in
-0
+(let (app (sym buf-alloc) (int 32)) (let (app (app (app (sym fmt-i64) (var 0)) (int 0)) (int 42)) (let (app (app (app (sym write) (int 1)) (var 1)) (var 0)) (int 0))))

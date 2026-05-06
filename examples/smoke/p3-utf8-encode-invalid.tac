@@ -1,10 +1,1 @@
-let buf = @buf-alloc 4 in
-let _ = @buf-set buf 0 99 in
-let _ = @buf-set buf 1 99 in
-let _ = @buf-set buf 2 99 in
-let _ = @buf-set buf 3 99 in
-let n1 = @utf8-encode buf 0 -1 in
-let n2 = @utf8-encode buf 0 55296 in
-let n3 = @utf8-encode buf 0 1114112 in
-let _ = @write 1 buf 4 in
-@add n1 (@add n2 n3)
+(let (app (sym buf-alloc) (int 4)) (let (app (app (app (sym buf-set) (var 0)) (int 0)) (int 99)) (let (app (app (app (sym buf-set) (var 1)) (int 1)) (int 99)) (let (app (app (app (sym buf-set) (var 2)) (int 2)) (int 99)) (let (app (app (app (sym buf-set) (var 3)) (int 3)) (int 99)) (let (app (app (app (sym utf8-encode) (var 4)) (int 0)) (int -1)) (let (app (app (app (sym utf8-encode) (var 5)) (int 0)) (int 55296)) (let (app (app (app (sym utf8-encode) (var 6)) (int 0)) (int 1114112)) (let (app (app (app (sym write) (int 1)) (var 7)) (int 4)) (app (app (sym add) (var 3)) (app (app (sym add) (var 2)) (var 1))))))))))))

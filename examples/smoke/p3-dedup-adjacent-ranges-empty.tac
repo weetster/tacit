@@ -1,4 +1,1 @@
-let text = @buf-alloc 1 in
-let rows = @i64-alloc 2 in
-let out = @i64-alloc 2 in
-@dedup-adjacent-ranges text rows 0 out
+(let (app (sym buf-alloc) (int 1)) (let (app (sym i64-alloc) (int 2)) (let (app (sym i64-alloc) (int 2)) (app (app (app (app (sym dedup-adjacent-ranges) (var 2)) (var 1)) (int 0)) (var 0)))))

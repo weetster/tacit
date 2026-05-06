@@ -1,8 +1,1 @@
-let buf = @buf-alloc 6 in
-let _ = @buf-set buf 0 104 in
-let _ = @buf-set buf 1 101 in
-let _ = @buf-set buf 2 108 in
-let _ = @buf-set buf 3 108 in
-let _ = @buf-set buf 4 111 in
-let _ = @buf-set buf 5 10 in
-@scan-byte buf 0 6 10
+(let (app (sym buf-alloc) (int 6)) (let (app (app (app (sym buf-set) (var 0)) (int 0)) (int 104)) (let (app (app (app (sym buf-set) (var 1)) (int 1)) (int 101)) (let (app (app (app (sym buf-set) (var 2)) (int 2)) (int 108)) (let (app (app (app (sym buf-set) (var 3)) (int 3)) (int 108)) (let (app (app (app (sym buf-set) (var 4)) (int 4)) (int 111)) (let (app (app (app (sym buf-set) (var 5)) (int 5)) (int 10)) (app (app (app (app (sym scan-byte) (var 6)) (int 0)) (int 6)) (int 10)))))))))

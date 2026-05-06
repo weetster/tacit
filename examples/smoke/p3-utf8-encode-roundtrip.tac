@@ -1,7 +1,1 @@
-let buf = @buf-alloc 10 in
-let n1 = @utf8-encode buf 0 65 in
-let n2 = @utf8-encode buf 1 233 in
-let n3 = @utf8-encode buf 3 20013 in
-let n4 = @utf8-encode buf 6 128512 in
-let _ = @write 1 buf 10 in
-@add n1 (@add n2 (@add n3 n4))
+(let (app (sym buf-alloc) (int 10)) (let (app (app (app (sym utf8-encode) (var 0)) (int 0)) (int 65)) (let (app (app (app (sym utf8-encode) (var 1)) (int 1)) (int 233)) (let (app (app (app (sym utf8-encode) (var 2)) (int 3)) (int 20013)) (let (app (app (app (sym utf8-encode) (var 3)) (int 6)) (int 128512)) (let (app (app (app (sym write) (int 1)) (var 4)) (int 10)) (app (app (sym add) (var 4)) (app (app (sym add) (var 3)) (app (app (sym add) (var 2)) (var 1))))))))))

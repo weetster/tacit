@@ -1,1 +1,1 @@
-let x = 5 in let y = 8 in @sub (@mul x y) 7
+(let (int 5) (let (int 8) (app (app (sym sub) (app (app (sym mul) (var 1)) (var 0))) (int 7))))

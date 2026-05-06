@@ -1,0 +1,28 @@
+{
+  "tacd_version": "1",
+  "targets_hash_blake3": "2f4cbc2466a95f36e49572ce5857d1f26e13648006be7e7978a649c4d899f34d",
+  "display": {
+    "binder": "x",
+    "type_hint": "Int",
+    "children": [
+      {},
+      {
+        "children": [
+          {
+            "children": [
+              {
+                "children": [
+                  {},
+                  {}
+                ]
+              },
+              {}
+            ]
+          },
+          {},
+          {}
+        ]
+      }
+    ]
+  }
+}

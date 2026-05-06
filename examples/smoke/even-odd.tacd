@@ -1,0 +1,76 @@
+{
+  "tacd_version": "1",
+  "targets_hash_blake3": "4a51666741fe599ac44e8aebb59051c34cf0747f61233fe7b3cc0f97f12c7822",
+  "display": {
+    "binders": [
+      "even",
+      "odd"
+    ],
+    "type_hint": "Int",
+    "effect_hint": [
+      "Div"
+    ],
+    "children": [
+      {
+        "binder": "n",
+        "children": [
+          {
+            "children": [
+              {},
+              {
+                "children": [
+                  {},
+                  {
+                    "children": [
+                      {
+                        "children": [
+                          {},
+                          {}
+                        ]
+                      },
+                      {}
+                    ]
+                  }
+                ]
+              },
+              {}
+            ]
+          }
+        ]
+      },
+      {
+        "binder": "n",
+        "children": [
+          {
+            "children": [
+              {},
+              {
+                "children": [
+                  {},
+                  {
+                    "children": [
+                      {
+                        "children": [
+                          {},
+                          {}
+                        ]
+                      },
+                      {}
+                    ]
+                  }
+                ]
+              },
+              {}
+            ]
+          }
+        ]
+      },
+      {
+        "children": [
+          {},
+          {}
+        ]
+      }
+    ]
+  }
+}

@@ -1,4 +1,1 @@
-let buf = @buf-alloc 1024 in
-let n = @read 0 buf 1024 in
-let _ = @write 1 buf n in
-0
+(let (app (sym buf-alloc) (int 1024)) (let (app (app (app (sym read) (int 0)) (var 0)) (int 1024)) (let (app (app (app (sym write) (int 1)) (var 1)) (var 0)) (int 0))))

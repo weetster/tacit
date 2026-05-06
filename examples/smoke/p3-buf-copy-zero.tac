@@ -1,6 +1,1 @@
-let src = @buf-alloc 1 in
-let _ = @buf-set src 0 65 in
-let dst = @buf-alloc 1 in
-let _ = @buf-set dst 0 90 in
-let _ = @buf-copy dst 0 src 0 0 in
-@buf-get dst 0
+(let (app (sym buf-alloc) (int 1)) (let (app (app (app (sym buf-set) (var 0)) (int 0)) (int 65)) (let (app (sym buf-alloc) (int 1)) (let (app (app (app (sym buf-set) (var 0)) (int 0)) (int 90)) (let (app (app (app (app (app (sym buf-copy) (var 1)) (int 0)) (var 3)) (int 0)) (int 0)) (app (app (sym buf-get) (var 2)) (int 0)))))))

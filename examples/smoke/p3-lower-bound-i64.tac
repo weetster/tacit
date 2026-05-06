@@ -1,9 +1,1 @@
-let xs = @i64-alloc 5 in
-let _ = @i64-set xs 0 -3 in
-let _ = @i64-set xs 1 0 in
-let _ = @i64-set xs 2 4 in
-let _ = @i64-set xs 3 4 in
-let _ = @i64-set xs 4 9 in
-let hit = @lower-bound-i64 xs 5 4 in
-let insert = @lower-bound-i64 xs 5 5 in
-@add (@mul hit 10) insert
+(let (app (sym i64-alloc) (int 5)) (let (app (app (app (sym i64-set) (var 0)) (int 0)) (int -3)) (let (app (app (app (sym i64-set) (var 1)) (int 1)) (int 0)) (let (app (app (app (sym i64-set) (var 2)) (int 2)) (int 4)) (let (app (app (app (sym i64-set) (var 3)) (int 3)) (int 4)) (let (app (app (app (sym i64-set) (var 4)) (int 4)) (int 9)) (let (app (app (app (sym lower-bound-i64) (var 5)) (int 5)) (int 4)) (let (app (app (app (sym lower-bound-i64) (var 6)) (int 5)) (int 5)) (app (app (sym add) (app (app (sym mul) (var 1)) (int 10))) (var 0))))))))))

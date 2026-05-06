@@ -1,6 +1,1 @@
-let src = @i64-alloc 1 in
-let _ = @i64-set src 0 12 in
-let dst = @i64-alloc 1 in
-let _ = @i64-set dst 0 77 in
-let _ = @i64-copy dst 0 src 0 0 in
-@i64-get dst 0
+(let (app (sym i64-alloc) (int 1)) (let (app (app (app (sym i64-set) (var 0)) (int 0)) (int 12)) (let (app (sym i64-alloc) (int 1)) (let (app (app (app (sym i64-set) (var 0)) (int 0)) (int 77)) (let (app (app (app (app (app (sym i64-copy) (var 1)) (int 0)) (var 3)) (int 0)) (int 0)) (app (app (sym i64-get) (var 2)) (int 0)))))))

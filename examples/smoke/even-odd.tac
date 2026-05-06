@@ -1,1 +1,1 @@
-rec {even = lambda n. if n then odd (@sub n 1) else 1; odd = lambda n. if n then even (@sub n 1) else 0} in even 4
+(rec (lam (if (var 0) (app (var 2) (app (app (sym sub) (var 0)) (int 1))) (int 1))) (lam (if (var 0) (app (var 1) (app (app (sym sub) (var 0)) (int 1))) (int 0))) (app (var 0) (int 4)))

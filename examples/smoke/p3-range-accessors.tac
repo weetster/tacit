@@ -1,6 +1,1 @@
-let rows = @i64-alloc 4 in
-let _ = @i64-set rows 0 7 in
-let _ = @i64-set rows 1 4 in
-let _ = @i64-set rows 2 9 in
-let _ = @i64-set rows 3 2 in
-@add (@mul (@range-start rows 1) 10) (@range-len rows 0)
+(let (app (sym i64-alloc) (int 4)) (let (app (app (app (sym i64-set) (var 0)) (int 0)) (int 7)) (let (app (app (app (sym i64-set) (var 1)) (int 1)) (int 4)) (let (app (app (app (sym i64-set) (var 2)) (int 2)) (int 9)) (let (app (app (app (sym i64-set) (var 3)) (int 3)) (int 2)) (app (app (sym add) (app (app (sym mul) (app (app (sym range-start) (var 4)) (int 1))) (int 10))) (app (app (sym range-len) (var 4)) (int 0))))))))

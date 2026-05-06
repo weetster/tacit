@@ -1,3 +1,1 @@
-let text = @buf-alloc 1 in
-let rows = @i64-alloc 2 in
-@token-index-any text 0 0 " " 1 rows
+(let (app (sym buf-alloc) (int 1)) (let (app (sym i64-alloc) (int 2)) (app (app (app (app (app (app (sym token-index-any) (var 1)) (int 0)) (int 0)) (str " ")) (int 1)) (var 0))))

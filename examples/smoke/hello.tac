@@ -1,1 +1,1 @@
-let _ = @write 1 "hello, world\n" 13 in 0
+(let (app (app (app (sym write) (int 1)) (str "hello, world\n")) (int 13)) (int 0))

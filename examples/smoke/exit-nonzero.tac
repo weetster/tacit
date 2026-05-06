@@ -1,1 +1,1 @@
-@exit 7
+(app (sym exit) (int 7))

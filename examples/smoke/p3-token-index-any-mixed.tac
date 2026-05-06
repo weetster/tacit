@@ -1,16 +1,1 @@
-let text = @buf-alloc 9 in
-let _ = @buf-set text 0 32 in
-let _ = @buf-set text 1 65 in
-let _ = @buf-set text 2 10 in
-let _ = @buf-set text 3 10 in
-let _ = @buf-set text 4 66 in
-let _ = @buf-set text 5 32 in
-let _ = @buf-set text 6 32 in
-let _ = @buf-set text 7 67 in
-let _ = @buf-set text 8 32 in
-let delims = @buf-alloc 2 in
-let _ = @buf-set delims 0 32 in
-let _ = @buf-set delims 1 10 in
-let rows = @i64-alloc 18 in
-let count = @token-index-any text 0 9 delims 2 rows in
-@add (@mul count 50) (@add (@range-start rows 2) (@range-len rows 1))
+(let (app (sym buf-alloc) (int 9)) (let (app (app (app (sym buf-set) (var 0)) (int 0)) (int 32)) (let (app (app (app (sym buf-set) (var 1)) (int 1)) (int 65)) (let (app (app (app (sym buf-set) (var 2)) (int 2)) (int 10)) (let (app (app (app (sym buf-set) (var 3)) (int 3)) (int 10)) (let (app (app (app (sym buf-set) (var 4)) (int 4)) (int 66)) (let (app (app (app (sym buf-set) (var 5)) (int 5)) (int 32)) (let (app (app (app (sym buf-set) (var 6)) (int 6)) (int 32)) (let (app (app (app (sym buf-set) (var 7)) (int 7)) (int 67)) (let (app (app (app (sym buf-set) (var 8)) (int 8)) (int 32)) (let (app (sym buf-alloc) (int 2)) (let (app (app (app (sym buf-set) (var 0)) (int 0)) (int 32)) (let (app (app (app (sym buf-set) (var 1)) (int 1)) (int 10)) (let (app (sym i64-alloc) (int 18)) (let (app (app (app (app (app (app (sym token-index-any) (var 13)) (int 0)) (int 9)) (var 3)) (int 2)) (var 0)) (app (app (sym add) (app (app (sym mul) (var 0)) (int 50))) (app (app (sym add) (app (app (sym range-start) (var 1)) (int 2))) (app (app (sym range-len) (var 1)) (int 1)))))))))))))))))))

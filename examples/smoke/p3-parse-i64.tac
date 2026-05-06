@@ -1,5 +1,1 @@
-let buf = @buf-alloc 3 in
-let _ = @buf-set buf 0 52 in
-let _ = @buf-set buf 1 50 in
-let _ = @buf-set buf 2 0 in
-@parse-i64 buf 0 2
+(let (app (sym buf-alloc) (int 3)) (let (app (app (app (sym buf-set) (var 0)) (int 0)) (int 52)) (let (app (app (app (sym buf-set) (var 1)) (int 1)) (int 50)) (let (app (app (app (sym buf-set) (var 2)) (int 2)) (int 0)) (app (app (app (sym parse-i64) (var 3)) (int 0)) (int 2))))))

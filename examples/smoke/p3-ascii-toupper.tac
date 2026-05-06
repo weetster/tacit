@@ -1,11 +1,1 @@
-let buf = @buf-alloc 8 in
-let _ = @buf-set buf 0 (@ascii-toupper 64) in
-let _ = @buf-set buf 1 (@ascii-toupper 65) in
-let _ = @buf-set buf 2 (@ascii-toupper 90) in
-let _ = @buf-set buf 3 (@ascii-toupper 91) in
-let _ = @buf-set buf 4 (@ascii-toupper 96) in
-let _ = @buf-set buf 5 (@ascii-toupper 97) in
-let _ = @buf-set buf 6 (@ascii-toupper 122) in
-let _ = @buf-set buf 7 (@ascii-toupper 123) in
-let _ = @write 1 buf 8 in
-0
+(let (app (sym buf-alloc) (int 8)) (let (app (app (app (sym buf-set) (var 0)) (int 0)) (app (sym ascii-toupper) (int 64))) (let (app (app (app (sym buf-set) (var 1)) (int 1)) (app (sym ascii-toupper) (int 65))) (let (app (app (app (sym buf-set) (var 2)) (int 2)) (app (sym ascii-toupper) (int 90))) (let (app (app (app (sym buf-set) (var 3)) (int 3)) (app (sym ascii-toupper) (int 91))) (let (app (app (app (sym buf-set) (var 4)) (int 4)) (app (sym ascii-toupper) (int 96))) (let (app (app (app (sym buf-set) (var 5)) (int 5)) (app (sym ascii-toupper) (int 97))) (let (app (app (app (sym buf-set) (var 6)) (int 6)) (app (sym ascii-toupper) (int 122))) (let (app (app (app (sym buf-set) (var 7)) (int 7)) (app (sym ascii-toupper) (int 123))) (let (app (app (app (sym write) (int 1)) (var 8)) (int 8)) (int 0)))))))))))

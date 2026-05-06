@@ -1,2 +1,1 @@
-let buf = @buf-alloc 1 in
-@parse-i64 buf 0 0
+(let (app (sym buf-alloc) (int 1)) (app (app (app (sym parse-i64) (var 0)) (int 0)) (int 0)))

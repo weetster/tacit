@@ -1,14 +1,1 @@
-let buf = @buf-alloc 11 in
-let _ = @buf-set buf 0 (@add 48 (@ascii-is-space 8)) in
-let _ = @buf-set buf 1 (@add 48 (@ascii-is-space 9)) in
-let _ = @buf-set buf 2 (@add 48 (@ascii-is-space 10)) in
-let _ = @buf-set buf 3 (@add 48 (@ascii-is-space 11)) in
-let _ = @buf-set buf 4 (@add 48 (@ascii-is-space 12)) in
-let _ = @buf-set buf 5 (@add 48 (@ascii-is-space 13)) in
-let _ = @buf-set buf 6 (@add 48 (@ascii-is-space 14)) in
-let _ = @buf-set buf 7 (@add 48 (@ascii-is-space 31)) in
-let _ = @buf-set buf 8 (@add 48 (@ascii-is-space 32)) in
-let _ = @buf-set buf 9 (@add 48 (@ascii-is-space 33)) in
-let _ = @buf-set buf 10 (@add 48 (@ascii-is-space 65)) in
-let _ = @write 1 buf 11 in
-0
+(let (app (sym buf-alloc) (int 11)) (let (app (app (app (sym buf-set) (var 0)) (int 0)) (app (app (sym add) (int 48)) (app (sym ascii-is-space) (int 8)))) (let (app (app (app (sym buf-set) (var 1)) (int 1)) (app (app (sym add) (int 48)) (app (sym ascii-is-space) (int 9)))) (let (app (app (app (sym buf-set) (var 2)) (int 2)) (app (app (sym add) (int 48)) (app (sym ascii-is-space) (int 10)))) (let (app (app (app (sym buf-set) (var 3)) (int 3)) (app (app (sym add) (int 48)) (app (sym ascii-is-space) (int 11)))) (let (app (app (app (sym buf-set) (var 4)) (int 4)) (app (app (sym add) (int 48)) (app (sym ascii-is-space) (int 12)))) (let (app (app (app (sym buf-set) (var 5)) (int 5)) (app (app (sym add) (int 48)) (app (sym ascii-is-space) (int 13)))) (let (app (app (app (sym buf-set) (var 6)) (int 6)) (app (app (sym add) (int 48)) (app (sym ascii-is-space) (int 14)))) (let (app (app (app (sym buf-set) (var 7)) (int 7)) (app (app (sym add) (int 48)) (app (sym ascii-is-space) (int 31)))) (let (app (app (app (sym buf-set) (var 8)) (int 8)) (app (app (sym add) (int 48)) (app (sym ascii-is-space) (int 32)))) (let (app (app (app (sym buf-set) (var 9)) (int 9)) (app (app (sym add) (int 48)) (app (sym ascii-is-space) (int 33)))) (let (app (app (app (sym buf-set) (var 10)) (int 10)) (app (app (sym add) (int 48)) (app (sym ascii-is-space) (int 65)))) (let (app (app (app (sym write) (int 1)) (var 11)) (int 11)) (int 0))))))))))))))

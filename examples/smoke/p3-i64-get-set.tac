@@ -1,8 +1,1 @@
-let xs = @i64-alloc 3 in
-let _ = @i64-set xs 0 7 in
-let _ = @i64-set xs 1 0 in
-let _ = @i64-set xs 2 -2 in
-let ok0 = @eq (@i64-get xs 0) 7 in
-let ok1 = @eq (@i64-get xs 1) 0 in
-let ok2 = @eq (@i64-get xs 2) -2 in
-@add (@add ok0 ok1) ok2
+(let (app (sym i64-alloc) (int 3)) (let (app (app (app (sym i64-set) (var 0)) (int 0)) (int 7)) (let (app (app (app (sym i64-set) (var 1)) (int 1)) (int 0)) (let (app (app (app (sym i64-set) (var 2)) (int 2)) (int -2)) (let (app (app (sym eq) (app (app (sym i64-get) (var 3)) (int 0))) (int 7)) (let (app (app (sym eq) (app (app (sym i64-get) (var 4)) (int 1))) (int 0)) (let (app (app (sym eq) (app (app (sym i64-get) (var 5)) (int 2))) (int -2)) (app (app (sym add) (app (app (sym add) (var 2)) (var 1))) (var 0)))))))))

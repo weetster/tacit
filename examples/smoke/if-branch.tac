@@ -1,1 +1,1 @@
-let x = 5 in if @gt x 3 then 1 else 0
+(let (int 5) (if (app (app (sym gt) (var 0)) (int 3)) (int 1) (int 0)))

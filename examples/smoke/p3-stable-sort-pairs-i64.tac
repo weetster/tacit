@@ -1,16 +1,1 @@
-let keys = @i64-alloc 4 in
-let values = @i64-alloc 4 in
-let _ = @i64-set keys 0 2 in
-let _ = @i64-set values 0 20 in
-let _ = @i64-set keys 1 1 in
-let _ = @i64-set values 1 10 in
-let _ = @i64-set keys 2 2 in
-let _ = @i64-set values 2 21 in
-let _ = @i64-set keys 3 1 in
-let _ = @i64-set values 3 11 in
-let _ = @stable-sort-pairs-i64 keys values 4 in
-let ok0 = @add (@eq (@i64-get keys 0) 1) (@eq (@i64-get values 0) 10) in
-let ok1 = @add (@eq (@i64-get keys 1) 1) (@eq (@i64-get values 1) 11) in
-let ok2 = @add (@eq (@i64-get keys 2) 2) (@eq (@i64-get values 2) 20) in
-let ok3 = @add (@eq (@i64-get keys 3) 2) (@eq (@i64-get values 3) 21) in
-@add (@add ok0 ok1) (@add ok2 ok3)
+(let (app (sym i64-alloc) (int 4)) (let (app (sym i64-alloc) (int 4)) (let (app (app (app (sym i64-set) (var 1)) (int 0)) (int 2)) (let (app (app (app (sym i64-set) (var 1)) (int 0)) (int 20)) (let (app (app (app (sym i64-set) (var 3)) (int 1)) (int 1)) (let (app (app (app (sym i64-set) (var 3)) (int 1)) (int 10)) (let (app (app (app (sym i64-set) (var 5)) (int 2)) (int 2)) (let (app (app (app (sym i64-set) (var 5)) (int 2)) (int 21)) (let (app (app (app (sym i64-set) (var 7)) (int 3)) (int 1)) (let (app (app (app (sym i64-set) (var 7)) (int 3)) (int 11)) (let (app (app (app (sym stable-sort-pairs-i64) (var 9)) (var 8)) (int 4)) (let (app (app (sym add) (app (app (sym eq) (app (app (sym i64-get) (var 10)) (int 0))) (int 1))) (app (app (sym eq) (app (app (sym i64-get) (var 9)) (int 0))) (int 10))) (let (app (app (sym add) (app (app (sym eq) (app (app (sym i64-get) (var 11)) (int 1))) (int 1))) (app (app (sym eq) (app (app (sym i64-get) (var 10)) (int 1))) (int 11))) (let (app (app (sym add) (app (app (sym eq) (app (app (sym i64-get) (var 12)) (int 2))) (int 2))) (app (app (sym eq) (app (app (sym i64-get) (var 11)) (int 2))) (int 20))) (let (app (app (sym add) (app (app (sym eq) (app (app (sym i64-get) (var 13)) (int 3))) (int 2))) (app (app (sym eq) (app (app (sym i64-get) (var 12)) (int 3))) (int 21))) (app (app (sym add) (app (app (sym add) (var 3)) (var 2))) (app (app (sym add) (var 1)) (var 0))))))))))))))))))

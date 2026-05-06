@@ -1,11 +1,1 @@
-let text = @buf-alloc 4 in
-let _ = @buf-set text 0 10 in
-let _ = @buf-set text 1 65 in
-let _ = @buf-set text 2 10 in
-let _ = @buf-set text 3 10 in
-let rows = @i64-alloc 8 in
-let count = @line-index text 4 rows in
-let row1_start = @range-start rows 1 in
-let row1_len = @range-len rows 1 in
-let row2_start = @range-start rows 2 in
-@add (@mul count 40) (@add row1_start (@add row1_len row2_start))
+(let (app (sym buf-alloc) (int 4)) (let (app (app (app (sym buf-set) (var 0)) (int 0)) (int 10)) (let (app (app (app (sym buf-set) (var 1)) (int 1)) (int 65)) (let (app (app (app (sym buf-set) (var 2)) (int 2)) (int 10)) (let (app (app (app (sym buf-set) (var 3)) (int 3)) (int 10)) (let (app (sym i64-alloc) (int 8)) (let (app (app (app (sym line-index) (var 5)) (int 4)) (var 0)) (let (app (app (sym range-start) (var 1)) (int 1)) (let (app (app (sym range-len) (var 2)) (int 1)) (let (app (app (sym range-start) (var 3)) (int 2)) (app (app (sym add) (app (app (sym mul) (var 3)) (int 40))) (app (app (sym add) (var 2)) (app (app (sym add) (var 1)) (var 0))))))))))))))

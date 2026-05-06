@@ -1,0 +1,55 @@
+{
+  "tacd_version": "1",
+  "targets_hash_blake3": "2263c5167e1bc625fb89e1b87814c6dcec3c60930375c8acfe84de7a355ec538",
+  "display": {
+    "binders": [
+      "fact"
+    ],
+    "type_hint": "Int",
+    "children": [
+      {
+        "binder": "n",
+        "children": [
+          {
+            "children": [
+              {},
+              {
+                "children": [
+                  {
+                    "children": [
+                      {},
+                      {}
+                    ]
+                  },
+                  {
+                    "children": [
+                      {},
+                      {
+                        "children": [
+                          {
+                            "children": [
+                              {},
+                              {}
+                            ]
+                          },
+                          {}
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {}
+            ]
+          }
+        ]
+      },
+      {
+        "children": [
+          {},
+          {}
+        ]
+      }
+    ]
+  }
+}
