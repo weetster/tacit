@@ -1,8 +1,1 @@
-rec {
-  sum = lambda i.
-    if @lt i 5 then
-      @add
-        (if @eq i 0 then 1 else if @eq i 1 then 2 else if @eq i 2 then 3 else if @eq i 3 then 4 else 5)
-        (sum (@add i 1))
-    else 0
-} in sum 0
+(rec (lam (if (app (app (sym lt) (var 0)) (int 5)) (app (app (sym add) (if (app (app (sym eq) (var 0)) (int 0)) (int 1) (if (app (app (sym eq) (var 0)) (int 1)) (int 2) (if (app (app (sym eq) (var 0)) (int 2)) (int 3) (if (app (app (sym eq) (var 0)) (int 3)) (int 4) (int 5)))))) (app (var 1) (app (app (sym add) (var 0)) (int 1)))) (int 0))) (app (var 0) (int 0)))

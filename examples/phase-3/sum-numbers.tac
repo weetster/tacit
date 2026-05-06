@@ -1,18 +1,1 @@
-let result = rec {
-  loop = lambda state.
-    let buf = @buf-alloc 1 in
-    let n = @read 0 buf 1 in
-    if @eq n 0 then
-      @add (@div state 100000) (@mod state 100000)
-    else
-      let byte = @buf-get buf 0 in
-      if @eq byte 10 then
-        loop (@mul (@add (@div state 100000) (@mod state 100000)) 100000)
-      else
-        loop (@add (@mul (@div state 100000) 100000) (@add (@mul (@mod state 100000) 10) (@sub byte 48)))
-} in loop 0 in
-let out = @buf-alloc 32 in
-let w = @fmt-i64 out 0 result in
-let _ = @write 1 out w in
-let _ = @write 1 "\n" 1 in
-0
+(let (rec (lam (let (app (sym buf-alloc) (int 1)) (let (app (app (app (sym read) (int 0)) (var 0)) (int 1)) (if (app (app (sym eq) (var 0)) (int 0)) (app (app (sym add) (app (app (sym div) (var 2)) (int 100000))) (app (app (sym mod) (var 2)) (int 100000))) (let (app (app (sym buf-get) (var 1)) (int 0)) (if (app (app (sym eq) (var 0)) (int 10)) (app (var 4) (app (app (sym mul) (app (app (sym add) (app (app (sym div) (var 3)) (int 100000))) (app (app (sym mod) (var 3)) (int 100000)))) (int 100000))) (app (var 4) (app (app (sym add) (app (app (sym mul) (app (app (sym div) (var 3)) (int 100000))) (int 100000))) (app (app (sym add) (app (app (sym mul) (app (app (sym mod) (var 3)) (int 100000))) (int 10))) (app (app (sym sub) (var 0)) (int 48))))))))))) (app (var 0) (int 0))) (let (app (sym buf-alloc) (int 32)) (let (app (app (app (sym fmt-i64) (var 0)) (int 0)) (var 1)) (let (app (app (app (sym write) (int 1)) (var 1)) (var 0)) (let (app (app (app (sym write) (int 1)) (str "\n")) (int 1)) (int 0))))))
