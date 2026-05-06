@@ -26,6 +26,16 @@ pub struct SidecarNode {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub field_order: Option<Vec<usize>>,
 
+    /// Authoring-view type string for the node's inferred value type (e.g. `"Int -> Int"`).
+    /// On the root display node this describes the program's evaluated type.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub type_hint: Option<String>,
+
+    /// Effect atoms expected at this node (e.g. `["IO"]`).
+    /// On the root display node this describes the program's eval-effect set.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effect_hint: Option<Vec<String>>,
+
     /// Child sidecar entries in canonical child order. Absent ≡ all-null.
     /// Internal entries may be None (≡ {} with implicit all-null subtree).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -47,6 +57,8 @@ impl SidecarNode {
             && self.binders.is_none()
             && self.comment.is_none()
             && self.field_order.is_none()
+            && self.type_hint.is_none()
+            && self.effect_hint.is_none()
             && self.children.as_ref().is_none_or(|c| {
                 c.iter()
                     .all(|opt| opt.as_ref().is_none_or(|n| n.is_empty()))
@@ -113,3 +125,52 @@ impl std::fmt::Display for SidecarError {
 }
 
 impl std::error::Error for SidecarError {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn is_empty_with_type_hint() {
+        let node = SidecarNode {
+            type_hint: Some("Int".to_string()),
+            ..Default::default()
+        };
+        assert!(!node.is_empty());
+    }
+
+    #[test]
+    fn is_empty_with_effect_hint() {
+        let node = SidecarNode {
+            effect_hint: Some(vec!["IO".to_string()]),
+            ..Default::default()
+        };
+        assert!(!node.is_empty());
+    }
+
+    #[test]
+    fn type_hint_effect_hint_round_trip() {
+        let node = SidecarNode {
+            type_hint: Some("Int -> Int".to_string()),
+            effect_hint: Some(vec!["IO".to_string(), "Alloc".to_string()]),
+            ..Default::default()
+        };
+        let sidecar = Sidecar::new(b"(int 1)", node.clone());
+        let json = serde_json::to_string(&sidecar).unwrap();
+        let back: Sidecar = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.display.type_hint, node.type_hint);
+        assert_eq!(back.display.effect_hint, node.effect_hint);
+    }
+
+    #[test]
+    fn absent_hints_omitted_from_json() {
+        let node = SidecarNode {
+            binder: Some("x".to_string()),
+            ..Default::default()
+        };
+        let sidecar = Sidecar::new(b"(int 1)", node);
+        let json = serde_json::to_string(&sidecar).unwrap();
+        assert!(!json.contains("type_hint"), "type_hint should be absent");
+        assert!(!json.contains("effect_hint"), "effect_hint should be absent");
+    }
+}

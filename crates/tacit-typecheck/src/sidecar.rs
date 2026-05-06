@@ -8,6 +8,7 @@ use std::path::Path;
 
 use serde::Deserialize;
 use tacit_canonical::ast::Node;
+use tacit_views;
 
 use crate::error::Diagnostic;
 use crate::infer::infer;
@@ -55,6 +56,62 @@ impl TypeSidecar {
 #[derive(Deserialize)]
 struct TomlOuter {
     types: Option<BTreeMap<String, TypeEntry>>,
+}
+
+/// Check an AST against `type_hint` / `effect_hint` on the root display node of a `.tacd` sidecar.
+///
+/// Runs type inference on `ast` and compares the result against the hints.
+/// Returns `Ok(())` when both hints are absent (nothing to check), on success,
+/// or `Err(diags)` on mismatch or type error.
+pub fn check_against_tacd(
+    ast: &Node,
+    sidecar: &tacit_views::sidecar::Sidecar,
+) -> Result<(), Vec<Diagnostic>> {
+    let mut subst = Subst::default();
+    let mut diags: Vec<Diagnostic> = Vec::new();
+
+    let (inferred, eval_eff_fn) = infer(&[], ast, &mut subst, &[], &mut diags);
+    let inferred = subst.apply(&inferred);
+    let eval_eff = subst.resolve_eff(&eval_eff_fn);
+
+    if !diags.is_empty() {
+        return Err(diags);
+    }
+
+    let display = &sidecar.display;
+
+    if let Some(type_str) = &display.type_hint {
+        let expected_ty = match parse_type_str(type_str) {
+            Ok(t) => t,
+            Err(e) => {
+                diags.push(Diagnostic::unresolved_type(
+                    &[],
+                    &format!("sidecar type_hint parse error: {}", e),
+                ));
+                Ty::Unknown
+            }
+        };
+        if !types_match(&inferred, &expected_ty) {
+            diags.push(Diagnostic::type_mismatch(&[], &expected_ty, &inferred));
+        }
+    }
+
+    if let Some(effect_atoms) = &display.effect_hint {
+        let expected_eff = parse_effect_list(effect_atoms);
+        if eval_eff != expected_eff {
+            diags.push(Diagnostic::effect_set_mismatch(
+                &[],
+                &expected_eff,
+                &eval_eff,
+            ));
+        }
+    }
+
+    if diags.is_empty() {
+        Ok(())
+    } else {
+        Err(diags)
+    }
 }
 
 /// Check an AST against the `[types.main]` entry in a type sidecar.
@@ -312,6 +369,48 @@ mod tests {
         let sidecar = TypeSidecar { types };
         let result = check_against_sidecar(&ast, &sidecar);
         let diags = result.unwrap_err();
+        assert!(diags.iter().any(|d| d.kind == "effect-violation"));
+    }
+
+    // ── check_against_tacd tests ──────────────────────────────────────────────
+
+    fn make_tacd(type_hint: Option<&str>, effect_hint: Option<Vec<&str>>) -> tacit_views::sidecar::Sidecar {
+        use tacit_views::sidecar::{Sidecar, SidecarNode};
+        let display = SidecarNode {
+            type_hint: type_hint.map(str::to_owned),
+            effect_hint: effect_hint.map(|v| v.into_iter().map(str::to_owned).collect()),
+            ..Default::default()
+        };
+        Sidecar::new(b"(int 0)", display)
+    }
+
+    #[test]
+    fn tacd_no_hints_passes() {
+        let ast = Node::Int { value: "42".to_string() };
+        let sidecar = make_tacd(None, None);
+        assert!(check_against_tacd(&ast, &sidecar).is_ok());
+    }
+
+    #[test]
+    fn tacd_type_hint_match() {
+        let ast = Node::Int { value: "42".to_string() };
+        let sidecar = make_tacd(Some("Int"), Some(vec![]));
+        assert!(check_against_tacd(&ast, &sidecar).is_ok());
+    }
+
+    #[test]
+    fn tacd_type_hint_mismatch() {
+        let ast = Node::Str { value: "hello".to_string() };
+        let sidecar = make_tacd(Some("Int"), None);
+        let diags = check_against_tacd(&ast, &sidecar).unwrap_err();
+        assert!(diags.iter().any(|d| d.kind == "type-mismatch"));
+    }
+
+    #[test]
+    fn tacd_effect_hint_mismatch() {
+        let ast = Node::Int { value: "0".to_string() };
+        let sidecar = make_tacd(Some("Int"), Some(vec!["IO"]));
+        let diags = check_against_tacd(&ast, &sidecar).unwrap_err();
         assert!(diags.iter().any(|d| d.kind == "effect-violation"));
     }
 }

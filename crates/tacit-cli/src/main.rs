@@ -6,6 +6,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 
 use tacit_typecheck::{infer_module, DiagOutput};
 use tacit_views::authoring::{emit_authoring, parse_authoring};
+use tacit_views::sidecar::Sidecar;
 use tacit_views::{emit_inspection, InspectFlags};
 
 #[derive(Parser)]
@@ -40,6 +41,28 @@ enum Cmd {
         /// Output format: human-readable text (default) or JSON.
         #[arg(long, value_enum, value_name = "FORMAT", default_value = "text")]
         format: CheckFormat,
+    },
+
+    /// Migrate a .tac (authoring view) + .tac.sidecar.toml to canonical .tac + .tacd (one-shot).
+    MigrateSidecar {
+        /// Input .tac file (authoring view).
+        input: PathBuf,
+
+        /// Path to the .tac.sidecar.toml to fold in (defaults to <input>.sidecar.toml).
+        #[arg(long, value_name = "TOML")]
+        toml: Option<PathBuf>,
+
+        /// Parse and canonicalize but write nothing; prints canonical hash.
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Overwrite <input> with canonical bytes and write <input stem>.tacd alongside.
+        #[arg(long)]
+        in_place: bool,
+
+        /// Reject ASTs containing Hole nodes.
+        #[arg(long)]
+        strict: bool,
     },
 
     /// Render a .tac source file in the authoring or inspection view.
@@ -99,6 +122,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             emit_llvm_ir,
         } => cmd_compile(input, output, emit_llvm_ir),
         Cmd::Check { input, format } => cmd_check(input, format),
+        Cmd::MigrateSidecar {
+            input,
+            toml,
+            dry_run,
+            in_place,
+            strict,
+        } => cmd_migrate_sidecar(input, toml, dry_run, in_place, strict),
         Cmd::View {
             input,
             view_format,
@@ -140,6 +170,124 @@ fn cmd_check(input: PathBuf, format: CheckFormat) -> Result<(), Box<dyn std::err
         }
     }
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// migrate-sidecar subcommand (one-shot; deleted after repository conversion)
+// ---------------------------------------------------------------------------
+
+fn cmd_migrate_sidecar(
+    input: PathBuf,
+    toml_override: Option<PathBuf>,
+    dry_run: bool,
+    in_place: bool,
+    strict: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if !dry_run && !in_place {
+        return Err("specify --dry-run or --in-place".into());
+    }
+
+    // --- Parse authoring view ---
+    let src = std::fs::read(&input).map_err(|e| format!("{}: {}", input.display(), e))?;
+    let (node, display_sidecar) =
+        parse_authoring(&src).map_err(|e| format!("{}: {}", input.display(), e))?;
+
+    // --- Reject holes if --strict ---
+    if strict && contains_hole(&node) {
+        return Err(format!(
+            "{}: AST contains Hole node(s); refusing with --strict",
+            input.display()
+        )
+        .into());
+    }
+
+    // --- Emit canonical bytes ---
+    let canonical_bytes = tacit_canonical::emit(&node);
+
+    // --- Load TOML sidecar (optional) ---
+    let toml_path = toml_override
+        .unwrap_or_else(|| input.with_extension("tac.sidecar.toml"));
+    let toml_sidecar = tacit_typecheck::TypeSidecar::load(&toml_path)
+        .map_err(|e| format!("{}: {}", toml_path.display(), e))?;
+
+    // --- Build .tacd: start from display sidecar, fold type/effect onto root node ---
+    let mut root_display = display_sidecar;
+    if let Some(entry) = toml_sidecar.get("main") {
+        root_display.type_hint = Some(entry.type_str.clone());
+        if !entry.effects.is_empty() {
+            root_display.effect_hint = Some(entry.effects.clone());
+        }
+    }
+    let tacd = Sidecar::new(&canonical_bytes, root_display);
+
+    // --- Compute output paths ---
+    let canonical_path = input.with_extension("tac");
+    let tacd_path = input.with_extension("tacd");
+
+    if dry_run {
+        let hash = &tacd.targets_hash_blake3;
+        println!(
+            "canonical path: {}\ntacd path:      {}\nblake3 hash:    {}",
+            canonical_path.display(),
+            tacd_path.display(),
+            hash,
+        );
+        return Ok(());
+    }
+
+    // in_place
+    std::fs::write(&canonical_path, &canonical_bytes)
+        .map_err(|e| format!("{}: {}", canonical_path.display(), e))?;
+    tacd.write(&tacd_path)
+        .map_err(|e| format!("{}: {}", tacd_path.display(), e))?;
+
+    println!(
+        "wrote {} ({} bytes) and {}",
+        canonical_path.display(),
+        canonical_bytes.len(),
+        tacd_path.display(),
+    );
+    Ok(())
+}
+
+fn contains_hole(node: &tacit_canonical::ast::Node) -> bool {
+    use tacit_canonical::ast::Node;
+    match node {
+        Node::Hole { .. } => true,
+        Node::Int { .. }
+        | Node::Str { .. }
+        | Node::Sym { .. }
+        | Node::Var { .. }
+        | Node::PatWild
+        | Node::PatVar
+        | Node::PatInt { .. }
+        | Node::TyVar { .. }
+        | Node::EffSet { .. }
+        | Node::EffVar { .. } => false,
+        Node::Lam { body } => contains_hole(body),
+        Node::App { fn_, arg } => contains_hole(fn_) || contains_hole(arg),
+        Node::Let { rhs, body } => contains_hole(rhs) || contains_hole(body),
+        Node::If { cond, then, else_ } => {
+            contains_hole(cond) || contains_hole(then) || contains_hole(else_)
+        }
+        Node::Rec { bindings, body } => {
+            bindings.iter().any(contains_hole) || contains_hole(body)
+        }
+        Node::Module { bindings } => bindings.iter().any(contains_hole),
+        Node::Record { fields } => fields.iter().any(|(_, v)| contains_hole(v)),
+        Node::Proj { record, .. } => contains_hole(record),
+        Node::Match { scrutinee, arms } => {
+            contains_hole(scrutinee) || arms.iter().any(contains_hole)
+        }
+        Node::Arm { pattern, body } => contains_hole(pattern) || contains_hole(body),
+        Node::Ann { expr, type_ } => contains_hole(expr) || contains_hole(type_),
+        Node::Ctor { args, .. } => args.iter().any(contains_hole),
+        Node::PatCtor { sub_patterns, .. } => sub_patterns.iter().any(contains_hole),
+        Node::FnTy { arg, ret, eff } => {
+            contains_hole(arg) || contains_hole(ret) || contains_hole(eff)
+        }
+        Node::Forall { body, .. } => contains_hole(body),
+    }
 }
 
 // ---------------------------------------------------------------------------

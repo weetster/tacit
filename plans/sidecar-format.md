@@ -102,13 +102,39 @@ Child entries may be:
 
 A `children` array with **more** entries than the AST has canonical children (`K > N`) is a structural mismatch and triggers the stale-sidecar path (§ 4).
 
-### 3.5 Reserved keys
+### 3.5 Type and effect hints (live keys)
 
-The following keys are reserved for Phase 1+ and must not appear in a Phase 0 (`tacd_version: "1"`) sidecar:
+`type_hint` and `effect_hint` are **live keys** per ADR 0071, promoted from reserved status. Both are optional and may appear on any `SidecarNode`; on the root `display` node they describe the program's evaluated value type and effect set.
 
-- `effect_hint` — hints for inspection-view effect annotations.
+| Key | Type | Meaning |
+|---|---|---|
+| `type_hint` | `string` | Authoring-view type string for the node's value type, e.g. `"Int -> Int"`. |
+| `effect_hint` | `string[]` | Sorted list of effect atom names, e.g. `["IO", "Mut"]`. Empty array and absent key are both treated as "pure." |
+
+**Worked example** — a pure factorial function:
+
+```json
+{
+  "tacd_version": "1",
+  "targets_hash_blake3": "a1b2c3...",
+  "display": {
+    "type_hint": "Int -> Int",
+    "effect_hint": [],
+    "binders": ["factorial"],
+    "children": [...]
+  }
+}
+```
+
+Per-binding hints on child nodes (non-root) are a future expansion path and are not produced by current tooling; readers that encounter them on child nodes MUST ignore them rather than error.
+
+No `tacd_version` bump is required: § 2 already mandates that readers ignore unrecognised keys, so existing readers silently skip these keys when absent and new readers can consume them.
+
+### 3.6 Reserved keys
+
+The following keys are reserved for future phases and MUST NOT appear in a `tacd_version: "1"` sidecar produced by current tooling:
+
 - `source_range` — source-position mapping for authoring-view editors.
-- `type_hint` — lightweight type annotations shown in inspection view.
 - `diagnostic_extra` — extended payload for `hole` nodes beyond the canonical payload string.
 
 Readers MUST ignore any key they do not recognize (§ 2).

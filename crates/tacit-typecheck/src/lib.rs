@@ -17,7 +17,7 @@ pub mod type_from_node;
 
 pub use error::{DiagOutput, Diagnostic};
 pub use infer::infer;
-pub use sidecar::{check_against_sidecar, TypeSidecar};
+pub use sidecar::{check_against_sidecar, check_against_tacd, TypeSidecar};
 pub use ty::{EffSet, Ty};
 
 use tacit_canonical::ast::Node;
