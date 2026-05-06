@@ -91,28 +91,6 @@ enum Cmd {
         effects: bool,
     },
 
-    /// Migrate a .tac (authoring view) + .tac.sidecar.toml to canonical .tac + .tacd (one-shot).
-    MigrateSidecar {
-        /// Input .tac file (authoring view).
-        input: PathBuf,
-
-        /// Path to the .tac.sidecar.toml to fold in (defaults to <input>.sidecar.toml).
-        #[arg(long, value_name = "TOML")]
-        toml: Option<PathBuf>,
-
-        /// Parse and canonicalize but write nothing; prints canonical hash.
-        #[arg(long)]
-        dry_run: bool,
-
-        /// Overwrite <input> with canonical bytes and write <input stem>.tacd alongside.
-        #[arg(long)]
-        in_place: bool,
-
-        /// Reject ASTs containing Hole nodes.
-        #[arg(long)]
-        strict: bool,
-    },
-
     /// Render a .tac or .taca source file in the authoring or inspection view.
     View {
         /// Input .tac (canonical) or .taca (authoring) file.
@@ -185,13 +163,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             types,
             effects,
         } => cmd_render(input, view_format, output, debruijn, hashes, types, effects),
-        Cmd::MigrateSidecar {
-            input,
-            toml,
-            dry_run,
-            in_place,
-            strict,
-        } => cmd_migrate_sidecar(input, toml, dry_run, in_place, strict),
         Cmd::View {
             input,
             view_format,
@@ -375,84 +346,6 @@ fn cmd_check(input: PathBuf, format: CheckFormat) -> Result<(), Box<dyn std::err
             std::process::exit(1);
         }
     }
-    Ok(())
-}
-
-// ---------------------------------------------------------------------------
-// migrate-sidecar subcommand (one-shot; deleted after repository conversion)
-// ---------------------------------------------------------------------------
-
-fn cmd_migrate_sidecar(
-    input: PathBuf,
-    toml_override: Option<PathBuf>,
-    dry_run: bool,
-    in_place: bool,
-    strict: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
-    if !dry_run && !in_place {
-        return Err("specify --dry-run or --in-place".into());
-    }
-
-    // --- Parse authoring view ---
-    let src = std::fs::read(&input).map_err(|e| format!("{}: {}", input.display(), e))?;
-    let (node, display_sidecar) =
-        parse_authoring(&src).map_err(|e| format!("{}: {}", input.display(), e))?;
-
-    // --- Reject holes if --strict ---
-    if strict && contains_hole(&node) {
-        return Err(format!(
-            "{}: AST contains Hole node(s); refusing with --strict",
-            input.display()
-        )
-        .into());
-    }
-
-    // --- Emit canonical bytes ---
-    let canonical_bytes = tacit_canonical::emit(&node);
-
-    // --- Load TOML sidecar (optional) ---
-    let toml_path = toml_override
-        .unwrap_or_else(|| input.with_extension("tac.sidecar.toml"));
-    let toml_sidecar = tacit_typecheck::TypeSidecar::load(&toml_path)
-        .map_err(|e| format!("{}: {}", toml_path.display(), e))?;
-
-    // --- Build .tacd: start from display sidecar, fold type/effect onto root node ---
-    let mut root_display = display_sidecar;
-    if let Some(entry) = toml_sidecar.get("main") {
-        root_display.type_hint = Some(entry.type_str.clone());
-        if !entry.effects.is_empty() {
-            root_display.effect_hint = Some(entry.effects.clone());
-        }
-    }
-    let tacd = Sidecar::new(&canonical_bytes, root_display);
-
-    // --- Compute output paths ---
-    let canonical_path = input.with_extension("tac");
-    let tacd_path = input.with_extension("tacd");
-
-    if dry_run {
-        let hash = &tacd.targets_hash_blake3;
-        println!(
-            "canonical path: {}\ntacd path:      {}\nblake3 hash:    {}",
-            canonical_path.display(),
-            tacd_path.display(),
-            hash,
-        );
-        return Ok(());
-    }
-
-    // in_place
-    std::fs::write(&canonical_path, &canonical_bytes)
-        .map_err(|e| format!("{}: {}", canonical_path.display(), e))?;
-    tacd.write(&tacd_path)
-        .map_err(|e| format!("{}: {}", tacd_path.display(), e))?;
-
-    println!(
-        "wrote {} ({} bytes) and {}",
-        canonical_path.display(),
-        canonical_bytes.len(),
-        tacd_path.display(),
-    );
     Ok(())
 }
 

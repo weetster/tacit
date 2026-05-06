@@ -1,8 +1,8 @@
 //! Phase 2 structural type and effect checker for Tacit-Lite.
 //!
-//! Public surface per [phase-2-plan.md § Stage 3](../../plans/phase-2-plan.md):
+//! Public surface:
 //! - `infer_module`: run type+effect inference on an AST node.
-//! - `check_against_sidecar`: check a program against `.tac.sidecar.toml` expectations.
+//! - `check_against_tacd`: check a program against `.tacd` sidecar hints.
 //! - `Diagnostic` / `DiagOutput`: structured error format per ADR 0041.
 //!
 //! Stage 3 adds full effect inference (IO, Alloc, Mut, Div) and effect
@@ -17,7 +17,7 @@ pub mod type_from_node;
 
 pub use error::{DiagOutput, Diagnostic};
 pub use infer::infer;
-pub use sidecar::{check_against_sidecar, check_against_tacd, TypeSidecar};
+pub use sidecar::check_against_tacd;
 pub use ty::{EffSet, Ty};
 
 use tacit_canonical::ast::Node;

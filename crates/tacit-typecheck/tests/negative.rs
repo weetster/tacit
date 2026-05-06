@@ -5,7 +5,7 @@
 
 use tacit_canonical::ast::Node;
 use tacit_typecheck::infer_module;
-use tacit_typecheck::sidecar::{check_against_sidecar, TypeSidecar};
+use tacit_typecheck::sidecar::check_against_tacd;
 use tacit_typecheck::ty::Subst;
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -203,25 +203,20 @@ fn neg_parser_recovery_hole_flows_through_typecheck() {
 
 // ── sidecar type mismatch ──────────────────────────────────────────────────────
 
-/// check_against_sidecar reports a type-mismatch when the inferred type
-/// does not match the sidecar expectation.
+/// check_against_tacd reports a type-mismatch when the inferred type
+/// does not match the sidecar type_hint.
 #[test]
 fn neg_sidecar_type_mismatch() {
-    use std::collections::BTreeMap;
-    use tacit_typecheck::sidecar::TypeEntry;
+    use tacit_views::sidecar::{Sidecar, SidecarNode};
 
     // Expression is `"hello"` (Str), but sidecar expects Int.
     let ast = str_node("hello");
-    let mut types = BTreeMap::new();
-    types.insert(
-        "main".to_string(),
-        TypeEntry {
-            type_str: "Int".to_string(),
-            effects: vec![],
-        },
-    );
-    let sidecar = TypeSidecar { types };
-    let result = check_against_sidecar(&ast, &sidecar);
+    let display = SidecarNode {
+        type_hint: Some("Int".to_string()),
+        ..Default::default()
+    };
+    let sidecar = Sidecar::new(b"(str \"hello\")", display);
+    let result = check_against_tacd(&ast, &sidecar);
     let diags = result.unwrap_err();
     expect_error(&diags, "type-mismatch");
 }
@@ -265,25 +260,21 @@ fn neg_effect_violation_pure_annotation_on_io_body() {
 
 // ── sidecar effect mismatch ───────────────────────────────────────────────────
 
-/// check_against_sidecar reports an effect-violation when the inferred
-/// eval-effect does not match the sidecar's `effects` list.
+/// check_against_tacd reports an effect-violation when the inferred
+/// eval-effect does not match the sidecar's effect_hint.
 #[test]
 fn neg_sidecar_effect_mismatch() {
-    use std::collections::BTreeMap;
-    use tacit_typecheck::sidecar::TypeEntry;
+    use tacit_views::sidecar::{Sidecar, SidecarNode};
 
     // Expression is pure (int 0), but sidecar expects IO.
     let ast = int(0);
-    let mut types = BTreeMap::new();
-    types.insert(
-        "main".to_string(),
-        TypeEntry {
-            type_str: "Int".to_string(),
-            effects: vec!["IO".to_string()],
-        },
-    );
-    let sidecar = TypeSidecar { types };
-    let result = check_against_sidecar(&ast, &sidecar);
+    let display = SidecarNode {
+        type_hint: Some("Int".to_string()),
+        effect_hint: Some(vec!["IO".to_string()]),
+        ..Default::default()
+    };
+    let sidecar = Sidecar::new(b"(int 0)", display);
+    let result = check_against_tacd(&ast, &sidecar);
     let diags = result.unwrap_err();
     expect_error(&diags, "effect-violation");
 }

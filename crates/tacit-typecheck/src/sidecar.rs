@@ -1,62 +1,14 @@
-//! Type-expectation sidecars (`.tac.sidecar.toml`) per ADR 0043.
+//! Type-expectation sidecars (`.tacd`) per ADR 0071.
 //!
-//! Stage 3: also checks the `effects` field against the inferred eval-effect
-//! of the top-level expression.
+//! Checks `type_hint` / `effect_hint` on the root display node against the
+//! inferred type and eval-effect of the top-level expression.
 
-use std::collections::BTreeMap;
-use std::path::Path;
-
-use serde::Deserialize;
 use tacit_canonical::ast::Node;
 use tacit_views;
 
 use crate::error::Diagnostic;
 use crate::infer::infer;
 use crate::ty::{EffAtom, EffSet, Subst, Ty};
-
-/// A type+effect expectation entry for one named binding.
-#[derive(Debug, Clone, Deserialize)]
-pub struct TypeEntry {
-    /// Authoring-view type string, e.g. `"Int -> Int"`.
-    #[serde(rename = "type")]
-    pub type_str: String,
-    /// Sorted list of effect atoms, e.g. `["IO"]`.
-    pub effects: Vec<String>,
-}
-
-/// TOML-format type sidecar for a program.
-#[derive(Debug, Clone, Deserialize, Default)]
-pub struct TypeSidecar {
-    #[serde(default)]
-    pub types: BTreeMap<String, TypeEntry>,
-}
-
-impl TypeSidecar {
-    /// Load from a `.tac.sidecar.toml` file.
-    /// Returns `Ok(Default::default())` if the file does not exist.
-    pub fn load(path: &Path) -> Result<TypeSidecar, String> {
-        match std::fs::read_to_string(path) {
-            Ok(text) => {
-                let outer: TomlOuter = toml::from_str(&text)
-                    .map_err(|e| format!("TOML parse error in {:?}: {}", path, e))?;
-                Ok(TypeSidecar {
-                    types: outer.types.unwrap_or_default(),
-                })
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(TypeSidecar::default()),
-            Err(e) => Err(format!("I/O error reading {:?}: {}", path, e)),
-        }
-    }
-
-    pub fn get(&self, name: &str) -> Option<&TypeEntry> {
-        self.types.get(name)
-    }
-}
-
-#[derive(Deserialize)]
-struct TomlOuter {
-    types: Option<BTreeMap<String, TypeEntry>>,
-}
 
 /// Check an AST against `type_hint` / `effect_hint` on the root display node of a `.tacd` sidecar.
 ///
@@ -98,60 +50,6 @@ pub fn check_against_tacd(
 
     if let Some(effect_atoms) = &display.effect_hint {
         let expected_eff = parse_effect_list(effect_atoms);
-        if eval_eff != expected_eff {
-            diags.push(Diagnostic::effect_set_mismatch(
-                &[],
-                &expected_eff,
-                &eval_eff,
-            ));
-        }
-    }
-
-    if diags.is_empty() {
-        Ok(())
-    } else {
-        Err(diags)
-    }
-}
-
-/// Check an AST against the `[types.main]` entry in a type sidecar.
-///
-/// Runs type inference on `ast` and compares the result against the sidecar's
-/// expected type and effect set. Returns `Ok(())` on success, `Err(diags)` on
-/// mismatch or type error.
-pub fn check_against_sidecar(
-    ast: &Node,
-    type_sidecar: &TypeSidecar,
-) -> Result<(), Vec<Diagnostic>> {
-    let mut subst = Subst::default();
-    let mut diags: Vec<Diagnostic> = Vec::new();
-
-    let (inferred, eval_eff_fn) = infer(&[], ast, &mut subst, &[], &mut diags);
-    let inferred = subst.apply(&inferred);
-    let eval_eff = subst.resolve_eff(&eval_eff_fn);
-
-    if !diags.is_empty() {
-        return Err(diags);
-    }
-
-    if let Some(entry) = type_sidecar.get("main") {
-        // Check value type.
-        let expected_ty = match parse_type_str(&entry.type_str) {
-            Ok(t) => t,
-            Err(e) => {
-                diags.push(Diagnostic::unresolved_type(
-                    &[],
-                    &format!("sidecar type parse error: {}", e),
-                ));
-                Ty::Unknown
-            }
-        };
-        if !types_match(&inferred, &expected_ty) {
-            diags.push(Diagnostic::type_mismatch(&[], &expected_ty, &inferred));
-        }
-
-        // Check effect set.
-        let expected_eff = parse_effect_list(&entry.effects);
         if eval_eff != expected_eff {
             diags.push(Diagnostic::effect_set_mismatch(
                 &[],
@@ -329,47 +227,6 @@ mod tests {
     fn parse_effect_list_empty() {
         let eff = parse_effect_list(&[]);
         assert!(eff.is_pure());
-    }
-
-    #[test]
-    fn sidecar_type_mismatch() {
-        use std::collections::BTreeMap;
-        let ast = Node::Str {
-            value: "hello".to_string(),
-        };
-        let mut types = BTreeMap::new();
-        types.insert(
-            "main".to_string(),
-            TypeEntry {
-                type_str: "Int".to_string(),
-                effects: vec![],
-            },
-        );
-        let sidecar = TypeSidecar { types };
-        let result = check_against_sidecar(&ast, &sidecar);
-        let diags = result.unwrap_err();
-        assert!(diags.iter().any(|d| d.kind == "type-mismatch"));
-    }
-
-    #[test]
-    fn sidecar_effect_mismatch() {
-        use std::collections::BTreeMap;
-        // Expression is pure (0), but sidecar expects IO.
-        let ast = Node::Int {
-            value: "0".to_string(),
-        };
-        let mut types = BTreeMap::new();
-        types.insert(
-            "main".to_string(),
-            TypeEntry {
-                type_str: "Int".to_string(),
-                effects: vec!["IO".to_string()],
-            },
-        );
-        let sidecar = TypeSidecar { types };
-        let result = check_against_sidecar(&ast, &sidecar);
-        let diags = result.unwrap_err();
-        assert!(diags.iter().any(|d| d.kind == "effect-violation"));
     }
 
     // ── check_against_tacd tests ──────────────────────────────────────────────
