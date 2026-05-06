@@ -1,0 +1,40 @@
+{
+  "completed_at": "2026-05-06T03:07:12Z",
+  "corpus_git_sha": "beb1d0679a70abec0d05a231b45ef8c89ed9e87a",
+  "dry_run": false,
+  "harness_git_sha": "beb1d0679a70abec0d05a231b45ef8c89ed9e87a",
+  "harness_version": "0.4.0",
+  "model_id": "claude-sonnet-4-6",
+  "primer_blake3": "e7979fe17b91c06abc0fd8cb4237e8ef6998bbbc9765e700fff5909e83477005",
+  "primer_token_count": 19690,
+  "provider": "anthropic",
+  "repair_turns": 2,
+  "result_label": "library-mediated",
+  "run_id": "019dfb3f-4834-7178-ac54-41d836afdae2",
+  "sampling": {
+    "max_tokens": 8192,
+    "temperature": 0
+  },
+  "started_at": "2026-05-06T03:05:21Z",
+  "tacit_binary": {
+    "tacit_bin_blake3": "62a9eee1392616efde9dc056b3eba00682a3da25aa103238e075226b236109b3",
+    "tacit_bin_mtime": "2026-05-06T02:50:35Z",
+    "tacit_bin_path": "/home/mike/github/tacit/target/release/tacit"
+  },
+  "task_ids": [
+    "strings/011-reverse-string",
+    "strings/012-count-vowels",
+    "strings/013-is-palindrome",
+    "strings/015-title-case",
+    "strings/016-longest-word",
+    "strings/020-is-anagram",
+    "collections/021-unique-in-order",
+    "algorithms/036-quicksort",
+    "io/051-line-count",
+    "io/057-word-count",
+    "io/059-echo-reverse",
+    "io/060-longest-line"
+  ],
+  "tasks_scope": "open",
+  "tiktoken_encoding": "o200k_base"
+}
