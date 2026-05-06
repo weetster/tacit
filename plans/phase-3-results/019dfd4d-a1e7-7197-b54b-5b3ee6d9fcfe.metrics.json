@@ -1,0 +1,505 @@
+{
+  "aggregates": {
+    "full": {
+      "compile_pass_rate": 0.9166666666666666,
+      "primer_amortized_total": 24547,
+      "python_tokens_total": 872,
+      "tacit_tokens_total": 247187,
+      "task_count": 12,
+      "tests_pass_rate": 0.9166666666666666,
+      "tests_pass_total": 74,
+      "tests_total_total": 74,
+      "token_delta": 282.4713302752294,
+      "typecheck_pass_rate": 0.9166666666666666
+    },
+    "non_stdlib_dominated": {
+      "compile_pass_rate": 0.9166666666666666,
+      "primer_amortized_total": 24547,
+      "python_tokens_total": 872,
+      "tacit_tokens_total": 247187,
+      "task_count": 12,
+      "tests_pass_rate": 0.9166666666666666,
+      "tests_pass_total": 74,
+      "tests_total_total": 74,
+      "token_delta": 282.4713302752294,
+      "typecheck_pass_rate": 0.9166666666666666
+    },
+    "repair": {
+      "average_model_calls_per_task": 1.0833333333333333,
+      "behavioral_initial_failure_count": 0,
+      "behavioral_recovery_rate": 0.0,
+      "behavioral_repaired_count": 0,
+      "compile_typecheck_initial_failure_count": 1,
+      "compile_typecheck_recovered_count": 1,
+      "compile_typecheck_recovery_rate": 1.0,
+      "final_compile_pass_rate": 1.0,
+      "final_task_pass_rate": 1.0,
+      "final_typecheck_pass_rate": 1.0,
+      "initially_failed_count": 1,
+      "invalid_initial_failure_count": 1,
+      "invalid_recovery_rate": 1.0,
+      "invalid_repaired_count": 1,
+      "one_shot_task_pass_rate": 0.9166666666666666,
+      "python_tokens_total": 872,
+      "repair_primer_amortized_total": 24732,
+      "repair_primer_tokens_total": 263120,
+      "repair_recovery_rate": 1.0,
+      "repair_success_count": 1,
+      "repair_tacit_tokens_total": 267612,
+      "repair_token_delta": 305.89449541284404,
+      "task_count": 12,
+      "total_api_calls": 13,
+      "total_generation_tokens": 4492,
+      "total_model_calls": 13
+    },
+    "stdlib_dominated": {
+      "compile_pass_rate": 0.0,
+      "primer_amortized_total": 0,
+      "python_tokens_total": 0,
+      "tacit_tokens_total": 0,
+      "task_count": 0,
+      "tests_pass_rate": 0.0,
+      "tests_pass_total": 0,
+      "tests_total_total": 0,
+      "token_delta": 0.0,
+      "typecheck_pass_rate": 0.0
+    }
+  },
+  "gates": {
+    "passed_overall": false,
+    "primary_pass_rate_gate": {
+      "applies": false,
+      "metric": "tests_pass_rate",
+      "passed": false,
+      "scope": "full",
+      "threshold": 0.7,
+      "value": 0.0
+    },
+    "primary_token_gate_full": {
+      "applies": false,
+      "metric": "token_delta",
+      "passed": false,
+      "scope": "full",
+      "threshold": -0.3,
+      "value": 0.0
+    },
+    "primary_token_gate_non_stdlib": {
+      "applies": false,
+      "metric": "token_delta",
+      "passed": false,
+      "scope": "non_stdlib_dominated",
+      "threshold": -0.3,
+      "value": 0.0
+    }
+  },
+  "model": {
+    "id": "claude-sonnet-4-6",
+    "primer_hash": "de551362b11962537f3716ca61a234dfda28dcf8420bceac95e4f909efe6a801",
+    "primer_tokens": 20240,
+    "provider": "anthropic"
+  },
+  "result_label": "library-mediated",
+  "run_id": "019dfd4d-a1e7-7197-b54b-5b3ee6d9fcfe",
+  "schema_version": "p3.0",
+  "scope": "open",
+  "tasks": [
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "diagnostics_by_turn": {
+        "turn-0": null
+      },
+      "duration_ms": 6966,
+      "failure_stage_by_turn": {
+        "turn-0": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": true,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 302,
+      "generation_tokens_by_turn": {
+        "turn-0": 302
+      },
+      "python_baseline_tokens": 37,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "strings/011-reverse-string",
+      "tests_pass": 6,
+      "tests_total": 6,
+      "turns_used": 0,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "diagnostics_by_turn": {
+        "turn-0": null
+      },
+      "duration_ms": 5189,
+      "failure_stage_by_turn": {
+        "turn-0": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": true,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 222,
+      "generation_tokens_by_turn": {
+        "turn-0": 222
+      },
+      "python_baseline_tokens": 60,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "strings/012-count-vowels",
+      "tests_pass": 6,
+      "tests_total": 6,
+      "turns_used": 0,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "diagnostics_by_turn": {
+        "turn-0": null
+      },
+      "duration_ms": 7791,
+      "failure_stage_by_turn": {
+        "turn-0": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": true,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 359,
+      "generation_tokens_by_turn": {
+        "turn-0": 359
+      },
+      "python_baseline_tokens": 65,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "strings/013-is-palindrome",
+      "tests_pass": 8,
+      "tests_total": 8,
+      "turns_used": 0,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "diagnostics_by_turn": {
+        "turn-0": null
+      },
+      "duration_ms": 6249,
+      "failure_stage_by_turn": {
+        "turn-0": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": true,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 286,
+      "generation_tokens_by_turn": {
+        "turn-0": 286
+      },
+      "python_baseline_tokens": 63,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "strings/015-title-case",
+      "tests_pass": 8,
+      "tests_total": 8,
+      "turns_used": 0,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "diagnostics_by_turn": {
+        "turn-0": null
+      },
+      "duration_ms": 11180,
+      "failure_stage_by_turn": {
+        "turn-0": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": true,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 596,
+      "generation_tokens_by_turn": {
+        "turn-0": 596
+      },
+      "python_baseline_tokens": 89,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "strings/016-longest-word",
+      "tests_pass": 6,
+      "tests_total": 6,
+      "turns_used": 0,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "diagnostics_by_turn": {
+        "turn-0": null
+      },
+      "duration_ms": 13135,
+      "failure_stage_by_turn": {
+        "turn-0": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": true,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 773,
+      "generation_tokens_by_turn": {
+        "turn-0": 773
+      },
+      "python_baseline_tokens": 103,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "strings/020-is-anagram",
+      "tests_pass": 10,
+      "tests_total": 10,
+      "turns_used": 0,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "diagnostics_by_turn": {
+        "turn-0": null
+      },
+      "duration_ms": 7901,
+      "failure_stage_by_turn": {
+        "turn-0": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": true,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 340,
+      "generation_tokens_by_turn": {
+        "turn-0": 340
+      },
+      "python_baseline_tokens": 111,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "collections/021-unique-in-order",
+      "tests_pass": 6,
+      "tests_total": 6,
+      "turns_used": 0,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "diagnostics_by_turn": {
+        "turn-0": null
+      },
+      "duration_ms": 7482,
+      "failure_stage_by_turn": {
+        "turn-0": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": true,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 300,
+      "generation_tokens_by_turn": {
+        "turn-0": 300
+      },
+      "python_baseline_tokens": 143,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "algorithms/036-quicksort",
+      "tests_pass": 8,
+      "tests_total": 8,
+      "turns_used": 0,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": false,
+      "diagnostics": {
+        "errors": [
+          {
+            "actual": null,
+            "expected": null,
+            "fix": null,
+            "kind": "typecheck-error",
+            "location": {
+              "ast_path": [],
+              "source_span": null
+            },
+            "message": "error: /tmp/tmpq_g4aohl/generated.tac: expected 'in' but got end of input",
+            "related": [],
+            "severity": "error"
+          }
+        ],
+        "schema_version": "p2.0"
+      },
+      "diagnostics_by_turn": {
+        "turn-0": {
+          "errors": [
+            {
+              "actual": null,
+              "expected": null,
+              "fix": null,
+              "kind": "typecheck-error",
+              "location": {
+                "ast_path": [],
+                "source_span": null
+              },
+              "message": "error: /tmp/tmpq_g4aohl/generated.tac: expected 'in' but got end of input",
+              "related": [],
+              "severity": "error"
+            }
+          ],
+          "schema_version": "p2.0"
+        },
+        "turn-1": null
+      },
+      "duration_ms": 16269,
+      "failure_stage_by_turn": {
+        "turn-0": "typecheck",
+        "turn-1": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": false,
+      "first_pass_tests_pass": false,
+      "first_pass_typecheck_pass": false,
+      "generation_tokens": 501,
+      "generation_tokens_by_turn": {
+        "turn-0": 501,
+        "turn-1": 185
+      },
+      "python_baseline_tokens": 66,
+      "repair_success": true,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "io/051-line-count",
+      "tests_pass": 0,
+      "tests_total": 0,
+      "turns_used": 1,
+      "typecheck_pass": false
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "diagnostics_by_turn": {
+        "turn-0": null
+      },
+      "duration_ms": 3608,
+      "failure_stage_by_turn": {
+        "turn-0": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": true,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 125,
+      "generation_tokens_by_turn": {
+        "turn-0": 125
+      },
+      "python_baseline_tokens": 30,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "io/057-word-count",
+      "tests_pass": 7,
+      "tests_total": 7,
+      "turns_used": 0,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "diagnostics_by_turn": {
+        "turn-0": null
+      },
+      "duration_ms": 5502,
+      "failure_stage_by_turn": {
+        "turn-0": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": true,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 163,
+      "generation_tokens_by_turn": {
+        "turn-0": 163
+      },
+      "python_baseline_tokens": 41,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "io/059-echo-reverse",
+      "tests_pass": 4,
+      "tests_total": 4,
+      "turns_used": 0,
+      "typecheck_pass": true
+    },
+    {
+      "compile_pass": true,
+      "diagnostics": null,
+      "diagnostics_by_turn": {
+        "turn-0": null
+      },
+      "duration_ms": 7554,
+      "failure_stage_by_turn": {
+        "turn-0": null
+      },
+      "final_compile_pass": true,
+      "final_tests_pass": true,
+      "final_typecheck_pass": true,
+      "first_pass_compile_pass": true,
+      "first_pass_tests_pass": true,
+      "first_pass_typecheck_pass": true,
+      "generation_tokens": 340,
+      "generation_tokens_by_turn": {
+        "turn-0": 340
+      },
+      "python_baseline_tokens": 64,
+      "repair_success": false,
+      "retries": 0,
+      "stdlib_dominated": false,
+      "task_id": "io/060-longest-line",
+      "tests_pass": 5,
+      "tests_total": 5,
+      "turns_used": 0,
+      "typecheck_pass": true
+    }
+  ],
+  "track": "primary"
+}

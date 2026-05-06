@@ -358,10 +358,9 @@ decisions; the rationale lives here.
    `reference.tac` is 37.3% across the canary (per-task range
    27.6%–55.5%); the gate on actual BPE token counts is verified in
    step 4. Two regression tasks reuse their round-1 references.
-4. Run the local preflight from [phase-3-stdlib-next-steps.md § Local
-   Preflight](phase-3-stdlib-next-steps.md): build CLI with LLVM, check
-   each new primitive on a tiny program, run the 12 canary references
-   against their tests, report token totals.
+4. ✅ Local preflight completed. All 11 primitives verified; all 83 canary
+   reference tests pass (51.7% token reduction vs Tacit baseline on stdlib
+   references).
 5. ✅ Primer stdlib appendix updated with bundle-E/F/G semantics and one
    tiny generic example per ADR-mandated case (8 total). Appendix now
    measures 2,405 tokens (o200k_base), under the 2,500-token cap. The
@@ -369,15 +368,35 @@ decisions; the rationale lives here.
    decode and inline ASCII case-shift were replaced with pointers to the
    new primitives so they don't compete with the appendix. No
    task-shaped recipes added.
-6. Run the open-only canary one-shot and repair-loop modes.
-7. Apply at most one non-task-specific correction cycle if needed.
-8. If the proceed gates clear, run the full open library-mediated round-2
-   evaluation. Report under `plans/phase-3-results/` with the
-   `library-mediated` label and a `round-2` annotation in the run notes.
+6. ✅ Canary evaluation complete: one-shot 11/12, repair-loop 12/12
+   (Run IDs: `019dfd48` one-shot; `019dfd4d` post-correction repair).
+7. ✅ Correction cycle applied: one-shot improved from 10/12 to 11/12,
+   final repair maintained at 12/12.
+8. ❌ Proceed gates NOT cleared. Three critical gates failed:
+   - One-shot improvement: +1 task (need +2)
+   - Token reduction: -9.6% (need -25%)
+   - Strings ratio: 6.09× (need ≤4.0×)
+   
+   No full open run initiated per stop rule.
 
-## Reporting
+## Conclusion
 
-Add a follow-up section to [phase-3-stdlib-next-steps.md](phase-3-stdlib-next-steps.md)
-or a new `phase-3-results/ROUND_2_SUMMARY.md` once the full run lands.
-The Stage 11 freeze ADR cites round-2 numbers alongside round-1 in the
-"reported, not gating" section.
+Round 2 is **unsuccessful** per the documented exit criteria. See
+[ROUND_2_SUMMARY.md](phase-3-results/ROUND_2_SUMMARY.md) for detailed analysis.
+
+**Key finding:** Byte-level surface expansion (Bundles E, F, G) solved patterns
+1–4 (stdin loops, UTF-8 decode, ASCII case-shift, character classification)
+but left the dominant token cost untouched. The remaining gap is rooted in
+language-shape constraints (no tuples, no higher-order combinators, lambda-threaded
+state management), which primitives cannot address. The expert-authored
+`reference.stdlib.tac` files demonstrate this: even with all 11 new primitives,
+correctness requires 6-parameter lambda functions that Tacit's type system cannot
+express more compactly.
+
+**Implication:** Round 3+ stdlib work is not a productive direction for closing
+the identified strings/IO token gap. Phase 4 should focus on language-design
+features (tuples, closures, `for-each` combinators) rather than additional
+stdlib bundles.
+
+The freeze ADR should cite this outcome in the option-3 ("Tacit is heavier;
+lead positioning with structure, not density") analysis.
