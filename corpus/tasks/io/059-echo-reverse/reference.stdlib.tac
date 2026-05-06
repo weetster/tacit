@@ -1,6 +1,6 @@
 let input = @buf-alloc 1000002 in
 let n = @stdin-slurp input 1000002 in
-let _ = rec {
+rec {
   prev = lambda pos.
     if @lt pos 0 then -1 else
       if @eq (@buf-get input pos) 10 then pos else prev (@sub pos 1);
