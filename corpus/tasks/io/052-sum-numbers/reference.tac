@@ -1,18 +1,1 @@
-let input = @buf-alloc 1000000 in
-let len = @read 0 input 1000000 in
-let out = @buf-alloc 32 in
-let result = rec {
-  line_end = lambda pos.
-    @scan-byte input pos (@sub len pos) 10;
-  next_line = lambda end.
-    if @ge end len then len else @add end 1;
-  loop = lambda pos. lambda acc.
-    if @ge pos len then acc else
-      let e = line_end pos in
-      let next_acc = if @eq e pos then acc else @add acc (@parse-i64 input pos (@sub e pos)) in
-      loop (next_line e) next_acc
-} in loop 0 0 in
-let w = @fmt-i64 out 0 result in
-let _ = @write 1 out w in
-let _ = @write 1 "\n" 1 in
-0
+(let (app (sym buf-alloc) (int 1000000)) (let (app (app (app (sym read) (int 0)) (var 0)) (int 1000000)) (let (app (sym buf-alloc) (int 32)) (let (rec (lam (app (app (app (app (sym scan-byte) (var 6)) (var 0)) (app (app (sym sub) (var 5)) (var 0))) (int 10))) (lam (if (app (app (sym ge) (var 0)) (var 5)) (var 5) (app (app (sym add) (var 0)) (int 1)))) (lam (lam (if (app (app (sym ge) (var 1)) (var 6)) (var 0) (let (app (var 2) (var 1)) (let (if (app (app (sym eq) (var 0)) (var 2)) (var 1) (app (app (sym add) (var 1)) (app (app (app (sym parse-i64) (var 8)) (var 2)) (app (app (sym sub) (var 0)) (var 2))))) (app (app (var 6) (app (var 5) (var 1))) (var 0))))))) (app (app (var 2) (int 0)) (int 0))) (let (app (app (app (sym fmt-i64) (var 1)) (int 0)) (var 0)) (let (app (app (app (sym write) (int 1)) (var 2)) (var 0)) (let (app (app (app (sym write) (int 1)) (str "\n")) (int 1)) (int 0))))))))

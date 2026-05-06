@@ -1,17 +1,1 @@
-let input = @buf-alloc 1000002 in
-let n = @stdin-slurp input 1000002 in
-rec {
-  prev = lambda pos.
-    if @lt pos 0 then -1 else
-      if @eq (@buf-get input pos) 10 then pos else prev (@sub pos 1);
-  loop = lambda end.
-    if @lt end 0 then 0 else
-      let sp = prev (@sub end 1) in
-      let st = @add sp 1 in
-      let _ = @write-range 1 input st (@sub end st) in
-      let _ = @write 1 "\n" 1 in
-      if @lt sp 0 then 0 else loop sp
-} in
-let last = if @eq n 0 then -1 else
-  (if @eq (@buf-get input (@sub n 1)) 10 then @sub n 1 else n) in
-loop last
+(let (app (sym buf-alloc) (int 1000002)) (let (app (app (sym stdin-slurp) (var 0)) (int 1000002)) (rec (lam (if (app (app (sym lt) (var 0)) (int 0)) (int -1) (if (app (app (sym eq) (app (app (sym buf-get) (var 4)) (var 0))) (int 10)) (var 0) (app (var 1) (app (app (sym sub) (var 0)) (int 1)))))) (lam (if (app (app (sym lt) (var 0)) (int 0)) (int 0) (let (app (var 1) (app (app (sym sub) (var 0)) (int 1))) (let (app (app (sym add) (var 0)) (int 1)) (let (app (app (app (app (sym write-range) (int 1)) (var 6)) (var 0)) (app (app (sym sub) (var 2)) (var 0))) (let (app (app (app (sym write) (int 1)) (str "\n")) (int 1)) (if (app (app (sym lt) (var 3)) (int 0)) (int 0) (app (var 6) (var 3))))))))) (let (if (app (app (sym eq) (var 2)) (int 0)) (int -1) (if (app (app (sym eq) (app (app (sym buf-get) (var 3)) (app (app (sym sub) (var 2)) (int 1)))) (int 10)) (app (app (sym sub) (var 2)) (int 1)) (var 2))) (app (var 2) (var 0))))))

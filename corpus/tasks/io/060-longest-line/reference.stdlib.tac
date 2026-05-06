@@ -1,14 +1,1 @@
-let input = @buf-alloc 1000002 in
-let len = @stdin-slurp input 1000002 in
-let lines = @i64-alloc (@add (@mul len 2) 2) in
-let n = @line-index input len lines in
-let best = rec {
-  scan = lambda i. lambda b.
-    if @ge i n then b else
-      if @gt (@range-len lines i) (@range-len lines b)
-      then scan (@add i 1) i
-      else scan (@add i 1) b
-} in scan 1 0 in
-let _ = @write-range 1 input (@range-start lines best) (@range-len lines best) in
-let _ = @write 1 "\n" 1 in
-0
+(let (app (sym buf-alloc) (int 1000002)) (let (app (app (sym stdin-slurp) (var 0)) (int 1000002)) (let (app (sym i64-alloc) (app (app (sym add) (app (app (sym mul) (var 0)) (int 2))) (int 2))) (let (app (app (app (sym line-index) (var 2)) (var 1)) (var 0)) (let (rec (lam (lam (if (app (app (sym ge) (var 1)) (var 3)) (var 0) (if (app (app (sym gt) (app (app (sym range-len) (var 4)) (var 1))) (app (app (sym range-len) (var 4)) (var 0))) (app (app (var 2) (app (app (sym add) (var 1)) (int 1))) (var 1)) (app (app (var 2) (app (app (sym add) (var 1)) (int 1))) (var 0)))))) (app (app (var 0) (int 1)) (int 0))) (let (app (app (app (app (sym write-range) (int 1)) (var 4)) (app (app (sym range-start) (var 2)) (var 0))) (app (app (sym range-len) (var 2)) (var 0))) (let (app (app (app (sym write) (int 1)) (str "\n")) (int 1)) (int 0))))))))
