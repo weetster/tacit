@@ -1,0 +1,213 @@
+{
+  "tacd_version": "1",
+  "targets_hash_blake3": "1ab081a03fa97114fe5c10103c58f2b6f35a860619c2e9bc507db33aab457606",
+  "display": {
+    "binder": "buf",
+    "children": [
+      {
+        "children": [
+          {},
+          {}
+        ]
+      },
+      {
+        "binder": "_",
+        "children": [
+          {
+            "binders": [
+              "loop"
+            ],
+            "children": [
+              {
+                "binder": "at_start",
+                "children": [
+                  {
+                    "binder": "n",
+                    "children": [
+                      {
+                        "children": [
+                          {
+                            "children": [
+                              {
+                                "children": [
+                                  {},
+                                  {}
+                                ]
+                              },
+                              {}
+                            ]
+                          },
+                          {}
+                        ]
+                      },
+                      {
+                        "children": [
+                          {
+                            "children": [
+                              {
+                                "children": [
+                                  {},
+                                  {}
+                                ]
+                              },
+                              {}
+                            ]
+                          },
+                          {},
+                          {
+                            "binder": "b",
+                            "children": [
+                              {
+                                "children": [
+                                  {
+                                    "children": [
+                                      {},
+                                      {}
+                                    ]
+                                  },
+                                  {}
+                                ]
+                              },
+                              {
+                                "children": [
+                                  {
+                                    "children": [
+                                      {
+                                        "children": [
+                                          {},
+                                          {}
+                                        ]
+                                      },
+                                      {}
+                                    ]
+                                  },
+                                  {},
+                                  {
+                                    "binder": "_",
+                                    "children": [
+                                      {
+                                        "children": [
+                                          {
+                                            "children": [
+                                              {
+                                                "children": [
+                                                  {},
+                                                  {}
+                                                ]
+                                              },
+                                              {}
+                                            ]
+                                          },
+                                          {
+                                            "children": [
+                                              {},
+                                              {
+                                                "children": [
+                                                  {},
+                                                  {}
+                                                ]
+                                              },
+                                              {
+                                                "children": [
+                                                  {},
+                                                  {}
+                                                ]
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      },
+                                      {
+                                        "binder": "_",
+                                        "children": [
+                                          {
+                                            "children": [
+                                              {
+                                                "children": [
+                                                  {
+                                                    "children": [
+                                                      {},
+                                                      {}
+                                                    ]
+                                                  },
+                                                  {}
+                                                ]
+                                              },
+                                              {}
+                                            ]
+                                          },
+                                          {
+                                            "children": [
+                                              {},
+                                              {
+                                                "children": [
+                                                  {
+                                                    "children": [
+                                                      {},
+                                                      {}
+                                                    ]
+                                                  },
+                                                  {}
+                                                ]
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "children": [
+                  {},
+                  {
+                    "children": [
+                      {
+                        "children": [
+                          {},
+                          {}
+                        ]
+                      },
+                      {}
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "binder": "_",
+            "children": [
+              {
+                "children": [
+                  {
+                    "children": [
+                      {
+                        "children": [
+                          {},
+                          {}
+                        ]
+                      },
+                      {}
+                    ]
+                  },
+                  {}
+                ]
+              },
+              {}
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

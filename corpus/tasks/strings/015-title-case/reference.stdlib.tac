@@ -1,13 +1,1 @@
-let buf = @buf-alloc 1 in
-let _ = rec {
-  loop = lambda at_start.
-    let n = @read 0 buf 1 in
-    if @eq n 0 then 0 else
-      let b = @buf-get buf 0 in
-      if @eq b 10 then 0 else
-        let _ = @buf-set buf 0 (if at_start then @ascii-toupper b else @ascii-tolower b) in
-        let _ = @write 1 buf 1 in
-        loop (@eq b 32)
-} in loop (@eq 1 1) in
-let _ = @write 1 "\n" 1 in
-0
+(let (app (sym buf-alloc) (int 1)) (let (rec (lam (let (app (app (app (sym read) (int 0)) (var 2)) (int 1)) (if (app (app (sym eq) (var 0)) (int 0)) (int 0) (let (app (app (sym buf-get) (var 3)) (int 0)) (if (app (app (sym eq) (var 0)) (int 10)) (int 0) (let (app (app (app (sym buf-set) (var 4)) (int 0)) (if (var 2) (app (sym ascii-toupper) (var 0)) (app (sym ascii-tolower) (var 0)))) (let (app (app (app (sym write) (int 1)) (var 5)) (int 1)) (app (var 5) (app (app (sym eq) (var 2)) (int 32)))))))))) (app (var 0) (app (app (sym eq) (int 1)) (int 1)))) (let (app (app (app (sym write) (int 1)) (str "\n")) (int 1)) (int 0))))

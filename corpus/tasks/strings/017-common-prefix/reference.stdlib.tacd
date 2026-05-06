@@ -1,0 +1,429 @@
+{
+  "tacd_version": "1",
+  "targets_hash_blake3": "9ed4f606a1fd6aa11998a762662db7e3f5bdfa04fa290d41f73304ab3516b0a5",
+  "display": {
+    "binder": "input",
+    "children": [
+      {
+        "children": [
+          {},
+          {}
+        ]
+      },
+      {
+        "binder": "len",
+        "children": [
+          {
+            "children": [
+              {
+                "children": [
+                  {
+                    "children": [
+                      {},
+                      {}
+                    ]
+                  },
+                  {}
+                ]
+              },
+              {}
+            ]
+          },
+          {
+            "binder": "spans",
+            "children": [
+              {
+                "children": [
+                  {},
+                  {}
+                ]
+              },
+              {
+                "binder": "n",
+                "children": [
+                  {
+                    "children": [
+                      {
+                        "children": [
+                          {
+                            "children": [
+                              {},
+                              {}
+                            ]
+                          },
+                          {}
+                        ]
+                      },
+                      {}
+                    ]
+                  },
+                  {
+                    "binder": "scratch",
+                    "children": [
+                      {
+                        "children": [
+                          {},
+                          {}
+                        ]
+                      },
+                      {
+                        "binder": "prefix_len",
+                        "children": [
+                          {
+                            "binders": [
+                              "common",
+                              "shrink"
+                            ],
+                            "children": [
+                              {
+                                "binder": "bo",
+                                "children": [
+                                  {
+                                    "binder": "bl",
+                                    "children": [
+                                      {
+                                        "binder": "keep",
+                                        "children": [
+                                          {
+                                            "binder": "j",
+                                            "children": [
+                                              {
+                                                "children": [
+                                                  {
+                                                    "children": [
+                                                      {
+                                                        "children": [
+                                                          {},
+                                                          {}
+                                                        ]
+                                                      },
+                                                      {}
+                                                    ]
+                                                  },
+                                                  {},
+                                                  {
+                                                    "children": [
+                                                      {
+                                                        "children": [
+                                                          {
+                                                            "children": [
+                                                              {},
+                                                              {}
+                                                            ]
+                                                          },
+                                                          {}
+                                                        ]
+                                                      },
+                                                      {},
+                                                      {
+                                                        "children": [
+                                                          {
+                                                            "children": [
+                                                              {
+                                                                "children": [
+                                                                  {},
+                                                                  {
+                                                                    "children": [
+                                                                      {
+                                                                        "children": [
+                                                                          {},
+                                                                          {}
+                                                                        ]
+                                                                      },
+                                                                      {}
+                                                                    ]
+                                                                  }
+                                                                ]
+                                                              },
+                                                              {
+                                                                "children": [
+                                                                  {
+                                                                    "children": [
+                                                                      {},
+                                                                      {}
+                                                                    ]
+                                                                  },
+                                                                  {
+                                                                    "children": [
+                                                                      {
+                                                                        "children": [
+                                                                          {},
+                                                                          {}
+                                                                        ]
+                                                                      },
+                                                                      {}
+                                                                    ]
+                                                                  }
+                                                                ]
+                                                              }
+                                                            ]
+                                                          },
+                                                          {
+                                                            "children": [
+                                                              {
+                                                                "children": [
+                                                                  {
+                                                                    "children": [
+                                                                      {
+                                                                        "children": [
+                                                                          {},
+                                                                          {}
+                                                                        ]
+                                                                      },
+                                                                      {}
+                                                                    ]
+                                                                  },
+                                                                  {}
+                                                                ]
+                                                              },
+                                                              {
+                                                                "children": [
+                                                                  {
+                                                                    "children": [
+                                                                      {},
+                                                                      {}
+                                                                    ]
+                                                                  },
+                                                                  {}
+                                                                ]
+                                                              }
+                                                            ]
+                                                          },
+                                                          {}
+                                                        ]
+                                                      }
+                                                    ]
+                                                  }
+                                                ]
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              },
+                              {
+                                "binder": "i",
+                                "children": [
+                                  {
+                                    "binder": "keep",
+                                    "children": [
+                                      {
+                                        "children": [
+                                          {
+                                            "children": [
+                                              {
+                                                "children": [
+                                                  {},
+                                                  {}
+                                                ]
+                                              },
+                                              {}
+                                            ]
+                                          },
+                                          {},
+                                          {
+                                            "children": [
+                                              {
+                                                "children": [
+                                                  {},
+                                                  {
+                                                    "children": [
+                                                      {
+                                                        "children": [
+                                                          {},
+                                                          {}
+                                                        ]
+                                                      },
+                                                      {}
+                                                    ]
+                                                  }
+                                                ]
+                                              },
+                                              {
+                                                "children": [
+                                                  {
+                                                    "children": [
+                                                      {
+                                                        "children": [
+                                                          {
+                                                            "children": [
+                                                              {},
+                                                              {
+                                                                "children": [
+                                                                  {
+                                                                    "children": [
+                                                                      {},
+                                                                      {}
+                                                                    ]
+                                                                  },
+                                                                  {}
+                                                                ]
+                                                              }
+                                                            ]
+                                                          },
+                                                          {
+                                                            "children": [
+                                                              {
+                                                                "children": [
+                                                                  {},
+                                                                  {}
+                                                                ]
+                                                              },
+                                                              {}
+                                                            ]
+                                                          }
+                                                        ]
+                                                      },
+                                                      {}
+                                                    ]
+                                                  },
+                                                  {}
+                                                ]
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              },
+                              {
+                                "children": [
+                                  {
+                                    "children": [
+                                      {
+                                        "children": [
+                                          {},
+                                          {}
+                                        ]
+                                      },
+                                      {}
+                                    ]
+                                  },
+                                  {},
+                                  {
+                                    "children": [
+                                      {
+                                        "children": [
+                                          {},
+                                          {}
+                                        ]
+                                      },
+                                      {
+                                        "children": [
+                                          {
+                                            "children": [
+                                              {},
+                                              {}
+                                            ]
+                                          },
+                                          {}
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "binder": "_",
+                            "children": [
+                              {
+                                "children": [
+                                  {
+                                    "children": [
+                                      {
+                                        "children": [
+                                          {
+                                            "children": [
+                                              {
+                                                "children": [
+                                                  {},
+                                                  {}
+                                                ]
+                                              },
+                                              {}
+                                            ]
+                                          },
+                                          {}
+                                        ]
+                                      },
+                                      {}
+                                    ]
+                                  },
+                                  {}
+                                ]
+                              },
+                              {
+                                "binder": "_",
+                                "children": [
+                                  {
+                                    "children": [
+                                      {
+                                        "children": [
+                                          {
+                                            "children": [
+                                              {},
+                                              {}
+                                            ]
+                                          },
+                                          {}
+                                        ]
+                                      },
+                                      {}
+                                    ]
+                                  },
+                                  {
+                                    "binder": "_",
+                                    "children": [
+                                      {
+                                        "children": [
+                                          {
+                                            "children": [
+                                              {
+                                                "children": [
+                                                  {},
+                                                  {}
+                                                ]
+                                              },
+                                              {}
+                                            ]
+                                          },
+                                          {
+                                            "children": [
+                                              {
+                                                "children": [
+                                                  {},
+                                                  {}
+                                                ]
+                                              },
+                                              {}
+                                            ]
+                                          }
+                                        ]
+                                      },
+                                      {}
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

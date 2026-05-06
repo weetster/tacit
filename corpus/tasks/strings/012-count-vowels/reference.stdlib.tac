@@ -1,18 +1,1 @@
-let input = @buf-alloc 1048576 in
-let n = @stdin-slurp input 1048576 in
-let count = rec {
-  loop = lambda i. lambda c.
-    if @ge i n then c else
-      let b = @ascii-tolower (@buf-get input i) in
-      let inc = if @eq b 97 then 1 else
-                if @eq b 101 then 1 else
-                if @eq b 105 then 1 else
-                if @eq b 111 then 1 else
-                if @eq b 117 then 1 else 0 in
-      loop (@add i 1) (@add c inc)
-} in loop 0 0 in
-let out = @buf-alloc 32 in
-let w = @fmt-i64 out 0 count in
-let _ = @write 1 out w in
-let _ = @write 1 "\n" 1 in
-0
+(let (app (sym buf-alloc) (int 1048576)) (let (app (app (sym stdin-slurp) (var 0)) (int 1048576)) (let (rec (lam (lam (if (app (app (sym ge) (var 1)) (var 3)) (var 0) (let (app (sym ascii-tolower) (app (app (sym buf-get) (var 4)) (var 1))) (let (if (app (app (sym eq) (var 0)) (int 97)) (int 1) (if (app (app (sym eq) (var 0)) (int 101)) (int 1) (if (app (app (sym eq) (var 0)) (int 105)) (int 1) (if (app (app (sym eq) (var 0)) (int 111)) (int 1) (if (app (app (sym eq) (var 0)) (int 117)) (int 1) (int 0)))))) (app (app (var 4) (app (app (sym add) (var 3)) (int 1))) (app (app (sym add) (var 2)) (var 0)))))))) (app (app (var 0) (int 0)) (int 0))) (let (app (sym buf-alloc) (int 32)) (let (app (app (app (sym fmt-i64) (var 0)) (int 0)) (var 1)) (let (app (app (app (sym write) (int 1)) (var 1)) (var 0)) (let (app (app (app (sym write) (int 1)) (str "\n")) (int 1)) (int 0))))))))
