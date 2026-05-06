@@ -1,5 +1,15 @@
 # Phase 3 Results Note
 
+**Phase 3 frozen 2026-05-06 — see [ADR 0070](../../decisions/0070-p3-frozen.md).**
+The freeze ADR records the primary-gate outcome (missed and miscalibrated
+against Python — Rust on the same corpus is +54% over Python, so the
+30%-below-Python target was unwinnable for any disciplined static-
+compilation language), retires the Python-relative density target, and
+re-baselines future density tracking against Rust as a Phase 4+ aspiration.
+Round-2 stdlib outcomes feeding into the freeze are in
+[ROUND_2_SUMMARY.md](ROUND_2_SUMMARY.md) and the
+[round-2 plan](../phase-3-stdlib-round-2.md).
+
 Status: regrouping note, updated after the open repair-loop run.
 
 This note summarizes the paid Phase 3 Sonnet runs currently recorded under

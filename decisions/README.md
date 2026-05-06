@@ -85,3 +85,4 @@ Keep ADRs short. They record the decision, not the full analysis that led to it.
 - [0067 — Phase 3 stdlib Bundle E: stream input and output sugar](0067-p3-stdlib-bundle-e-stream-io-sugar.md)
 - [0068 — Phase 3 stdlib Bundle F: ASCII classification and case](0068-p3-stdlib-bundle-f-ascii-classification.md)
 - [0069 — Phase 3 stdlib Bundle G: UTF-8 codepoint decode and encode](0069-p3-stdlib-bundle-g-utf8-codepoints.md)
+- [0070 — Phase 3 frozen](0070-p3-frozen.md)

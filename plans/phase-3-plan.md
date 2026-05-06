@@ -1,8 +1,9 @@
 # Phase 3 Implementation Plan
 
-**Status:** Draft 2026-04-28
+**Status:** Frozen 2026-05-06 — [ADR 0070](../decisions/0070-p3-frozen.md)
 **Parent:** [tacit-plan.md](tacit-plan.md)
 **Predecessor:** [phase-2-plan.md](phase-2-plan.md) (frozen 2026-04-28 — [ADR 0046](../decisions/0046-p2-stage-5-frozen.md))
+**Successor:** `plans/phase-4-plan.md` (not yet created)
 
 Phase 3 is the project's primary falsification surface. The Phase 1–2 work
 proves that a content-addressed AST can carry a language all the way from
