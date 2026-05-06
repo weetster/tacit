@@ -47,10 +47,22 @@ prefer direct output over building a large abstract result.
    pass `pass` as an explicit parameter to `inner` (and to all call sites of
    `inner`), or inline the inner loop into `bubble`'s body.
 
-4. **Cap allocations at ~1 MB.** Calls like `@buf-alloc 16777216` (16 MB) crash
-   before the program runs. Unless the task statement explicitly requires
-   allocations larger than 1,048,576 bytes, cap dynamic allocations there.
-   Static allocations (tuples, records) do not have this constraint.
+4. **Cap allocations at ~1 MB.** Calls like `@buf-alloc 16777216` (16 MB) or
+   `@i64-alloc 2097152` (also 16 MB; each cell is 8 bytes) crash before the
+   program runs. Unless the task statement explicitly requires more, cap
+   `@buf-alloc` counts at `1048576` and `@i64-alloc` counts at `131072`. A full
+   Unicode codepoint table (`@i64-alloc 1114112` or larger) is over the cap;
+   sort decoded codepoints with `@sort-i64` instead, or compute the count from
+   the input length. Static allocations (tuples, records) do not have this
+   constraint.
+
+5. **String literal escapes are limited to `\n`, `\t`, `\r`, `\\`, `\"`, and
+   `\u{HEX}`.** Inside `"..."`, the only recognized escapes are those six.
+   `\x..`, `\f`, `\v`, `\0`, and `\'` raise `lex: bad escape`. To embed
+   another byte, write it as `\u{HEX}` with lowercase hex digits, or build
+   the byte sequence with `@buf-set`. Most input-classification work needs
+   only `" \t\n\r"`; form feed and vertical tab rarely appear and can be
+   handled by direct byte comparison (`@eq b 12`, `@eq b 11`) when needed.
 
 ## 1. Semantic Summary
 
@@ -629,7 +641,34 @@ else 0 in
 ```
 
 Wrong shape: `if cond then let x = ... in ... else ...`. The parser reads the
-`then` branch too narrowly and later reports `expected 'else'`.
+`then` branch too narrowly and later reports `expected 'else'` at a much later
+token, often a `}` that closes the surrounding `rec`. The error location is
+not where the missing parentheses live; the offending `then` is somewhere
+above it.
+
+Wrong shape, expanded:
+
+```text
+if @eq b 10 then
+  let _ = @buf-set out o b in
+  process (@add i 1) (@add o 1) 1
+else if @eq b 32 then
+  ...
+```
+
+Both `then` branches start with `let` and are not parenthesized. The parser
+treats only the first atom as the branch, then misaligns every subsequent
+`else`. Wrap each compound `then`:
+
+```text
+if @eq b 10 then
+  (let _ = @buf-set out o b in
+   process (@add i 1) (@add o 1) 1)
+else (if @eq b 32 then
+  (let _ = @buf-set out o b in
+   process (@add i 1) (@add o 1) 1)
+else ...)
+```
 
 Safer branch rule: when either side is compound, parenthesize both sides.
 
@@ -641,7 +680,7 @@ else
 ```
 
 Do not write `else if` as though it were a separate keyword. Use an explicit
-nested expression:
+nested expression and parenthesize the inner `if`:
 
 ```text
 if a then x else (if b then y else z)
@@ -1988,8 +2027,11 @@ let grouped = @i64-alloc (@mul row_count 3) in
 
 `@stdin-slurp buf cap` reads stdin into `buf` until EOF or `cap` bytes;
 returns bytes written. Prefer it over a one-byte read loop. `@write-range
-fd buf off len` writes `buf[off..off+len)` to fd `fd` and returns 0. `@buf-rev
-buf off len` reverses bytes `buf[off..off+len)` in place and returns 0.
+fd buf off len` takes a `Buf` (not a `Str` literal); it writes
+`buf[off..off+len)` to fd `fd` and returns 0. For literal strings such as
+`" "`, `"true"`, or `"\n"`, use `@write fd "..." len` with the literal byte
+length instead. `@buf-rev buf off len` reverses bytes `buf[off..off+len)` in
+place and returns 0.
 
 ```tacit
 let buf = @buf-alloc 65536 in
