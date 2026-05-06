@@ -1,10 +1,1 @@
-let ibuf = @buf-alloc 24 in
-let n = @read 0 ibuf 24 in
-let nl = @scan-byte ibuf 0 n 10 in
-let v = @parse-i64 ibuf 0 nl in
-let result = rec { digit_sum = lambda n. if n then @add (@mod n 10) (digit_sum (@div n 10)) else 0 } in digit_sum v in
-let obuf = @buf-alloc 8 in
-let w = @fmt-i64 obuf 0 result in
-let _ = @write 1 obuf w in
-let _ = @write 1 "\n" 1 in
-0
+(let (app (sym buf-alloc) (int 24)) (let (app (app (app (sym read) (int 0)) (var 0)) (int 24)) (let (app (app (app (app (sym scan-byte) (var 1)) (int 0)) (var 0)) (int 10)) (let (app (app (app (sym parse-i64) (var 2)) (int 0)) (var 0)) (let (rec (lam (if (var 0) (app (app (sym add) (app (app (sym mod) (var 0)) (int 10))) (app (var 1) (app (app (sym div) (var 0)) (int 10)))) (int 0))) (app (var 0) (var 1))) (let (app (sym buf-alloc) (int 8)) (let (app (app (app (sym fmt-i64) (var 0)) (int 0)) (var 1)) (let (app (app (app (sym write) (int 1)) (var 1)) (var 0)) (let (app (app (app (sym write) (int 1)) (str "\n")) (int 1)) (int 0))))))))))
