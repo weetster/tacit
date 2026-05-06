@@ -1,17 +1,1 @@
-let input = @buf-alloc 64 in
-let len = @read 0 input 64 in
-let first_end = @scan-byte input 0 len 10 in
-let second_start = @add first_end 1 in
-let second_end = @scan-byte input second_start (@sub len second_start) 10 in
-let n = @parse-i64 input 0 first_end in
-let k = @parse-i64 input second_start (@sub second_end second_start) in
-let result = rec {
-  loop = lambda i. lambda pos.
-    if @gt i n then pos else
-      loop (@add i 1) (@mod (@add pos k) i)
-} in loop 2 0 in
-let out = @buf-alloc 32 in
-let w = @fmt-i64 out 0 result in
-let _ = @write 1 out w in
-let _ = @write 1 "\n" 1 in
-0
+(let (app (sym buf-alloc) (int 64)) (let (app (app (app (sym read) (int 0)) (var 0)) (int 64)) (let (app (app (app (app (sym scan-byte) (var 1)) (int 0)) (var 0)) (int 10)) (let (app (app (sym add) (var 0)) (int 1)) (let (app (app (app (app (sym scan-byte) (var 3)) (var 0)) (app (app (sym sub) (var 2)) (var 0))) (int 10)) (let (app (app (app (sym parse-i64) (var 4)) (int 0)) (var 2)) (let (app (app (app (sym parse-i64) (var 5)) (var 2)) (app (app (sym sub) (var 1)) (var 2))) (let (rec (lam (lam (if (app (app (sym gt) (var 1)) (var 4)) (var 0) (app (app (var 2) (app (app (sym add) (var 1)) (int 1))) (app (app (sym mod) (app (app (sym add) (var 0)) (var 3))) (var 1)))))) (app (app (var 0) (int 2)) (int 0))) (let (app (sym buf-alloc) (int 32)) (let (app (app (app (sym fmt-i64) (var 0)) (int 0)) (var 1)) (let (app (app (app (sym write) (int 1)) (var 1)) (var 0)) (let (app (app (app (sym write) (int 1)) (str "\n")) (int 1)) (int 0)))))))))))))

@@ -1,17 +1,1 @@
-let input = @buf-alloc 32 in
-let len = @read 0 input 32 in
-let line_end = @scan-byte input 0 len 10 in
-let n = @parse-i64 input 0 line_end in
-let out = @buf-alloc 32 in
-let _ = rec {
-  loop = lambda i.
-    if @gt i n then 0 else
-      let _ = if @eq (@mod i 15) 0 then @write 1 "FizzBuzz\n" 9 else
-        if @eq (@mod i 3) 0 then @write 1 "Fizz\n" 5 else
-        if @eq (@mod i 5) 0 then @write 1 "Buzz\n" 5 else
-          let w = @fmt-i64 out 0 i in
-          let _ = @write 1 out w in
-          @write 1 "\n" 1 in
-      loop (@add i 1)
-} in loop 1 in
-0
+(let (app (sym buf-alloc) (int 32)) (let (app (app (app (sym read) (int 0)) (var 0)) (int 32)) (let (app (app (app (app (sym scan-byte) (var 1)) (int 0)) (var 0)) (int 10)) (let (app (app (app (sym parse-i64) (var 2)) (int 0)) (var 0)) (let (app (sym buf-alloc) (int 32)) (let (rec (lam (if (app (app (sym gt) (var 0)) (var 3)) (int 0) (let (if (app (app (sym eq) (app (app (sym mod) (var 0)) (int 15))) (int 0)) (app (app (app (sym write) (int 1)) (str "FizzBuzz\n")) (int 9)) (if (app (app (sym eq) (app (app (sym mod) (var 0)) (int 3))) (int 0)) (app (app (app (sym write) (int 1)) (str "Fizz\n")) (int 5)) (if (app (app (sym eq) (app (app (sym mod) (var 0)) (int 5))) (int 0)) (app (app (app (sym write) (int 1)) (str "Buzz\n")) (int 5)) (let (app (app (app (sym fmt-i64) (var 2)) (int 0)) (var 0)) (let (app (app (app (sym write) (int 1)) (var 3)) (var 0)) (app (app (app (sym write) (int 1)) (str "\n")) (int 1))))))) (app (var 2) (app (app (sym add) (var 1)) (int 1)))))) (app (var 0) (int 1))) (int 0)))))))
