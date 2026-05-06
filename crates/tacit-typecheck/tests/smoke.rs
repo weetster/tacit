@@ -1,9 +1,11 @@
 //! Smoke corpus integration tests: every Phase 1 smoke program typechecks
-//! and matches its `.tac.sidecar.toml` type expectation.
+//! and matches its .tacd sidecar annotation.
 
 use std::path::PathBuf;
 
-use tacit_typecheck::sidecar::{check_against_sidecar, TypeSidecar};
+use tacit_canonical::parse as parse_canonical;
+use tacit_typecheck::sidecar::check_against_tacd;
+use tacit_views::sidecar::Sidecar;
 
 fn smoke_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/smoke")
@@ -12,18 +14,18 @@ fn smoke_dir() -> PathBuf {
 fn check_smoke(name: &str) {
     let smoke = smoke_dir();
     let tac_path = smoke.join(format!("{}.tac", name));
-    let sidecar_path = smoke.join(format!("{}.tac.sidecar.toml", name));
+    let tacd_path = smoke.join(format!("{}.tacd", name));
 
     let src =
         std::fs::read(&tac_path).unwrap_or_else(|e| panic!("could not read {}.tac: {}", name, e));
 
-    let (ast, _sidecar_node) = tacit_views::authoring::parse_authoring(&src)
+    let ast = parse_canonical(&src)
         .unwrap_or_else(|e| panic!("parse error in {}.tac: {:?}", name, e));
 
-    let type_sidecar = TypeSidecar::load(&sidecar_path)
+    let sidecar = Sidecar::read(&tacd_path)
         .unwrap_or_else(|e| panic!("sidecar load error for {}: {}", name, e));
 
-    check_against_sidecar(&ast, &type_sidecar).unwrap_or_else(|diags| {
+    check_against_tacd(&ast, &sidecar).unwrap_or_else(|diags| {
         let msgs: Vec<String> = diags
             .iter()
             .map(|d| format!("{}: {}", d.kind, d.message))

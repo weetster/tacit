@@ -1,13 +1,13 @@
-//! Verify each `examples/smoke/*.tac` file parses through the authoring
-//! view + produces an AST whose pre-codegen analysis (closed-lambda
+//! Verify each `examples/smoke/*.tac` file parses through the canonical
+//! parser + produces an AST whose pre-codegen analysis (closed-lambda
 //! check, hole check) succeeds. This runs without LLVM and confirms
 //! the smoke programs are syntactically and structurally well-formed
 //! before the LLVM-version pin is chosen.
 
 use std::path::PathBuf;
 
+use tacit_canonical::parse as parse_canonical;
 use tacit_codegen::analysis::{check_closed, check_no_holes};
-use tacit_views::authoring::parse_authoring;
 
 fn smoke_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -20,8 +20,8 @@ fn smoke_dir() -> PathBuf {
 fn parse_and_check(name: &str) {
     let path = smoke_dir().join(format!("{}.tac", name));
     let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {}: {}", path.display(), e));
-    let (node, _sidecar) =
-        parse_authoring(&bytes).unwrap_or_else(|e| panic!("parse {}: {}", path.display(), e));
+    let node =
+        parse_canonical(&bytes).unwrap_or_else(|e| panic!("parse {}: {}", path.display(), e));
     check_no_holes(&node).unwrap_or_else(|e| panic!("hole check {}: {}", name, e));
     // Top-level depth = 0; any lambda inside extends depth itself.
     check_closed(&node, 0).unwrap_or_else(|e| panic!("closed check {}: {}", name, e));

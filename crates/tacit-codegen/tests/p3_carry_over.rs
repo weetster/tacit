@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use tacit_codegen::compile::compile_to_object;
-use tacit_views::authoring::parse_authoring;
+use tacit_canonical::parse as parse_canonical;
 
 fn phase3_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -48,7 +48,7 @@ struct Built {
 
 fn build(program_path: &Path, name: &str) -> Built {
     let src = std::fs::read(program_path).expect("read program");
-    let (node, _sidecar) = parse_authoring(&src).expect("parse authoring view");
+    let node = parse_canonical(&src).expect("parse canonical");
     let tmp = tempfile::tempdir().expect("tempdir");
     let obj = tmp.path().join(format!("{}.o", name));
     compile_to_object(&node, name, &obj).expect("emit object");

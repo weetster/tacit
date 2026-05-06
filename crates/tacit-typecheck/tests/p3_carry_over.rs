@@ -1,9 +1,11 @@
 //! Phase 3 Stage 3 typecheck tests: verify each carry-over program
-//! typechecks against its sidecar annotation.
+//! typechecks against its .tacd sidecar annotation.
 
 use std::path::PathBuf;
 
-use tacit_typecheck::sidecar::{check_against_sidecar, TypeSidecar};
+use tacit_canonical::parse as parse_canonical;
+use tacit_typecheck::sidecar::check_against_tacd;
+use tacit_views::sidecar::Sidecar;
 
 fn phase3_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/phase-3")
@@ -12,18 +14,18 @@ fn phase3_dir() -> PathBuf {
 fn check_phase3(name: &str) {
     let dir = phase3_dir();
     let tac_path = dir.join(format!("{}.tac", name));
-    let sidecar_path = dir.join(format!("{}.tac.sidecar.toml", name));
+    let tacd_path = dir.join(format!("{}.tacd", name));
 
     let src =
         std::fs::read(&tac_path).unwrap_or_else(|e| panic!("could not read {}.tac: {}", name, e));
 
-    let (ast, _sidecar_node) = tacit_views::authoring::parse_authoring(&src)
+    let ast = parse_canonical(&src)
         .unwrap_or_else(|e| panic!("parse error in {}.tac: {:?}", name, e));
 
-    let type_sidecar = TypeSidecar::load(&sidecar_path)
+    let sidecar = Sidecar::read(&tacd_path)
         .unwrap_or_else(|e| panic!("sidecar load error for {}: {}", name, e));
 
-    check_against_sidecar(&ast, &type_sidecar).unwrap_or_else(|diags| {
+    check_against_tacd(&ast, &sidecar).unwrap_or_else(|diags| {
         let msgs: Vec<String> = diags
             .iter()
             .map(|d| format!("{}: {}", d.kind, d.message))
