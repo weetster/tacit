@@ -1730,50 +1730,27 @@ history; carry explicit flags like `in_word` or `first` instead.
 
 Tacit-Lite strings at the primitive boundary are byte sequences. For
 algorithmic string work, copy bytes into buffers and operate on integer byte
-values. ASCII lowercase letters are `97` through `122`; uppercase letters are
-`65` through `90`; space is `32`; newline is `10`.
+values. ASCII lowercase letters are `97` through `122`; uppercase letters
+are `65` through `90`; space is `32`; newline is `10`.
 
-To lowercase an ASCII uppercase byte, check `@ge byte 65` and `@le byte 90`,
-then add `32`. To detect a digit, check `@ge byte 48` and `@le byte 57`.
-To detect whitespace in small programs, compare against the explicit bytes
-the input format permits, commonly space and newline. Tacit-Lite has no
-Unicode normalization surface.
+For ASCII case shifts and classification, prefer `@ascii-tolower`,
+`@ascii-toupper`, `@ascii-is-alpha`, `@ascii-is-digit`, and
+`@ascii-is-space` over inline byte-range conditionals. Each takes a single
+byte value; case shifts pass non-letters through unchanged, and class
+checks return 0 or 1.
 
-For UTF-8 code point work, treat continuation bytes as part of the same
-character. A continuation byte satisfies `128 <= byte < 192`. A leading byte
-determines the code point length: `<128` is 1 byte, `<224` is 2, `<240` is 3,
-otherwise 4. When the input contract promises valid UTF-8, preserving these
-byte spans is enough to preserve code points.
+For UTF-8 code point work, prefer `@utf8-decode buf off` and
+`@utf8-encode buf off cp` over manual branching on the leading byte.
+`@utf8-decode` returns the codepoint and byte length packed as
+`cp * 8 + byte_len`; advance the read offset by `byte_len` to walk forward.
+A `byte_len` of 0 signals invalid input. Use `@utf8-len cp` to size an
+output buffer ahead of writing. Tacit-Lite has no Unicode normalization
+surface.
 
-To reverse UTF-8 by code point, use a helper `prev_start end` where `end` is
-an exclusive byte offset. Start at `end - 1` and move left while the byte is a
-continuation byte; the result is the first byte of the previous code point.
-The reverse loop is:
-
-```text
-rev end out_off =
-  if end <= 0 then out_off
-  else start = prev_start end
-       len = end - start
-       copy input[start, len] to output[out_off]
-       rev start (out_off + len)
-```
-
-Do not add a special base case that copies byte zero after the recursive
-loop; that duplicates the first character. When `end` reaches zero, every
-code point has already been copied.
-
-For UTF-8 palindrome checks, compare code point spans, not single bytes. Keep
-`left` as an inclusive start offset and `right_end` as an exclusive end
-offset. Compute `left_len` from the leading byte at `left`. Compute
-`right_start = prev_start right_end` and `right_len = right_end -
-right_start`. If lengths differ, the code points differ. If lengths match,
-compare with `@buf-eq buf left buf right_start left_len`. Then recurse with
-`left + left_len` and `right_start`. Stop when `left >= right_end`.
-
-When constructing output, always maintain an output offset. A common pattern
-is: write a byte with `@buf-set out off byte`, then recurse with `@add off
-1`. If writing a multi-byte formatted integer, use the length returned by
+When constructing output, maintain an output offset across writes. Either
+call `@buf-set out off byte` and recurse with `@add off 1`, or call
+`@write-range fd buf off len` to emit a contiguous slice in one step. If
+writing a multi-byte formatted integer, use the length returned by
 `@fmt-i64` to advance the offset or write immediately.
 
 ### Algorithm Selection Rules
@@ -1854,7 +1831,7 @@ primer.
 If a shorter solution would need a missing abstraction, write the explicit
 one.
 
-## Stdlib Appendix: Indexed Storage, Text Ranges, Ordering, And Grouping
+## Stdlib Appendix: Indexed Storage, Text Ranges, Ordering, Grouping, Stream IO, ASCII, And UTF-8
 
 Use `I64Vec` when a program needs indexed storage for full integer values.
 Byte-oriented buffers still handle raw input/output bytes; an `I64Vec` keeps
@@ -2007,4 +1984,71 @@ let row_count = @token-index-any text 0 n " \n\r\t" 4 rows in
 let _ = @sort-ranges-by-bytes text rows row_count in
 let grouped = @i64-alloc (@mul row_count 3) in
 @count-equal-ranges text rows row_count grouped
+```
+
+`@stdin-slurp buf cap` reads stdin into `buf` until EOF or `cap` bytes;
+returns bytes written. Prefer it over a one-byte read loop. `@write-range
+fd buf off len` writes `buf[off..off+len)` to fd `fd` and returns 0. `@buf-rev
+buf off len` reverses bytes `buf[off..off+len)` in place and returns 0.
+
+```tacit
+let buf = @buf-alloc 65536 in
+let n = @stdin-slurp buf 65536 in
+@write-range 1 buf 0 n
+```
+
+```tacit
+let buf = @buf-alloc 4096 in
+let n = @stdin-slurp buf 4096 in
+let _ = @buf-rev buf 0 n in
+@write-range 1 buf 0 n
+```
+
+`@ascii-tolower b` and `@ascii-toupper b` shift an ASCII letter; non-letters
+and bytes outside `0..=127` pass through. `@ascii-is-alpha b`,
+`@ascii-is-digit b`, and `@ascii-is-space b` return 1 in the class and 0
+otherwise. Space class: `9, 10, 11, 12, 13, 32`. There is no
+`@ascii-is-vowel`; compose `@ascii-tolower` with a five-branch equality
+check when needed.
+
+```tacit
+@ascii-tolower 65
+```
+
+```tacit
+let buf = @buf-alloc 1 in
+let _ = @buf-set buf 0 (@ascii-toupper (@buf-get buf 0)) in
+@buf-get buf 0
+```
+
+```tacit
+let b = @buf-get buf i in
+if @eq (@ascii-is-space b) 1 then 0 else 1
+```
+
+`@utf8-decode buf off` reads one UTF-8 codepoint at `buf[off]` and returns
+`cp * 8 + byte_len` (`byte_len` 1 to 4). Unpack with `@div packed 8` and
+`@mod packed 8`; `byte_len == 0` marks invalid input. `@utf8-encode buf off
+cp` writes `cp` as 1 to 4 UTF-8 bytes and returns the byte count, or 0
+without writing for invalid codepoints (negative, above `0x10FFFF`, or in
+the surrogate range `0xD800..0xDFFF`). `@utf8-len cp` returns the byte
+length without touching memory.
+
+```tacit
+let buf = @buf-alloc 64 in
+let n = @stdin-slurp buf 64 in
+let packed = @utf8-decode buf 0 in
+let cp = @div packed 8 in
+let len = @mod packed 8 in
+@add cp len
+```
+
+```tacit
+let out = @buf-alloc 4 in
+let n = @utf8-encode out 0 0x1F600 in
+@write-range 1 out 0 n
+```
+
+```tacit
+@utf8-len 0x4E2D
 ```
