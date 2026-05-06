@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 #[cfg(feature = "llvm")]
 use std::process::Command;
 
@@ -6,7 +6,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 
 use tacit_typecheck::{infer_module, DiagOutput};
 use tacit_views::authoring::{emit_authoring, parse_authoring};
-use tacit_views::sidecar::Sidecar;
+use tacit_views::sidecar::{Sidecar, SidecarNode};
 use tacit_views::{emit_inspection, InspectFlags};
 
 #[derive(Parser)]
@@ -43,6 +43,54 @@ enum Cmd {
         format: CheckFormat,
     },
 
+    /// Parse authoring view (.taca) and emit canonical .tac + .tacd sidecar.
+    Canonicalize {
+        /// Input file (authoring view, typically .taca).
+        input: PathBuf,
+
+        /// Write canonical bytes to FILE.tac; .tacd is placed alongside. Defaults to <input stem>.tac.
+        #[arg(short, long, value_name = "FILE")]
+        output: Option<PathBuf>,
+
+        /// Overwrite an existing .tac file.
+        #[arg(long)]
+        force: bool,
+
+        /// Reject ASTs containing Hole nodes.
+        #[arg(long)]
+        strict: bool,
+    },
+
+    /// Render a canonical .tac file as authoring or inspection view.
+    Render {
+        /// Input .tac file (canonical).
+        input: PathBuf,
+
+        /// Which view to render (default: authoring).
+        #[arg(long = "as", value_enum, value_name = "FORMAT", default_value = "authoring")]
+        view_format: ViewFormat,
+
+        /// Write output to FILE (must end in .taca for authoring view).
+        #[arg(short, long, value_name = "FILE")]
+        output: Option<PathBuf>,
+
+        /// (inspection) Annotate variable occurrences with DeBruijn indices.
+        #[arg(long)]
+        debruijn: bool,
+
+        /// (inspection) Prefix each node with its 4-byte BLAKE3 hash badge.
+        #[arg(long)]
+        hashes: bool,
+
+        /// (inspection) Render type annotations in human-readable form.
+        #[arg(long)]
+        types: bool,
+
+        /// (inspection) Render effect annotations verbosely.
+        #[arg(long)]
+        effects: bool,
+    },
+
     /// Migrate a .tac (authoring view) + .tac.sidecar.toml to canonical .tac + .tacd (one-shot).
     MigrateSidecar {
         /// Input .tac file (authoring view).
@@ -65,9 +113,9 @@ enum Cmd {
         strict: bool,
     },
 
-    /// Render a .tac source file in the authoring or inspection view.
+    /// Render a .tac or .taca source file in the authoring or inspection view.
     View {
-        /// Input .tac file (authoring view).
+        /// Input .tac (canonical) or .taca (authoring) file.
         input: PathBuf,
 
         /// Which view to render: authoring or inspection.
@@ -122,6 +170,21 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             emit_llvm_ir,
         } => cmd_compile(input, output, emit_llvm_ir),
         Cmd::Check { input, format } => cmd_check(input, format),
+        Cmd::Canonicalize {
+            input,
+            output,
+            force,
+            strict,
+        } => cmd_canonicalize(input, output, force, strict),
+        Cmd::Render {
+            input,
+            view_format,
+            output,
+            debruijn,
+            hashes,
+            types,
+            effects,
+        } => cmd_render(input, view_format, output, debruijn, hashes, types, effects),
         Cmd::MigrateSidecar {
             input,
             toml,
@@ -141,13 +204,156 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 // ---------------------------------------------------------------------------
+// load_canonical: shared input helper for compile / check / view
+// ---------------------------------------------------------------------------
+
+/// Load a `.tac` (canonical) or `.taca` (authoring) file into an AST.
+/// For `.tac`, the paired `.tacd` sidecar is loaded if it exists alongside.
+/// For `.taca`, the sidecar produced by `parse_authoring` is returned directly.
+fn load_canonical(
+    input: &Path,
+) -> Result<(tacit_canonical::ast::Node, Option<SidecarNode>), Box<dyn std::error::Error>> {
+    let src = std::fs::read(input).map_err(|e| format!("{}: {}", input.display(), e))?;
+    let ext = input.extension().and_then(|e| e.to_str()).unwrap_or("");
+    match ext {
+        "tac" => {
+            let node = tacit_canonical::parse(&src)
+                .map_err(|e| format!("{}: {}", input.display(), e))?;
+            let tacd_path = input.with_extension("tacd");
+            let sidecar = if tacd_path.exists() {
+                let s = Sidecar::read(&tacd_path)
+                    .map_err(|e| format!("{}: {}", tacd_path.display(), e))?;
+                Some(s.display)
+            } else {
+                None
+            };
+            Ok((node, sidecar))
+        }
+        "taca" => {
+            let (node, display) = parse_authoring(&src)
+                .map_err(|e| format!("{}: {}", input.display(), e))?;
+            Ok((node, Some(display)))
+        }
+        _ => Err(format!(
+            "{}: expected .tac (canonical) or .taca (authoring) input",
+            input.display()
+        )
+        .into()),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// canonicalize subcommand
+// ---------------------------------------------------------------------------
+
+fn cmd_canonicalize(
+    input: PathBuf,
+    output: Option<PathBuf>,
+    force: bool,
+    strict: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let src = std::fs::read(&input).map_err(|e| format!("{}: {}", input.display(), e))?;
+    let (node, display_sidecar) =
+        parse_authoring(&src).map_err(|e| format!("{}: {}", input.display(), e))?;
+
+    if strict && contains_hole(&node) {
+        return Err(format!(
+            "{}: AST contains Hole node(s); refusing with --strict",
+            input.display()
+        )
+        .into());
+    }
+
+    let canonical_bytes = tacit_canonical::emit(&node);
+
+    let canonical_path = match output {
+        Some(p) => p,
+        None => input.with_extension("tac"),
+    };
+    let tacd_path = canonical_path.with_extension("tacd");
+
+    if canonical_path.exists() && !force {
+        return Err(format!(
+            "{}: file exists; use --force to overwrite",
+            canonical_path.display()
+        )
+        .into());
+    }
+
+    let tacd = Sidecar::new(&canonical_bytes, display_sidecar);
+    std::fs::write(&canonical_path, &canonical_bytes)
+        .map_err(|e| format!("{}: {}", canonical_path.display(), e))?;
+    tacd.write(&tacd_path)
+        .map_err(|e| format!("{}: {}", tacd_path.display(), e))?;
+
+    println!(
+        "wrote {} ({} bytes) and {}",
+        canonical_path.display(),
+        canonical_bytes.len(),
+        tacd_path.display(),
+    );
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// render subcommand
+// ---------------------------------------------------------------------------
+
+fn cmd_render(
+    input: PathBuf,
+    view_format: ViewFormat,
+    output: Option<PathBuf>,
+    debruijn: bool,
+    hashes: bool,
+    types: bool,
+    effects: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let src = std::fs::read(&input).map_err(|e| format!("{}: {}", input.display(), e))?;
+    let node = tacit_canonical::parse(&src)
+        .map_err(|e| format!("{}: {}", input.display(), e))?;
+
+    let tacd_path = input.with_extension("tacd");
+    let sidecar: Option<SidecarNode> = if tacd_path.exists() {
+        let s = Sidecar::read(&tacd_path)
+            .map_err(|e| format!("{}: {}", tacd_path.display(), e))?;
+        Some(s.display)
+    } else {
+        None
+    };
+
+    let rendered = match view_format {
+        ViewFormat::Authoring => emit_authoring(&node, sidecar.as_ref()),
+        ViewFormat::Inspection => {
+            let flags = InspectFlags { debruijn, hashes, types, effects };
+            emit_inspection(&node, sidecar.as_ref(), &flags)
+        }
+    };
+
+    match output {
+        None => print!("{}", rendered),
+        Some(out) => {
+            if matches!(view_format, ViewFormat::Authoring)
+                && out.extension().and_then(|e| e.to_str()) != Some("taca")
+            {
+                return Err(format!(
+                    "{}: output for authoring view must end in .taca",
+                    out.display()
+                )
+                .into());
+            }
+            std::fs::write(&out, rendered.as_bytes())
+                .map_err(|e| format!("{}: {}", out.display(), e))?;
+        }
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // check subcommand
 // ---------------------------------------------------------------------------
 
 fn cmd_check(input: PathBuf, format: CheckFormat) -> Result<(), Box<dyn std::error::Error>> {
-    let src = std::fs::read(&input).map_err(|e| format!("{}: {}", input.display(), e))?;
-    let (node, _sidecar) =
-        parse_authoring(&src).map_err(|e| format!("{}: {}", input.display(), e))?;
+    let (node, _sidecar) = load_canonical(&input)?;
 
     match infer_module(&node) {
         Ok(_) => {
@@ -302,22 +508,15 @@ fn cmd_view(
     types: bool,
     effects: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let src = std::fs::read(&input).map_err(|e| format!("{}: {}", input.display(), e))?;
-    let (node, sidecar) =
-        parse_authoring(&src).map_err(|e| format!("{}: {}", input.display(), e))?;
+    let (node, sidecar) = load_canonical(&input)?;
 
     match view_format {
         ViewFormat::Authoring => {
-            print!("{}", emit_authoring(&node, Some(&sidecar)));
+            print!("{}", emit_authoring(&node, sidecar.as_ref()));
         }
         ViewFormat::Inspection => {
-            let flags = InspectFlags {
-                debruijn,
-                hashes,
-                types,
-                effects,
-            };
-            print!("{}", emit_inspection(&node, Some(&sidecar), &flags));
+            let flags = InspectFlags { debruijn, hashes, types, effects };
+            print!("{}", emit_inspection(&node, sidecar.as_ref(), &flags));
         }
     }
     Ok(())
@@ -336,9 +535,7 @@ fn cmd_compile(
         return Err("must specify -o <output> or --emit-llvm-ir (or both)".into());
     }
 
-    let src = std::fs::read(&input).map_err(|e| format!("{}: {}", input.display(), e))?;
-    let (node, _sidecar) =
-        parse_authoring(&src).map_err(|e| format!("{}: {}", input.display(), e))?;
+    let (node, _sidecar) = load_canonical(&input)?;
 
     let module_name = input
         .file_stem()
