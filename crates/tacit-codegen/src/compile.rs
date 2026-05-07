@@ -43,6 +43,7 @@
 //! name is interpreted as an integer literal arm, which mirrors how
 //! `Sym` at App head is interpreted as a primitive name.)
 
+use std::fmt;
 use std::path::Path;
 
 use inkwell::attributes::{Attribute, AttributeLoc};
@@ -53,8 +54,10 @@ use inkwell::module::{Linkage, Module};
 use inkwell::targets::{
     CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine,
 };
-use inkwell::types::BasicMetadataTypeEnum;
-use inkwell::values::{BasicMetadataValueEnum, BasicValue, FunctionValue, IntValue, PointerValue};
+use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
+use inkwell::values::{
+    BasicMetadataValueEnum, BasicValue, BasicValueEnum, FunctionValue, IntValue, PointerValue,
+};
 use inkwell::{AddressSpace, IntPredicate, OptimizationLevel};
 
 /// `LLVMCCallConv` from `llvm-sys`. Not exposed as a typed enum by inkwell
@@ -62,6 +65,8 @@ use inkwell::{AddressSpace, IntPredicate, OptimizationLevel};
 const LLVM_C_CALL_CONV: u32 = 0;
 
 use tacit_canonical::ast::Node;
+use tacit_typecheck::ty::{Subst, Ty};
+use tacit_typecheck::type_from_node::type_from_node;
 
 use crate::analysis::{
     check_closed, check_no_holes, collect_lam_chain, parse_int_literal, sanitize, unfold_app,
@@ -103,8 +108,9 @@ pub struct Compiler<'ctx> {
 /// Per-binder entry on the binding stack. Innermost binder is `last`.
 #[derive(Clone)]
 enum Binding<'ctx> {
-    /// A computed `i64` value bound by `let` or `lam` parameter.
-    Value(IntValue<'ctx>),
+    /// A computed first-class scalar or product value bound by `let` or a
+    /// `lam` parameter.
+    Value(CompiledValue<'ctx>),
     /// A top-level function reference. Only callable at `App` head;
     /// reading the binding outside head position is `FirstClassFunction`.
     Function(FunctionBinding<'ctx>),
@@ -116,10 +122,71 @@ enum Binding<'ctx> {
     },
 }
 
+#[derive(Clone, PartialEq, Eq, Debug)]
+enum ValueTy {
+    /// Runtime `i64`. Tacit `Bool` is also represented as `i64` 0/1 in the
+    /// existing codegen surface.
+    Int,
+    /// Canonical sorted field order. Field names remain source-level type
+    /// information; LLVM layout only sees the field value types.
+    Record(Vec<(String, ValueTy)>),
+}
+
+impl fmt::Display for ValueTy {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ValueTy::Int => write!(f, "Int"),
+            ValueTy::Record(fields) => {
+                write!(f, "{{")?;
+                for (i, (name, ty)) in fields.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}: {}", name, ty)?;
+                }
+                write!(f, "}}")
+            }
+        }
+    }
+}
+
+#[derive(Clone)]
+struct CompiledValue<'ctx> {
+    ty: ValueTy,
+    value: BasicValueEnum<'ctx>,
+}
+
+impl<'ctx> CompiledValue<'ctx> {
+    fn int(value: IntValue<'ctx>) -> Self {
+        Self {
+            ty: ValueTy::Int,
+            value: value.into(),
+        }
+    }
+
+    fn into_int(self) -> Result<IntValue<'ctx>> {
+        if self.ty != ValueTy::Int {
+            return Err(CodegenError::ExpectedIntValue {
+                actual: self.ty.to_string(),
+            });
+        }
+        Ok(self.value.into_int_value())
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum PtrKind {
     Buf,
     I64Vec,
+}
+
+#[derive(Clone)]
+enum BindingTy {
+    Value(ValueTy),
+    Function {
+        param_tys: Vec<ValueTy>,
+        ret_ty: ValueTy,
+    },
 }
 
 /// Direction for ASCII case shift primitives (ADR 0068).
@@ -132,8 +199,21 @@ enum AsciiCase {
 #[derive(Clone)]
 struct FunctionBinding<'ctx> {
     value: FunctionValue<'ctx>,
-    arity: usize,
+    param_tys: Vec<ValueTy>,
+    ret_ty: ValueTy,
     captures: Vec<Binding<'ctx>>,
+}
+
+impl<'ctx> FunctionBinding<'ctx> {
+    fn arity(&self) -> usize {
+        self.param_tys.len()
+    }
+}
+
+struct LamSpec<'a> {
+    param_tys: Vec<ValueTy>,
+    ret_ty: ValueTy,
+    body: &'a Node,
 }
 
 impl<'ctx> Compiler<'ctx> {
@@ -226,22 +306,35 @@ impl<'ctx> Compiler<'ctx> {
         Ok(())
     }
 
-    /// Compile an expression to an `i64` SSA value, given a binder stack.
+    /// Compile an expression that must lower to the runtime integer
+    /// representation (`i64`).
     fn compile_expr(
         &mut self,
         node: &Node,
         env: &[Binding<'ctx>],
         cur_fn: FunctionValue<'ctx>,
     ) -> Result<IntValue<'ctx>> {
+        self.compile_value_expr(node, env, cur_fn)?.into_int()
+    }
+
+    /// Compile an expression to a first-class runtime value. Phase 4 Stage 2
+    /// supports integers and structural records of supported first-class
+    /// values; buffer-like handles remain separate scoped bindings.
+    fn compile_value_expr(
+        &mut self,
+        node: &Node,
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<CompiledValue<'ctx>> {
         match node {
-            Node::Int { value } => self.compile_int_literal(value),
+            Node::Int { value } => Ok(CompiledValue::int(self.compile_int_literal(value)?)),
             Node::Str { .. } => Err(CodegenError::Unsupported(
                 "string literal outside of @write/@read primitive call",
             )),
             Node::Var { index } => {
                 let entry = lookup_var(env, *index)?;
                 match entry {
-                    Binding::Value(v) => Ok(*v),
+                    Binding::Value(v) => Ok(v.clone()),
                     Binding::Function(_) => Err(CodegenError::FirstClassFunction),
                     Binding::Ptr { .. } => Err(CodegenError::Unsupported(
                         "buffer-like handle used in integer-value position",
@@ -256,10 +349,10 @@ impl<'ctx> Compiler<'ctx> {
             Node::Module { .. } => Err(CodegenError::Unsupported("top-level module")),
             Node::Match { scrutinee, arms } => self.compile_match(scrutinee, arms, env, cur_fn),
             Node::Arm { .. } => Err(CodegenError::Unsupported("bare arm outside match")),
-            Node::Record { .. } => Err(CodegenError::Unsupported("record")),
-            Node::Proj { .. } => Err(CodegenError::Unsupported("proj")),
+            Node::Record { fields } => self.compile_record(fields, env, cur_fn),
+            Node::Proj { record, field } => self.compile_proj(record, field, env, cur_fn),
             Node::Ctor { .. } => Err(CodegenError::Unsupported("ctor in expression position")),
-            Node::Ann { expr, .. } => self.compile_expr(expr, env, cur_fn),
+            Node::Ann { expr, .. } => self.compile_value_expr(expr, env, cur_fn),
             Node::Sym { .. } => Err(CodegenError::Unsupported(
                 "bare sym outside primitive-call head",
             )),
@@ -286,22 +379,140 @@ impl<'ctx> Compiler<'ctx> {
         Ok(i64_t.const_int(parsed as u64, true))
     }
 
+    fn compile_record(
+        &mut self,
+        fields: &[(String, Node)],
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<CompiledValue<'ctx>> {
+        let mut ordered: Vec<&(String, Node)> = fields.iter().collect();
+        ordered.sort_by(|a, b| a.0.as_bytes().cmp(b.0.as_bytes()));
+
+        let mut compiled_fields = Vec::with_capacity(ordered.len());
+        let mut field_tys = Vec::with_capacity(ordered.len());
+        for (name, expr) in ordered {
+            let value = self.compile_value_expr(expr, env, cur_fn)?;
+            field_tys.push((name.clone(), value.ty.clone()));
+            compiled_fields.push(value);
+        }
+
+        let ty = ValueTy::Record(field_tys);
+        let struct_ty = self.llvm_struct_type(&ty)?;
+        let mut aggregate = struct_ty.get_undef();
+        for (i, value) in compiled_fields.into_iter().enumerate() {
+            aggregate = self
+                .builder
+                .build_insert_value(aggregate, value.value, i as u32, "record_insert")
+                .map_err(|e| CodegenError::Llvm(e.to_string()))?
+                .into_struct_value();
+        }
+        Ok(CompiledValue {
+            ty,
+            value: aggregate.into(),
+        })
+    }
+
+    fn compile_proj(
+        &mut self,
+        record: &Node,
+        field: &str,
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<CompiledValue<'ctx>> {
+        let record_value = self.compile_value_expr(record, env, cur_fn)?;
+        let ValueTy::Record(fields) = &record_value.ty else {
+            return Err(CodegenError::InvalidProjection {
+                field: field.to_string(),
+                actual: record_value.ty.to_string(),
+            });
+        };
+        let Some((index, (_, field_ty))) = fields
+            .iter()
+            .enumerate()
+            .find(|(_, (name, _))| name == field)
+        else {
+            return Err(CodegenError::MissingField {
+                field: field.to_string(),
+            });
+        };
+        let extracted = self
+            .builder
+            .build_extract_value(record_value.value.into_struct_value(), index as u32, "proj")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        Ok(CompiledValue {
+            ty: field_ty.clone(),
+            value: extracted,
+        })
+    }
+
+    fn llvm_type(&self, ty: &ValueTy) -> Result<BasicTypeEnum<'ctx>> {
+        match ty {
+            ValueTy::Int => Ok(self.context.i64_type().into()),
+            ValueTy::Record(_) => Ok(self.llvm_struct_type(ty)?.into()),
+        }
+    }
+
+    fn llvm_struct_type(&self, ty: &ValueTy) -> Result<inkwell::types::StructType<'ctx>> {
+        let ValueTy::Record(fields) = ty else {
+            return Err(CodegenError::UnsupportedValueType { ty: ty.to_string() });
+        };
+        let field_types = fields
+            .iter()
+            .map(|(_, field_ty)| self.llvm_type(field_ty))
+            .collect::<Result<Vec<_>>>()?;
+        Ok(self.context.struct_type(&field_types, false))
+    }
+
+    fn signature_for_lam(
+        &self,
+        lam_body: &Node,
+        arity: usize,
+        ann_ty: Option<&Node>,
+        supplied_param_tys: &[ValueTy],
+    ) -> Result<(Vec<ValueTy>, ValueTy)> {
+        if let Some(type_node) = ann_ty {
+            let (param_tys, ret_ty) = function_signature_from_type_node(type_node)?;
+            if param_tys.len() != arity {
+                return Err(CodegenError::FunctionArity {
+                    expected: param_tys.len(),
+                    got: arity,
+                });
+            }
+            return Ok((param_tys, ret_ty));
+        }
+
+        let param_tys = if supplied_param_tys.len() == arity {
+            supplied_param_tys.to_vec()
+        } else {
+            vec![ValueTy::Int; arity]
+        };
+        let body_env: Vec<BindingTy> = param_tys
+            .iter()
+            .rev()
+            .cloned()
+            .map(BindingTy::Value)
+            .collect();
+        let ret_ty = infer_value_ty(lam_body, &body_env).unwrap_or(ValueTy::Int);
+        Ok((param_tys, ret_ty))
+    }
+
     fn compile_let(
         &mut self,
         rhs: &Node,
         body: &Node,
         env: &[Binding<'ctx>],
         cur_fn: FunctionValue<'ctx>,
-    ) -> Result<IntValue<'ctx>> {
+    ) -> Result<CompiledValue<'ctx>> {
         // Special-case Let-of-Lam-chain: hoist the closed lambda chain to a
         // top-level function and bind the body under a `Function` entry.
         // ADR 0026 § 3 second bullet; Phase 3 permits direct multi-arg calls
         // when all arguments are supplied at the call site.
-        if let Some((arity, lam_body)) = collect_lam_chain(rhs) {
-            let fn_val = self.hoist_lambda(lam_body, arity, "let")?;
+        if let Some((arity, lam_body, ann_ty)) = collect_annotated_lam_chain(rhs) {
+            let (param_tys, ret_ty) = self.signature_for_lam(lam_body, arity, ann_ty, &[])?;
+            let fn_val = self.hoist_lambda(lam_body, param_tys, ret_ty, "let")?;
             let mut new_env = env.to_vec();
             new_env.insert(0, Binding::Function(fn_val));
-            return self.compile_expr(body, &new_env, cur_fn);
+            return self.compile_value_expr(body, &new_env, cur_fn);
         }
 
         // Special-case Let-of-BufAlloc (ADR 0038): `let buf = @buf-alloc N in ...`
@@ -339,7 +550,7 @@ impl<'ctx> Compiler<'ctx> {
                                 kind: PtrKind::Buf,
                             },
                         );
-                        return self.compile_expr(body, &new_env, cur_fn);
+                        return self.compile_value_expr(body, &new_env, cur_fn);
                     }
                 }
                 if name == "buf-alloc-dyn" && args.len() == 1 {
@@ -358,7 +569,7 @@ impl<'ctx> Compiler<'ctx> {
                             kind: PtrKind::Buf,
                         },
                     );
-                    return self.compile_expr(body, &new_env, cur_fn);
+                    return self.compile_value_expr(body, &new_env, cur_fn);
                 }
                 if name == "i64-alloc" && args.len() == 1 {
                     // Runtime-sized stack allocation: alloca i64, %n (ADR 0061).
@@ -376,15 +587,15 @@ impl<'ctx> Compiler<'ctx> {
                             kind: PtrKind::I64Vec,
                         },
                     );
-                    return self.compile_expr(body, &new_env, cur_fn);
+                    return self.compile_value_expr(body, &new_env, cur_fn);
                 }
             }
         }
 
-        let v = self.compile_expr(rhs, env, cur_fn)?;
+        let v = self.compile_value_expr(rhs, env, cur_fn)?;
         let mut new_env = env.to_vec();
         new_env.insert(0, Binding::Value(v));
-        self.compile_expr(body, &new_env, cur_fn)
+        self.compile_value_expr(body, &new_env, cur_fn)
     }
 
     fn compile_if(
@@ -394,7 +605,7 @@ impl<'ctx> Compiler<'ctx> {
         else_node: &Node,
         env: &[Binding<'ctx>],
         cur_fn: FunctionValue<'ctx>,
-    ) -> Result<IntValue<'ctx>> {
+    ) -> Result<CompiledValue<'ctx>> {
         // ADR 0030 § if truthy semantics: branch on `icmp ne cond, 0`.
         let cond_val = self.compile_expr(cond, env, cur_fn)?;
         let zero = self.context.i64_type().const_zero();
@@ -412,14 +623,20 @@ impl<'ctx> Compiler<'ctx> {
             .map_err(|e| CodegenError::Llvm(e.to_string()))?;
 
         self.builder.position_at_end(then_bb);
-        let then_val = self.compile_expr(then_node, env, cur_fn)?;
+        let then_val = self.compile_value_expr(then_node, env, cur_fn)?;
         let then_end_bb = self.builder.get_insert_block().unwrap();
         self.builder
             .build_unconditional_branch(merge_bb)
             .map_err(|e| CodegenError::Llvm(e.to_string()))?;
 
         self.builder.position_at_end(else_bb);
-        let else_val = self.compile_expr(else_node, env, cur_fn)?;
+        let else_val = self.compile_value_expr(else_node, env, cur_fn)?;
+        if then_val.ty != else_val.ty {
+            return Err(CodegenError::ValueTypeMismatch {
+                expected: then_val.ty.to_string(),
+                actual: else_val.ty.to_string(),
+            });
+        }
         let else_end_bb = self.builder.get_insert_block().unwrap();
         self.builder
             .build_unconditional_branch(merge_bb)
@@ -428,10 +645,16 @@ impl<'ctx> Compiler<'ctx> {
         self.builder.position_at_end(merge_bb);
         let phi = self
             .builder
-            .build_phi(self.context.i64_type(), "ifval")
+            .build_phi(self.llvm_type(&then_val.ty)?, "ifval")
             .map_err(|e| CodegenError::Llvm(e.to_string()))?;
-        phi.add_incoming(&[(&then_val, then_end_bb), (&else_val, else_end_bb)]);
-        Ok(phi.as_basic_value().into_int_value())
+        phi.add_incoming(&[
+            (&then_val.value as &dyn BasicValue<'ctx>, then_end_bb),
+            (&else_val.value as &dyn BasicValue<'ctx>, else_end_bb),
+        ]);
+        Ok(CompiledValue {
+            ty: then_val.ty,
+            value: phi.as_basic_value(),
+        })
     }
 
     /// Compile `App` left-spine. Recognises:
@@ -445,31 +668,36 @@ impl<'ctx> Compiler<'ctx> {
         node: &Node,
         env: &[Binding<'ctx>],
         cur_fn: FunctionValue<'ctx>,
-    ) -> Result<IntValue<'ctx>> {
+    ) -> Result<CompiledValue<'ctx>> {
         let (head, args) = unfold_app(node);
 
         match head {
-            Node::Sym { name } => self.compile_primitive_call(name, &args, env, cur_fn),
-            Node::Lam { .. } => {
-                let (arity, lam_body) =
-                    collect_lam_chain(head).expect("Node::Lam has a lambda chain");
+            Node::Sym { name } => Ok(CompiledValue::int(
+                self.compile_primitive_call(name, &args, env, cur_fn)?,
+            )),
+            Node::Lam { .. } | Node::Ann { .. } => {
+                let (arity, lam_body, ann_ty) =
+                    collect_annotated_lam_chain(head).ok_or(CodegenError::AppNonFunction)?;
                 if args.len() != arity {
                     return Err(CodegenError::FunctionArity {
                         expected: arity,
                         got: args.len(),
                     });
                 }
-                let fn_val = self.hoist_lambda(lam_body, arity, "anon")?;
                 let arg_vals = self.compile_call_args(&args, env, cur_fn)?;
+                let arg_tys: Vec<ValueTy> = arg_vals.iter().map(|v| v.ty.clone()).collect();
+                let (param_tys, ret_ty) =
+                    self.signature_for_lam(lam_body, arity, ann_ty, &arg_tys)?;
+                let fn_val = self.hoist_lambda(lam_body, param_tys, ret_ty, "anon")?;
                 self.call_function(&fn_val, &arg_vals)
             }
             Node::Var { index } => {
                 let binding = lookup_var(env, *index)?;
                 match binding {
                     Binding::Function(fn_val) => {
-                        if args.len() != fn_val.arity {
+                        if args.len() != fn_val.arity() {
                             return Err(CodegenError::FunctionArity {
-                                expected: fn_val.arity,
+                                expected: fn_val.arity(),
                                 got: args.len(),
                             });
                         }
@@ -488,10 +716,10 @@ impl<'ctx> Compiler<'ctx> {
         args: &[&Node],
         env: &[Binding<'ctx>],
         cur_fn: FunctionValue<'ctx>,
-    ) -> Result<Vec<IntValue<'ctx>>> {
+    ) -> Result<Vec<CompiledValue<'ctx>>> {
         let mut values = Vec::with_capacity(args.len());
         for arg in args {
-            values.push(self.compile_expr(arg, env, cur_fn)?);
+            values.push(self.compile_value_expr(arg, env, cur_fn)?);
         }
         Ok(values)
     }
@@ -499,16 +727,28 @@ impl<'ctx> Compiler<'ctx> {
     fn call_function(
         &mut self,
         fn_binding: &FunctionBinding<'ctx>,
-        args: &[IntValue<'ctx>],
-    ) -> Result<IntValue<'ctx>> {
-        let mut call_args: Vec<BasicMetadataValueEnum<'ctx>> = args
-            .iter()
-            .copied()
-            .map(BasicMetadataValueEnum::IntValue)
-            .collect();
+        args: &[CompiledValue<'ctx>],
+    ) -> Result<CompiledValue<'ctx>> {
+        if args.len() != fn_binding.param_tys.len() {
+            return Err(CodegenError::FunctionArity {
+                expected: fn_binding.param_tys.len(),
+                got: args.len(),
+            });
+        }
+        for (arg, expected) in args.iter().zip(&fn_binding.param_tys) {
+            if &arg.ty != expected {
+                return Err(CodegenError::ValueTypeMismatch {
+                    expected: expected.to_string(),
+                    actual: arg.ty.to_string(),
+                });
+            }
+        }
+
+        let mut call_args: Vec<BasicMetadataValueEnum<'ctx>> =
+            args.iter().map(|v| v.value.into()).collect();
         for capture in &fn_binding.captures {
             match capture {
-                Binding::Value(v) => call_args.push(BasicMetadataValueEnum::IntValue(*v)),
+                Binding::Value(v) => call_args.push(v.value.into()),
                 Binding::Ptr { ptr, .. } => {
                     call_args.push(BasicMetadataValueEnum::PointerValue(*ptr))
                 }
@@ -524,7 +764,10 @@ impl<'ctx> Compiler<'ctx> {
             .try_as_basic_value()
             .basic()
             .ok_or_else(|| CodegenError::Llvm("call returned no value".into()))?;
-        Ok(ret.into_int_value())
+        Ok(CompiledValue {
+            ty: fn_binding.ret_ty.clone(),
+            value: ret,
+        })
     }
 
     fn compile_primitive_call(
@@ -4847,19 +5090,22 @@ impl<'ctx> Compiler<'ctx> {
     fn hoist_lambda(
         &mut self,
         lam_body: &Node,
-        arity: usize,
+        param_tys: Vec<ValueTy>,
+        ret_ty: ValueTy,
         name_hint: &str,
     ) -> Result<FunctionBinding<'ctx>> {
+        let arity = param_tys.len();
         check_closed(lam_body, arity as u64)?;
 
         let fn_name = self.fresh_fn_name(name_hint);
-        let fn_val = self.add_tacit_function(&fn_name, arity, &[]);
+        let fn_val = self.add_tacit_function(&fn_name, &param_tys, &ret_ty, &[])?;
         // C calling convention is LLVM's default (ADR 0027); no override needed.
 
-        self.compile_lambda_body(fn_val, lam_body, arity)?;
+        self.compile_lambda_body(fn_val, lam_body, &param_tys, &ret_ty)?;
         Ok(FunctionBinding {
             value: fn_val,
-            arity,
+            param_tys,
+            ret_ty,
             captures: Vec::new(),
         })
     }
@@ -4867,48 +5113,59 @@ impl<'ctx> Compiler<'ctx> {
     fn add_tacit_function(
         &self,
         name: &str,
-        arity: usize,
+        param_tys: &[ValueTy],
+        ret_ty: &ValueTy,
         captures: &[Binding<'ctx>],
-    ) -> FunctionValue<'ctx> {
-        let i64_t = self.context.i64_type();
+    ) -> Result<FunctionValue<'ctx>> {
         let ptr_t = self.context.ptr_type(AddressSpace::default());
-        let mut params: Vec<BasicMetadataTypeEnum<'ctx>> = (0..arity)
-            .map(|_| BasicMetadataTypeEnum::IntType(i64_t))
-            .collect();
+        let mut params: Vec<BasicMetadataTypeEnum<'ctx>> = param_tys
+            .iter()
+            .map(|ty| self.llvm_type(ty).map(BasicMetadataTypeEnum::from))
+            .collect::<Result<Vec<_>>>()?;
         for capture in captures {
             match capture {
-                Binding::Value(_) => params.push(BasicMetadataTypeEnum::IntType(i64_t)),
+                Binding::Value(v) => params.push(self.llvm_type(&v.ty)?.into()),
                 Binding::Ptr { .. } => params.push(BasicMetadataTypeEnum::PointerType(ptr_t)),
                 Binding::Function(_) => {}
             }
         }
-        let fn_ty = i64_t.fn_type(&params, false);
-        self.module
-            .add_function(name, fn_ty, Some(Linkage::Private))
+        let fn_ty = self.llvm_type(ret_ty)?.fn_type(&params, false);
+        Ok(self
+            .module
+            .add_function(name, fn_ty, Some(Linkage::Private)))
     }
 
     fn compile_lambda_body(
         &mut self,
         fn_val: FunctionValue<'ctx>,
         body: &Node,
-        arity: usize,
+        param_tys: &[ValueTy],
+        ret_ty: &ValueTy,
     ) -> Result<()> {
         let saved_block = self.builder.get_insert_block();
         let entry = self.context.append_basic_block(fn_val, "entry");
         self.builder.position_at_end(entry);
 
-        let mut env = Vec::with_capacity(arity);
-        for i in (0..arity).rev() {
+        let mut env = Vec::with_capacity(param_tys.len());
+        for i in (0..param_tys.len()).rev() {
             let param = fn_val
                 .get_nth_param(i as u32)
-                .ok_or_else(|| CodegenError::Llvm(format!("lambda missing param {i}")))?
-                .into_int_value();
-            env.push(Binding::Value(param));
+                .ok_or_else(|| CodegenError::Llvm(format!("lambda missing param {i}")))?;
+            env.push(Binding::Value(CompiledValue {
+                ty: param_tys[i].clone(),
+                value: param,
+            }));
         }
 
-        let v = self.compile_expr(body, &env, fn_val)?;
+        let v = self.compile_value_expr(body, &env, fn_val)?;
+        if &v.ty != ret_ty {
+            return Err(CodegenError::ValueTypeMismatch {
+                expected: ret_ty.to_string(),
+                actual: v.ty.to_string(),
+            });
+        }
         self.builder
-            .build_return(Some(&v))
+            .build_return(Some(&v.value))
             .map_err(|e| CodegenError::Llvm(e.to_string()))?;
 
         if let Some(saved) = saved_block {
@@ -4935,12 +5192,29 @@ impl<'ctx> Compiler<'ctx> {
         body: &Node,
         env: &[Binding<'ctx>],
         cur_fn: FunctionValue<'ctx>,
-    ) -> Result<IntValue<'ctx>> {
+    ) -> Result<CompiledValue<'ctx>> {
         // Every Rec member must be a Lam chain.
-        let mut specs: Vec<(usize, &Node)> = Vec::with_capacity(bindings.len());
+        let mut specs: Vec<LamSpec<'_>> = Vec::with_capacity(bindings.len());
         for (i, b) in bindings.iter().enumerate() {
-            if let Some(spec) = collect_lam_chain(b) {
-                specs.push(spec);
+            if let Some((arity, lam_body, ann_ty)) = collect_annotated_lam_chain(b) {
+                let (param_tys, ret_ty) = if ann_ty.is_some() {
+                    self.signature_for_lam(lam_body, arity, ann_ty, &[])?
+                } else {
+                    let param_tys = vec![ValueTy::Int; arity];
+                    let lambda_env: Vec<BindingTy> = param_tys
+                        .iter()
+                        .rev()
+                        .cloned()
+                        .map(BindingTy::Value)
+                        .collect();
+                    let ret_ty = infer_value_ty(lam_body, &lambda_env).unwrap_or(ValueTy::Int);
+                    (param_tys, ret_ty)
+                };
+                specs.push(LamSpec {
+                    param_tys,
+                    ret_ty,
+                    body: lam_body,
+                });
             } else {
                 return Err(CodegenError::RecGroupFailed {
                     failing_index: i,
@@ -4952,12 +5226,13 @@ impl<'ctx> Compiler<'ctx> {
         // Forward-declare all N functions.
         let n = bindings.len();
         let mut fns: Vec<FunctionBinding<'ctx>> = Vec::with_capacity(n);
-        for (arity, _) in &specs {
+        for spec in &specs {
             let name = self.fresh_fn_name("rec");
-            let f = self.add_tacit_function(&name, *arity, env);
+            let f = self.add_tacit_function(&name, &spec.param_tys, &spec.ret_ty, env)?;
             fns.push(FunctionBinding {
                 value: f,
-                arity: *arity,
+                param_tys: spec.param_tys.clone(),
+                ret_ty: spec.ret_ty.clone(),
                 captures: env.to_vec(),
             });
         }
@@ -4973,30 +5248,40 @@ impl<'ctx> Compiler<'ctx> {
         rec_env.extend_from_slice(env);
 
         // Define each member body.
-        for (i, (arity, lam_body)) in specs.iter().enumerate() {
+        for (i, spec) in specs.iter().enumerate() {
             // The lambda body sees its params in reverse DeBruijn order,
             // then the rec frame, then hidden capture parameters standing in
             // for the outer env. Build the per-body env accordingly.
-            self.compile_lambda_body_with_rec_env(fns[i].value, lam_body, *arity, &fns, env)
-                .map_err(|cause| CodegenError::RecGroupFailed {
-                    failing_index: i,
-                    cause: Box::new(cause),
-                })?;
+            self.compile_lambda_body_with_rec_env(
+                &fns[i],
+                spec.body,
+                &spec.param_tys,
+                &spec.ret_ty,
+                &fns,
+                env,
+            )
+            .map_err(|cause| CodegenError::RecGroupFailed {
+                failing_index: i,
+                cause: Box::new(cause),
+            })?;
         }
 
         // Compile the rec-block body in the current scope, with the rec frame
         // on top of the existing env.
-        self.compile_expr(body, &rec_env, cur_fn)
+        self.compile_value_expr(body, &rec_env, cur_fn)
     }
 
     fn compile_lambda_body_with_rec_env(
         &mut self,
-        fn_val: FunctionValue<'ctx>,
+        fn_binding: &FunctionBinding<'ctx>,
         body: &Node,
-        arity: usize,
+        param_tys: &[ValueTy],
+        ret_ty: &ValueTy,
         rec_fns: &[FunctionBinding<'ctx>],
         outer_env: &[Binding<'ctx>],
     ) -> Result<()> {
+        let fn_val = fn_binding.value;
+        let arity = param_tys.len();
         let saved_block = self.builder.get_insert_block();
         let entry = self.context.append_basic_block(fn_val, "entry");
         self.builder.position_at_end(entry);
@@ -5006,7 +5291,8 @@ impl<'ctx> Compiler<'ctx> {
         for f in rec_fns {
             rec_env.push(Binding::Function(FunctionBinding {
                 value: f.value,
-                arity: f.arity,
+                param_tys: f.param_tys.clone(),
+                ret_ty: f.ret_ty.clone(),
                 captures: captured_env.clone(),
             }));
         }
@@ -5016,14 +5302,22 @@ impl<'ctx> Compiler<'ctx> {
         for i in (0..arity).rev() {
             let param = fn_val
                 .get_nth_param(i as u32)
-                .ok_or_else(|| CodegenError::Llvm(format!("lambda missing param {i}")))?
-                .into_int_value();
-            body_env.push(Binding::Value(param));
+                .ok_or_else(|| CodegenError::Llvm(format!("lambda missing param {i}")))?;
+            body_env.push(Binding::Value(CompiledValue {
+                ty: param_tys[i].clone(),
+                value: param,
+            }));
         }
         body_env.extend_from_slice(&rec_env);
-        let v = self.compile_expr(body, &body_env, fn_val)?;
+        let v = self.compile_value_expr(body, &body_env, fn_val)?;
+        if &v.ty != ret_ty {
+            return Err(CodegenError::ValueTypeMismatch {
+                expected: ret_ty.to_string(),
+                actual: v.ty.to_string(),
+            });
+        }
         self.builder
-            .build_return(Some(&v))
+            .build_return(Some(&v.value))
             .map_err(|e| CodegenError::Llvm(e.to_string()))?;
         if let Some(saved) = saved_block {
             self.builder.position_at_end(saved);
@@ -5041,17 +5335,17 @@ impl<'ctx> Compiler<'ctx> {
         let mut captured = Vec::with_capacity(outer_env.len());
         for binding in outer_env {
             match binding {
-                Binding::Value(_) => {
-                    let param = fn_val
-                        .get_nth_param(param_index)
-                        .ok_or_else(|| {
-                            CodegenError::Llvm(format!(
-                                "lambda missing captured int param {}",
-                                param_index
-                            ))
-                        })?
-                        .into_int_value();
-                    captured.push(Binding::Value(param));
+                Binding::Value(v) => {
+                    let param = fn_val.get_nth_param(param_index).ok_or_else(|| {
+                        CodegenError::Llvm(format!(
+                            "lambda missing captured int param {}",
+                            param_index
+                        ))
+                    })?;
+                    captured.push(Binding::Value(CompiledValue {
+                        ty: v.ty.clone(),
+                        value: param,
+                    }));
                     param_index += 1;
                 }
                 Binding::Ptr { kind, .. } => {
@@ -5089,12 +5383,13 @@ impl<'ctx> Compiler<'ctx> {
         arms: &[Node],
         env: &[Binding<'ctx>],
         cur_fn: FunctionValue<'ctx>,
-    ) -> Result<IntValue<'ctx>> {
+    ) -> Result<CompiledValue<'ctx>> {
         let scrut = self.compile_expr(scrutinee, env, cur_fn)?;
 
         let merge_bb = self.context.append_basic_block(cur_fn, "match_end");
         // Collect (basic-block, value) for the phi at merge.
-        let mut incoming: Vec<(IntValue<'ctx>, BasicBlock<'ctx>)> = Vec::new();
+        let mut incoming: Vec<(CompiledValue<'ctx>, BasicBlock<'ctx>)> = Vec::new();
+        let mut result_ty: Option<ValueTy> = None;
 
         // Iterate arms in order. Track whether a wildcard has been seen.
         let mut wildcard_seen = false;
@@ -5109,7 +5404,8 @@ impl<'ctx> Compiler<'ctx> {
             match pat {
                 Node::PatWild => {
                     wildcard_seen = true;
-                    let v = self.compile_expr(body, env, cur_fn)?;
+                    let v = self.compile_value_expr(body, env, cur_fn)?;
+                    remember_match_type(&mut result_ty, &v.ty)?;
                     let end_bb = self.builder.get_insert_block().unwrap();
                     incoming.push((v, end_bb));
                     self.builder
@@ -5135,7 +5431,8 @@ impl<'ctx> Compiler<'ctx> {
                         .build_conditional_branch(cond, arm_bb, next_bb)
                         .map_err(|e| CodegenError::Llvm(e.to_string()))?;
                     self.builder.position_at_end(arm_bb);
-                    let v = self.compile_expr(body, env, cur_fn)?;
+                    let v = self.compile_value_expr(body, env, cur_fn)?;
+                    remember_match_type(&mut result_ty, &v.ty)?;
                     let end_bb = self.builder.get_insert_block().unwrap();
                     incoming.push((v, end_bb));
                     self.builder
@@ -5167,7 +5464,8 @@ impl<'ctx> Compiler<'ctx> {
                         .build_conditional_branch(cond, arm_bb, next_bb)
                         .map_err(|e| CodegenError::Llvm(e.to_string()))?;
                     self.builder.position_at_end(arm_bb);
-                    let v = self.compile_expr(body, env, cur_fn)?;
+                    let v = self.compile_value_expr(body, env, cur_fn)?;
+                    remember_match_type(&mut result_ty, &v.ty)?;
                     let end_bb = self.builder.get_insert_block().unwrap();
                     incoming.push((v, end_bb));
                     self.builder
@@ -5199,18 +5497,259 @@ impl<'ctx> Compiler<'ctx> {
             // No arms produced a value path. Match must have at least one arm
             // by canonical-form rules, so this is unreachable; emit i64 0
             // placeholder.
-            return Ok(self.context.i64_type().const_zero());
+            return Ok(CompiledValue::int(self.context.i64_type().const_zero()));
         }
+        let result_ty = result_ty.unwrap_or(ValueTy::Int);
         let phi = self
             .builder
-            .build_phi(self.context.i64_type(), "match_val")
+            .build_phi(self.llvm_type(&result_ty)?, "match_val")
             .map_err(|e| CodegenError::Llvm(e.to_string()))?;
         let refs: Vec<(&dyn inkwell::values::BasicValue<'ctx>, BasicBlock<'ctx>)> = incoming
             .iter()
-            .map(|(v, b)| (v as &dyn inkwell::values::BasicValue<'ctx>, *b))
+            .map(|(v, b)| (&v.value as &dyn inkwell::values::BasicValue<'ctx>, *b))
             .collect();
         phi.add_incoming(&refs);
-        Ok(phi.as_basic_value().into_int_value())
+        Ok(CompiledValue {
+            ty: result_ty,
+            value: phi.as_basic_value(),
+        })
+    }
+}
+
+fn collect_annotated_lam_chain(node: &Node) -> Option<(usize, &Node, Option<&Node>)> {
+    match node {
+        Node::Ann { expr, type_ } => {
+            collect_lam_chain(expr).map(|(arity, body)| (arity, body, Some(type_.as_ref())))
+        }
+        other => collect_lam_chain(other).map(|(arity, body)| (arity, body, None)),
+    }
+}
+
+fn function_signature_from_type_node(type_node: &Node) -> Result<(Vec<ValueTy>, ValueTy)> {
+    let ty = ty_from_type_node(type_node)?;
+    let mut params = Vec::new();
+    let mut cur = ty;
+    loop {
+        match cur {
+            Ty::Fn(arg, ret, _) => {
+                params.push(value_ty_from_ty(&arg)?);
+                cur = *ret;
+            }
+            other => return Ok((params, value_ty_from_ty(&other)?)),
+        }
+    }
+}
+
+fn ty_from_type_node(type_node: &Node) -> Result<Ty> {
+    let mut subst = Subst::default();
+    let mut diags = Vec::new();
+    let ty = type_from_node(type_node, &[], &[], &mut subst, &[], &mut diags);
+    if let Some(diag) = diags.into_iter().find(|d| d.severity == "error") {
+        return Err(CodegenError::UnsupportedValueType { ty: diag.message });
+    }
+    Ok(subst.apply(&ty))
+}
+
+fn value_ty_from_ty(ty: &Ty) -> Result<ValueTy> {
+    match ty {
+        Ty::Int | Ty::Bool => Ok(ValueTy::Int),
+        Ty::Record(fields) => fields
+            .iter()
+            .map(|(name, ty)| Ok((name.clone(), value_ty_from_ty(ty)?)))
+            .collect::<Result<Vec<_>>>()
+            .map(ValueTy::Record),
+        Ty::Unknown | Ty::Meta(_) => Err(CodegenError::UnsupportedValueType { ty: ty.to_string() }),
+        Ty::Str | Ty::Buf | Ty::I64Vec | Ty::Fn(_, _, _) | Ty::App(_, _) => {
+            Err(CodegenError::UnsupportedValueType { ty: ty.to_string() })
+        }
+    }
+}
+
+fn infer_value_ty(node: &Node, env: &[BindingTy]) -> Result<ValueTy> {
+    match node {
+        Node::Int { .. } => Ok(ValueTy::Int),
+        Node::Str { .. } => Err(CodegenError::UnsupportedValueType { ty: "Str".into() }),
+        Node::Var { index } => match lookup_binding_ty(env, *index)? {
+            BindingTy::Value(ty) => Ok(ty.clone()),
+            BindingTy::Function { .. } => Err(CodegenError::FirstClassFunction),
+        },
+        Node::Let { rhs, body } => {
+            if let Some((arity, lam_body, ann_ty)) = collect_annotated_lam_chain(rhs) {
+                let (param_tys, ret_ty) = if let Some(type_node) = ann_ty {
+                    let sig = function_signature_from_type_node(type_node)?;
+                    if sig.0.len() != arity {
+                        return Err(CodegenError::FunctionArity {
+                            expected: sig.0.len(),
+                            got: arity,
+                        });
+                    }
+                    sig
+                } else {
+                    let param_tys = vec![ValueTy::Int; arity];
+                    let lambda_env: Vec<BindingTy> = param_tys
+                        .iter()
+                        .rev()
+                        .cloned()
+                        .map(BindingTy::Value)
+                        .collect();
+                    let ret_ty = infer_value_ty(lam_body, &lambda_env).unwrap_or(ValueTy::Int);
+                    (param_tys, ret_ty)
+                };
+                let mut body_env = vec![BindingTy::Function { param_tys, ret_ty }];
+                body_env.extend_from_slice(env);
+                infer_value_ty(body, &body_env)
+            } else {
+                let rhs_ty = infer_value_ty(rhs, env)?;
+                let mut body_env = vec![BindingTy::Value(rhs_ty)];
+                body_env.extend_from_slice(env);
+                infer_value_ty(body, &body_env)
+            }
+        }
+        Node::If { then, else_, .. } => {
+            let then_ty = infer_value_ty(then, env)?;
+            let else_ty = infer_value_ty(else_, env)?;
+            if then_ty == else_ty {
+                Ok(then_ty)
+            } else {
+                Err(CodegenError::ValueTypeMismatch {
+                    expected: then_ty.to_string(),
+                    actual: else_ty.to_string(),
+                })
+            }
+        }
+        Node::App { .. } => {
+            let (head, args) = unfold_app(node);
+            match head {
+                Node::Sym { .. } => Ok(ValueTy::Int),
+                Node::Var { index } => match lookup_binding_ty(env, *index)? {
+                    BindingTy::Function { param_tys, ret_ty } => {
+                        if args.len() != param_tys.len() {
+                            return Err(CodegenError::FunctionArity {
+                                expected: param_tys.len(),
+                                got: args.len(),
+                            });
+                        }
+                        Ok(ret_ty.clone())
+                    }
+                    _ => Err(CodegenError::AppNonFunction),
+                },
+                Node::Lam { .. } | Node::Ann { .. } => {
+                    let (arity, lam_body, ann_ty) =
+                        collect_annotated_lam_chain(head).ok_or(CodegenError::AppNonFunction)?;
+                    if let Some(type_node) = ann_ty {
+                        Ok(function_signature_from_type_node(type_node)?.1)
+                    } else {
+                        let param_tys = vec![ValueTy::Int; arity];
+                        let lambda_env: Vec<BindingTy> = param_tys
+                            .iter()
+                            .rev()
+                            .cloned()
+                            .map(BindingTy::Value)
+                            .collect();
+                        infer_value_ty(lam_body, &lambda_env)
+                    }
+                }
+                _ => Err(CodegenError::AppNonFunction),
+            }
+        }
+        Node::Lam { .. } => Err(CodegenError::FirstClassFunction),
+        Node::Rec { bindings, body } => {
+            let mut rec_types = Vec::with_capacity(bindings.len());
+            for binding in bindings {
+                let (arity, _lam_body, ann_ty) = collect_annotated_lam_chain(binding)
+                    .ok_or(CodegenError::Unsupported("rec member that is not a lambda"))?;
+                let (param_tys, ret_ty) = if let Some(type_node) = ann_ty {
+                    function_signature_from_type_node(type_node)?
+                } else {
+                    (vec![ValueTy::Int; arity], ValueTy::Int)
+                };
+                rec_types.push(BindingTy::Function { param_tys, ret_ty });
+            }
+            let mut body_env = rec_types;
+            body_env.extend_from_slice(env);
+            infer_value_ty(body, &body_env)
+        }
+        Node::Module { .. } => Err(CodegenError::Unsupported("top-level module")),
+        Node::Match { arms, .. } => {
+            let mut result_ty = None;
+            for arm in arms {
+                let Node::Arm { body, .. } = arm else {
+                    return Err(CodegenError::Unsupported("match child must be arm"));
+                };
+                let arm_ty = infer_value_ty(body, env)?;
+                remember_match_type(&mut result_ty, &arm_ty)?;
+            }
+            Ok(result_ty.unwrap_or(ValueTy::Int))
+        }
+        Node::Arm { .. } => Err(CodegenError::Unsupported("bare arm outside match")),
+        Node::Record { fields } => {
+            let mut ordered: Vec<&(String, Node)> = fields.iter().collect();
+            ordered.sort_by(|a, b| a.0.as_bytes().cmp(b.0.as_bytes()));
+            ordered
+                .into_iter()
+                .map(|(name, value)| Ok((name.clone(), infer_value_ty(value, env)?)))
+                .collect::<Result<Vec<_>>>()
+                .map(ValueTy::Record)
+        }
+        Node::Proj { record, field } => {
+            let rec_ty = infer_value_ty(record, env)?;
+            let ValueTy::Record(fields) = rec_ty else {
+                return Err(CodegenError::InvalidProjection {
+                    field: field.clone(),
+                    actual: rec_ty.to_string(),
+                });
+            };
+            fields
+                .iter()
+                .find(|(name, _)| name == field)
+                .map(|(_, ty)| ty.clone())
+                .ok_or_else(|| CodegenError::MissingField {
+                    field: field.clone(),
+                })
+        }
+        Node::Ctor { .. } => Err(CodegenError::Unsupported("ctor in expression position")),
+        Node::Ann { expr, type_ } => {
+            if collect_lam_chain(expr).is_some() {
+                Err(CodegenError::FirstClassFunction)
+            } else {
+                value_ty_from_ty(&ty_from_type_node(type_)?)
+            }
+        }
+        Node::Sym { .. } => Err(CodegenError::Unsupported(
+            "bare sym outside primitive-call head",
+        )),
+        Node::Hole { diag_id, .. } => Err(CodegenError::Hole {
+            diag_id: diag_id.clone(),
+        }),
+        Node::PatWild | Node::PatVar | Node::PatCtor { .. } | Node::PatInt { .. } => {
+            Err(CodegenError::Unsupported("pattern outside match arm"))
+        }
+        Node::FnTy { .. }
+        | Node::TyVar { .. }
+        | Node::Forall { .. }
+        | Node::EffSet { .. }
+        | Node::EffVar { .. } => Err(CodegenError::Unsupported(
+            "type expression in value position",
+        )),
+    }
+}
+
+fn lookup_binding_ty(env: &[BindingTy], idx: u64) -> Result<&BindingTy> {
+    env.get(idx as usize)
+        .ok_or(CodegenError::FreeVarInLambda { index: idx })
+}
+
+fn remember_match_type(slot: &mut Option<ValueTy>, ty: &ValueTy) -> Result<()> {
+    match slot {
+        None => {
+            *slot = Some(ty.clone());
+            Ok(())
+        }
+        Some(existing) if existing == ty => Ok(()),
+        Some(existing) => Err(CodegenError::ValueTypeMismatch {
+            expected: existing.to_string(),
+            actual: ty.to_string(),
+        }),
     }
 }
 

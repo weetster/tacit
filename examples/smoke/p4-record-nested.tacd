@@ -1,0 +1,7 @@
+{
+  "tacd_version": "1",
+  "targets_hash_blake3": "ed200d56c0824d58e4c3abef038e483801abccd77960879c95bb2ab25ce6d7f0",
+  "display": {
+    "type_hint": "Int"
+  }
+}

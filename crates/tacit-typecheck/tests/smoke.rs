@@ -19,8 +19,8 @@ fn check_smoke(name: &str) {
     let src =
         std::fs::read(&tac_path).unwrap_or_else(|e| panic!("could not read {}.tac: {}", name, e));
 
-    let ast = parse_canonical(&src)
-        .unwrap_or_else(|e| panic!("parse error in {}.tac: {:?}", name, e));
+    let ast =
+        parse_canonical(&src).unwrap_or_else(|e| panic!("parse error in {}.tac: {:?}", name, e));
 
     let sidecar = Sidecar::read(&tacd_path)
         .unwrap_or_else(|e| panic!("sidecar load error for {}: {}", name, e));
@@ -77,4 +77,34 @@ fn smoke_match_int() {
 #[test]
 fn smoke_echo() {
     check_smoke("echo");
+}
+
+#[test]
+fn smoke_p4_record_project() {
+    check_smoke("p4-record-project");
+}
+
+#[test]
+fn smoke_p4_record_return() {
+    check_smoke("p4-record-return");
+}
+
+#[test]
+fn smoke_p4_record_pass() {
+    check_smoke("p4-record-pass");
+}
+
+#[test]
+fn smoke_p4_record_nested() {
+    check_smoke("p4-record-nested");
+}
+
+#[test]
+fn smoke_p4_record_let() {
+    check_smoke("p4-record-let");
+}
+
+#[test]
+fn smoke_p4_record_rec() {
+    check_smoke("p4-record-rec");
 }

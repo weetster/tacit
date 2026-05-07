@@ -1,0 +1,1 @@
+(rec (lam (if (var 0) (record next (app (app (sym sub) (var 0)) (int 1)) value (var 0)) (record next (int 0) value (int 0)))) (proj (app (var 0) (int 5)) next))

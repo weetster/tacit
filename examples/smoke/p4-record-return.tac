@@ -1,0 +1,1 @@
+(let (lam (record next (app (app (sym add) (var 0)) (int 1)) value (var 0))) (proj (app (var 0) (int 41)) next))

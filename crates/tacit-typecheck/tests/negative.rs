@@ -258,6 +258,51 @@ fn neg_effect_violation_pure_annotation_on_io_body() {
     expect_error(&diags, "effect-violation");
 }
 
+#[test]
+fn neg_duplicate_record_field() {
+    let ast = Node::Record {
+        fields: vec![("x".to_string(), int(1)), ("x".to_string(), int(2))],
+    };
+    let diags = infer_module(&ast).expect_err("expected duplicate-field");
+    expect_error(&diags, "duplicate-field");
+}
+
+#[test]
+fn neg_missing_record_field() {
+    let ast = Node::Proj {
+        record: Box::new(Node::Record {
+            fields: vec![("x".to_string(), int(1))],
+        }),
+        field: "y".to_string(),
+    };
+    let diags = infer_module(&ast).expect_err("expected missing-field");
+    expect_error(&diags, "missing-field");
+}
+
+#[test]
+fn neg_invalid_projection() {
+    let ast = Node::Proj {
+        record: Box::new(int(1)),
+        field: "x".to_string(),
+    };
+    let diags = infer_module(&ast).expect_err("expected invalid-projection");
+    expect_error(&diags, "invalid-projection");
+}
+
+#[test]
+fn neg_record_type_mismatch() {
+    let ast = ann(
+        Node::Record {
+            fields: vec![("y".to_string(), int(1))],
+        },
+        Node::Record {
+            fields: vec![("x".to_string(), sym("Int"))],
+        },
+    );
+    let diags = infer_module(&ast).expect_err("expected record-type-mismatch");
+    expect_error(&diags, "record-type-mismatch");
+}
+
 // ── sidecar effect mismatch ───────────────────────────────────────────────────
 
 /// check_against_tacd reports an effect-violation when the inferred

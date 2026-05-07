@@ -110,7 +110,7 @@ pub fn infer(
                 let t = subst.apply(&then_ty);
                 let e = subst.apply(&else_ty);
                 if !t.is_unknown() && !e.is_unknown() {
-                    diags.push(Diagnostic::type_mismatch(&child_path(path, 2), &t, &e));
+                    push_type_mismatch(diags, &child_path(path, 2), &t, &e);
                 }
             }
             let total_eff =
@@ -155,6 +155,12 @@ pub fn infer(
             let mut eff = FnEff::pure_();
             for (i, (name, val)) in fields.iter().enumerate() {
                 let (ty, feff) = infer(ctx, val, subst, &child_path(path, i * 2 + 1), diags);
+                if field_tys.contains_key(name) {
+                    diags.push(Diagnostic::duplicate_record_field(
+                        &child_path(path, i * 2),
+                        name,
+                    ));
+                }
                 field_tys.insert(name.clone(), ty);
                 eff = join_fn_eff(&eff, &feff, subst);
             }
@@ -166,19 +172,12 @@ pub fn infer(
             let resolved = subst.apply(&rec_ty);
             let field_ty = match resolved {
                 Ty::Record(ref fields) => fields.get(field).cloned().unwrap_or_else(|| {
-                    diags.push(Diagnostic::unresolved_type(
-                        path,
-                        &format!("field '{}' not found in record type", field),
-                    ));
+                    diags.push(Diagnostic::missing_record_field(path, field, &resolved));
                     Ty::Unknown
                 }),
                 Ty::Unknown => Ty::Unknown,
                 other => {
-                    diags.push(Diagnostic::type_mismatch(
-                        path,
-                        &Ty::Record(BTreeMap::new()),
-                        &other,
-                    ));
+                    diags.push(Diagnostic::invalid_projection(path, field, &other));
                     Ty::Unknown
                 }
             };
@@ -203,6 +202,36 @@ pub fn infer(
 
         Node::Ann { expr, type_ } => {
             let declared = type_from_node(type_, &[], &[], subst, &child_path(path, 1), diags);
+
+            if let Some((arity, lam_body)) = collect_lam_chain(expr) {
+                if let Some((param_tys, ret_ty, call_eff)) = flatten_fn_type(&declared, subst) {
+                    if param_tys.len() == arity {
+                        let debruijn_params: Vec<Ty> = param_tys.iter().rev().cloned().collect();
+                        let ctx_body = extend_many(ctx, &debruijn_params);
+                        let (body_ty, body_eff) =
+                            infer(&ctx_body, lam_body, subst, &child_path(path, 0), diags);
+
+                        if !unify(&ret_ty, &body_ty, subst) {
+                            let r = subst.apply(&ret_ty);
+                            let b = subst.apply(&body_ty);
+                            push_type_mismatch(diags, path, &r, &b);
+                        }
+
+                        let declared_set = subst.resolve_eff(&call_eff);
+                        let body_set = subst.resolve_eff(&body_eff);
+                        if !body_set.is_subset_of(&declared_set) {
+                            diags.push(Diagnostic::effect_violation(
+                                path,
+                                &declared_set.to_string(),
+                                &body_set.to_string(),
+                            ));
+                        }
+
+                        return (subst.apply(&declared), FnEff::pure_());
+                    }
+                }
+            }
+
             let (inferred, eval_eff) = infer(ctx, expr, subst, &child_path(path, 0), diags);
 
             // Type check: declared vs inferred.
@@ -212,7 +241,7 @@ pub fn infer(
             {
                 let d = subst.apply(&declared);
                 let i = subst.apply(&inferred);
-                diags.push(Diagnostic::type_mismatch(path, &d, &i));
+                push_type_mismatch(diags, path, &d, &i);
             }
 
             // Effect check: if the annotation specifies a function type with an effect,
@@ -262,6 +291,43 @@ pub fn infer(
     }
 }
 
+fn collect_lam_chain(node: &Node) -> Option<(usize, &Node)> {
+    let mut arity = 0usize;
+    let mut cur = node;
+    while let Node::Lam { body } = cur {
+        arity += 1;
+        cur = body.as_ref();
+    }
+    (arity > 0).then_some((arity, cur))
+}
+
+fn flatten_fn_type(ty: &Ty, subst: &Subst) -> Option<(Vec<Ty>, Ty, FnEff)> {
+    let mut params = Vec::new();
+    let mut cur = subst.apply(ty);
+    loop {
+        match cur {
+            Ty::Fn(arg, ret, eff) => {
+                params.push(subst.apply(&arg));
+                match subst.apply(&ret) {
+                    Ty::Fn(_, _, _) => {
+                        cur = subst.apply(&ret);
+                    }
+                    other => return Some((params, other, eff)),
+                }
+            }
+            _ => return None,
+        }
+    }
+}
+
+fn push_type_mismatch(diags: &mut Vec<Diagnostic>, path: &[usize], expected: &Ty, actual: &Ty) {
+    if matches!((expected, actual), (Ty::Record(_), Ty::Record(_))) {
+        diags.push(Diagnostic::record_type_mismatch(path, expected, actual));
+    } else {
+        diags.push(Diagnostic::type_mismatch(path, expected, actual));
+    }
+}
+
 // ── App inference ──────────────────────────────────────────────────────────────
 
 fn infer_app(
@@ -274,6 +340,25 @@ fn infer_app(
 ) -> (Ty, FnEff) {
     if let Some(result) = infer_full_primitive_app(ctx, fn_, arg, subst, path, diags) {
         return result;
+    }
+
+    let (head, spine_args) = unfold_app_from_parts(fn_, arg);
+    if let Some((arity, lam_body)) = collect_lam_chain(head) {
+        if arity == spine_args.len() {
+            let mut arg_tys = Vec::with_capacity(spine_args.len());
+            let mut total_eff = FnEff::pure_();
+            for (i, spine_arg) in spine_args.iter().enumerate() {
+                let (arg_ty, arg_eff) =
+                    infer(ctx, spine_arg, subst, &child_path(path, i + 1), diags);
+                arg_tys.push(arg_ty);
+                total_eff = join_fn_eff(&total_eff, &arg_eff, subst);
+            }
+            let debruijn_args: Vec<Ty> = arg_tys.iter().rev().cloned().collect();
+            let ctx_body = extend_many(ctx, &debruijn_args);
+            let (body_ty, body_eff) = infer(&ctx_body, lam_body, subst, path, diags);
+            total_eff = join_fn_eff(&total_eff, &body_eff, subst);
+            return (body_ty, total_eff);
+        }
     }
 
     // Detect binary operator pattern: (app (app (sym op) e1) e2)
@@ -299,7 +384,7 @@ fn infer_app(
                 let p = subst.apply(&param_ty);
                 let a = subst.apply(&arg_ty);
                 if !p.is_unknown() && !a.is_unknown() {
-                    diags.push(Diagnostic::type_mismatch(&child_path(path, 1), &p, &a));
+                    push_type_mismatch(diags, &child_path(path, 1), &p, &a);
                 }
             }
             // eff is already applied (subst.apply resolves eff inside Fn).
@@ -320,11 +405,12 @@ fn infer_app(
             (subst.apply(&ret_meta), eff_meta)
         }
         other => {
-            diags.push(Diagnostic::type_mismatch(
+            push_type_mismatch(
+                diags,
                 &child_path(path, 0),
                 &Ty::Fn(Box::new(arg_ty), Box::new(subst.fresh()), FnEff::pure_()),
                 &other,
-            ));
+            );
             (Ty::Unknown, FnEff::pure_())
         }
     };
@@ -471,7 +557,7 @@ fn expect_type(
         let e = subst.apply(expected);
         let a = subst.apply(actual);
         if !e.is_unknown() && !a.is_unknown() {
-            diags.push(Diagnostic::type_mismatch(path, &e, &a));
+            push_type_mismatch(diags, path, &e, &a);
         }
     }
 }
@@ -619,7 +705,7 @@ fn infer_arm(
         let r = subst.apply(result_meta);
         let b = subst.apply(&body_ty);
         if !r.is_unknown() && !b.is_unknown() {
-            diags.push(Diagnostic::type_mismatch(path, &r, &b));
+            push_type_mismatch(diags, path, &r, &b);
         }
     }
     body_eff

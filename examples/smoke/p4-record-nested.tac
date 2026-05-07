@@ -1,0 +1,1 @@
+(proj (proj (record inner (record x (int 7)) y (int 0)) inner) x)

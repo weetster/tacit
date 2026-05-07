@@ -1,0 +1,1 @@
+(let (record acc (int 19) next (int 23)) (app (app (sym add) (proj (var 0) acc)) (proj (var 0) next)))

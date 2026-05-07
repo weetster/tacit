@@ -12,8 +12,8 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use tacit_codegen::compile::compile_to_object;
 use tacit_canonical::parse as parse_canonical;
+use tacit_codegen::compile::compile_to_object;
 
 fn examples_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -165,4 +165,46 @@ fn echo() {
     let (out, code) = run_with_stdin(&built, b"hi\n");
     assert_eq!(code, 0);
     assert_eq!(out, b"hi\n");
+}
+
+#[test]
+fn p4_record_project() {
+    let (out, code) = run_smoke("p4-record-project");
+    assert!(out.is_empty());
+    assert_eq!(code, 40);
+}
+
+#[test]
+fn p4_record_return() {
+    let (out, code) = run_smoke("p4-record-return");
+    assert!(out.is_empty());
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn p4_record_pass() {
+    let (out, code) = run_smoke("p4-record-pass");
+    assert!(out.is_empty());
+    assert_eq!(code, 33);
+}
+
+#[test]
+fn p4_record_nested() {
+    let (out, code) = run_smoke("p4-record-nested");
+    assert!(out.is_empty());
+    assert_eq!(code, 7);
+}
+
+#[test]
+fn p4_record_let() {
+    let (out, code) = run_smoke("p4-record-let");
+    assert!(out.is_empty());
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn p4_record_rec() {
+    let (out, code) = run_smoke("p4-record-rec");
+    assert!(out.is_empty());
+    assert_eq!(code, 4);
 }

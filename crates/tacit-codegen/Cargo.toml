@@ -17,6 +17,7 @@ publish = false
 # Pinned version: LLVM 19 (llvm19-1). See docs/compiler-architecture.md.
 [dependencies]
 tacit-canonical = { path = "../tacit-canonical" }
+tacit-typecheck = { path = "../tacit-typecheck" }
 inkwell = { version = "0.9", optional = true, default-features = false }
 thiserror = "1"
 

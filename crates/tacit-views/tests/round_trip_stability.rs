@@ -22,6 +22,10 @@ fn workspace_root() -> PathBuf {
 }
 
 fn collect_tac_files(dir: &PathBuf, out: &mut Vec<PathBuf>) {
+    if dir.ends_with("corpus/sealed") {
+        return;
+    }
+
     let entries = match fs::read_dir(dir) {
         Ok(e) => e,
         Err(_) => return,
@@ -44,12 +48,19 @@ fn round_trip_stability_examples_and_corpus() {
         collect_tac_files(&root.join(dir_name), &mut files);
     }
     files.sort();
-    assert!(!files.is_empty(), "no .tac files found under examples/ or corpus/");
+    assert!(
+        !files.is_empty(),
+        "no .tac files found under examples/ or corpus/"
+    );
 
     let mut failures: Vec<String> = Vec::new();
 
     for path in &files {
-        let rel = path.strip_prefix(&root).unwrap_or(path).display().to_string();
+        let rel = path
+            .strip_prefix(&root)
+            .unwrap_or(path)
+            .display()
+            .to_string();
 
         let bytes = match fs::read(path) {
             Ok(b) => b,

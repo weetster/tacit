@@ -56,6 +56,27 @@ pub enum CodegenError {
     #[error("Phase 1 codegen does not yet support {0}")]
     Unsupported(&'static str),
 
+    /// A value appeared where codegen only supports integer-like values.
+    #[error("expected integer value, got {actual}")]
+    ExpectedIntValue { actual: String },
+
+    /// A source-level value type has no Phase 4 Stage 2 LLVM representation.
+    #[error("unsupported value type in codegen: {ty}")]
+    UnsupportedValueType { ty: String },
+
+    /// Two source-level values with incompatible structural types met at a
+    /// codegen join or call boundary.
+    #[error("value type mismatch: expected {expected}, got {actual}")]
+    ValueTypeMismatch { expected: String, actual: String },
+
+    /// Projection from a value that is not a record.
+    #[error("invalid projection .{field} from non-record value {actual}")]
+    InvalidProjection { field: String, actual: String },
+
+    /// Projection of a field that is absent from the record shape.
+    #[error("record field .{field} does not exist")]
+    MissingField { field: String },
+
     /// Integer literal that does not fit in `i64`.
     #[error("integer literal out of i64 range: {value}")]
     IntegerOverflow { value: String },

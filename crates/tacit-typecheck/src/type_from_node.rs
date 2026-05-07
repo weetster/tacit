@@ -75,6 +75,12 @@ pub fn type_from_node(
                     &child_path(path, i * 2 + 1),
                     diags,
                 );
+                if field_tys.contains_key(name) {
+                    diags.push(Diagnostic::duplicate_record_field(
+                        &child_path(path, i * 2),
+                        name,
+                    ));
+                }
                 field_tys.insert(name.clone(), ty);
             }
             Ty::Record(field_tys)

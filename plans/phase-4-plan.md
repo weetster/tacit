@@ -41,7 +41,8 @@ Locked decisions:
   does not set a numeric Rust-relative gate; measurable movement is expected,
   and failure to move is recorded as a strategic finding in the freeze ADR.
 
-Stage 1 is complete; Stage 2 may begin with record codegen.
+Stage 1 and Stage 2 are complete; Stage 3 may begin with closure/function-value
+design.
 
 ## Goal
 
@@ -139,7 +140,7 @@ Decision summary:
 - No canonical-format amendment is required for Stage 2.
 - Product destructuring is projection-based; record patterns are deferred.
 
-Stage 2 may begin with record codegen and product diagnostics.
+Stage 2 completed record codegen and product diagnostics.
 
 Work items:
 
@@ -161,7 +162,19 @@ Exit criteria:
 
 ## Stage 2: Product-Type Implementation
 
+**Status:** Complete
+
 **Purpose:** Land products as a complete vertical compiler slice.
+
+Outcome:
+
+- Records lower to LLVM aggregate values with canonical sorted field layout.
+- Projection lowers to aggregate extraction by canonical field index.
+- Record values can cross `let`, direct lambda calls, and `rec` functions.
+- Product diagnostics are structured for duplicate fields, missing fields,
+  invalid projections, and record type mismatches.
+- Product smoke programs cover construction/projection, function return,
+  function argument, nested records, accumulator-style `let`, and `rec`.
 
 Work items:
 

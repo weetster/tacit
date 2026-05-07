@@ -68,6 +68,56 @@ impl Diagnostic {
         d
     }
 
+    pub fn record_type_mismatch(path: &[usize], expected: &Ty, actual: &Ty) -> Self {
+        let mut d = Self::new(
+            "record-type-mismatch",
+            "error",
+            path,
+            format!(
+                "record type mismatch: expected {}, got {}",
+                expected, actual
+            ),
+        );
+        d.expected = Some(ty_to_json(expected));
+        d.actual = Some(ty_to_json(actual));
+        d
+    }
+
+    pub fn duplicate_record_field(path: &[usize], field: &str) -> Self {
+        Self::new(
+            "duplicate-field",
+            "error",
+            path,
+            format!("record field '{}' is defined more than once", field),
+        )
+    }
+
+    pub fn missing_record_field(path: &[usize], field: &str, record: &Ty) -> Self {
+        let mut d = Self::new(
+            "missing-field",
+            "error",
+            path,
+            format!("record field '{}' does not exist on {}", field, record),
+        );
+        d.actual = Some(ty_to_json(record));
+        d
+    }
+
+    pub fn invalid_projection(path: &[usize], field: &str, actual: &Ty) -> Self {
+        let mut d = Self::new(
+            "invalid-projection",
+            "error",
+            path,
+            format!(
+                "cannot project field '{}' from non-record type {}",
+                field, actual
+            ),
+        );
+        d.expected = Some(serde_json::json!({"record": []}));
+        d.actual = Some(ty_to_json(actual));
+        d
+    }
+
     pub fn unbound_type_variable(path: &[usize], index: u64) -> Self {
         Self::new(
             "unbound-type-variable",
