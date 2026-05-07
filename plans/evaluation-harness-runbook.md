@@ -122,9 +122,10 @@ Exercise the eval pipeline without API calls:
 uv run corpus-eval --dry-run --tasks 001 --tacit-bin ../../target/debug/tacit
 ```
 
-`--dry-run` uses open `reference.tac` files as synthetic model output and makes
-no API calls. If `--dry-run` has no `--tasks` selector, the harness runs only
-the first open task.
+`--dry-run` uses open `reference.taca` files as synthetic model output (the
+preserved authoring-view text from the Phase 3 corpus, paired with the
+canonical `reference.tac`) and makes no API calls. If `--dry-run` has no
+`--tasks` selector, the harness runs only the first open task.
 
 ## Running Specific Tasks
 
@@ -274,6 +275,9 @@ After `corpus-eval` exits, report:
 - Final aggregate line, such as `tasks_passed`, `compile_pass`, and
   `token_delta`, or repair-loop aggregate values.
 - Any failure directories the harness wrote under the output directory.
+  Failure records contain `generated.taca` (the model's authoring-view output)
+  and `diagnostics.json`. They do not contain a `generated.tac`; use
+  `tacit canonicalize generated.taca` to produce a canonical form if needed.
 
 Do not summarize partial dot progress. Wait for the final printed summary.
 

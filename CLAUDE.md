@@ -60,12 +60,24 @@ Per [ADR 0070](decisions/0070-p3-frozen.md):
 ```
 plans/        — phase plans, specs (canonical-text-format.md, inspection-view.md, sidecar-format.md), primer, test vectors, phase-3 results
 docs/         — design docs (compiler-architecture.md, effect-system.md, phase-3-metrics.schema.json)
-decisions/    — ADR-style decision log (0001–0070)
+decisions/    — ADR-style decision log (0001–0071)
 crates/       — Cargo workspace: tacit-canonical, tacit-views, tacit-typecheck, tacit-codegen, tacit-cli
 examples/     — Phase 1 smoke corpus under smoke/; Phase 3 carry-over programs under phase-3/
 corpus/       — Phase 3 evaluation corpus (60 tasks, sealed held-out subset, Tacit references for the open 47)
 stdlib/       — libc-effects.toml (Phase 1–2 effect signatures consumed by tacit-typecheck)
 ```
+
+File extensions per [ADR 0071](decisions/0071-storage-format-reconciliation.md):
+
+| Extension | Role | Checked in |
+|-----------|------|------------|
+| `.tac`  | Canonical text — byte-exact AST projection, BLAKE3-hashed, authoritative | Yes |
+| `.tacd` | JSON display sidecar — binder names, comments, field order, type/effect hints | Yes |
+| `.taca` | Authoring view — transient render for human/AI consumption; not produced by the normal dev workflow | Only as historical record (see below) |
+
+**`.taca` exceptions.** Two directory classes have checked-in `.taca` files:
+- `corpus/tasks/*/reference.taca` and `examples/phase-3/*.taca` (Mode A) — original authoring-view bytes preserved as the Phase 3 falsification record alongside the canonical `.tac`/`.tacd` pair.
+- `plans/phase-3-results/failures/**/generated.taca` (Mode C) — model-generated eval outputs preserved as forensic evidence; not compiled or canonicalized.
 
 CI lives at `.github/workflows/ci.yml`: Python (`uv run pytest`), Rust (`cargo fmt --check`, `cargo clippy --all-targets --features tacit-codegen/llvm19-1,tacit-cli/llvm19-1 -- -D warnings`, `cargo test --features tacit-codegen/llvm19-1,tacit-cli/llvm19-1`), and a CLI smoke step that builds and runs `tacit compile examples/smoke/hello.tac`.
 

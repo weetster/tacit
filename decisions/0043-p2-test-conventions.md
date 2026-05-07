@@ -1,9 +1,11 @@
 # 0043 — Phase 2 test conventions for typed programs
 
-**Status:** Accepted
+**Status:** Accepted — file-format portions superseded by [ADR 0071](0071-storage-format-reconciliation.md)
 **Date:** 2026-04-27
 **Phase:** 2, Stage 1
 **Closes:** [phase-2-plan.md Q-P2-10](../plans/phase-2-plan.md); parent plan Q4 (Phase 2 portion)
+
+> **Note (ADR 0071, 2026-05-06):** The `.tac.sidecar.toml` file format described in this ADR was a Phase 1 implementation drift from [ADR 0013](0013-canonical-text-format-frozen.md). Type and effect expectations are now carried in the `.tacd` JSON sidecar as `type_hint` / `effect_hint` on the root display node (§ 3.5 of [sidecar-format.md](../plans/sidecar-format.md)). The test conventions for the smoke corpus and negative-test corpus remain in effect; only the file format has changed. `tacit-typecheck::sidecar::TypeSidecar` and `check_against_sidecar` are retired; `check_against_tacd` is the current API.
 
 ## Context
 

@@ -4,9 +4,9 @@
 **Parent:** [phase-0-plan.md](phase-0-plan.md)
 **Authoring view source:** [candidates/authoring-bpe-compact.md](candidates/authoring-bpe-compact.md)
 
-The canonical text format is the byte-exact, deterministic textual representation of a Tacit-Lite AST. It is what BLAKE3 hashes, what content-addresses identify, and what two independent implementations must produce identically for the same AST.
+The canonical text format is the byte-exact, deterministic textual representation of a Tacit-Lite AST. It is what BLAKE3 hashes, what content-addresses identify, and what two independent implementations must produce identically for the same AST. It is stored on disk as **`.tac`** files — the source of truth that the compiler reads.
 
-It is **not** what humans or AI write. The authoring view ([ADR 0003](../decisions/0003-authoring-view-bpe-compact.md)) handles writing; the inspection view (Stage 3) handles reading. Both are projections from this canonical form via a sidecar of display metadata. See [phase-0-plan.md](phase-0-plan.md) and the chat in `decisions/0005-canonical-surface-form.md` for why the three views are separate.
+It is **not** what humans or AI write. The authoring view ([ADR 0003](../decisions/0003-authoring-view-bpe-compact.md)) handles writing; its on-disk form is **`.taca`** (a transient render, not produced by the normal dev workflow — rendered on demand for human or AI consumption and canonicalized back to `.tac` before storage). The inspection view (Stage 3) handles reading. Both are projections from this canonical form via a `.tacd` sidecar of display metadata. See [phase-0-plan.md](phase-0-plan.md) and the chat in `decisions/0005-canonical-surface-form.md` for why the three views are separate.
 
 ## Glossary
 
