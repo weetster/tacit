@@ -183,3 +183,52 @@ fn rec_i64vec_capture_lowers_as_hidden_param() {
     assert!(ir.contains("define private i64 @tacit_fn_0_rec(i64 %0, i64 %1, ptr %2)"));
     assert!(ir.contains("call i64 @tacit_fn_0_rec(i64 1, i64 0, ptr %i64_vec)"));
 }
+
+#[test]
+fn let_bound_function_value_reifies_to_closure_pair() {
+    let src = b"let f = lambda x. @add x 1 in let g = f in g 41";
+    let (node, _) = parse_authoring(src).expect("parse");
+    let ir = compile_to_ir_string(&node, "closure_reify").expect("codegen");
+    assert!(ir.contains("define private i64 @tacit_fn_1_closure(ptr"));
+    assert!(ir.contains("call i64 @tacit_fn_1_closure"));
+}
+
+#[test]
+fn capturing_closure_uses_heap_environment() {
+    let src = b"let n = 40 in let f = lambda x. @add x n in f 2";
+    let (node, _) = parse_authoring(src).expect("parse");
+    let ir = compile_to_ir_string(&node, "closure_capture").expect("codegen");
+    assert!(ir.contains("malloc"));
+    assert!(ir.contains("closure_env_slot"));
+    assert!(ir.contains("call i64 %closure_code"));
+}
+
+#[test]
+fn buf_capture_in_first_class_closure_is_rejected() {
+    let src = b"let buf = @buf-alloc 1 in lambda x. @buf-get buf x";
+    let (node, _) = parse_authoring(src).expect("parse");
+    let err = compile_to_ir_string(&node, "bad_capture").expect_err("expected invalid capture");
+    assert!(matches!(
+        err,
+        CodegenError::InvalidCapture { kind: "Buf", .. }
+    ));
+}
+
+#[test]
+fn unary_rec_member_reifies_as_first_class_closure() {
+    let src =
+        b"rec { fact = lambda n. if n then @mul n (fact (@sub n 1)) else 1 } in let f = fact in f 5";
+    let (node, _) = parse_authoring(src).expect("parse");
+    let ir = compile_to_ir_string(&node, "rec_closure").expect("codegen");
+    assert!(ir.contains("define private i64 @tacit_fn_1_direct_closure(ptr"));
+    assert!(ir.contains("call i64 @tacit_fn_0_rec"));
+}
+
+#[test]
+fn multi_arg_rec_member_partial_application_returns_closure() {
+    let src = b"rec { add = lambda a. lambda b. @add a b } in let add40 = add 40 in add40 2";
+    let (node, _) = parse_authoring(src).expect("parse");
+    let ir = compile_to_ir_string(&node, "rec_partial").expect("codegen");
+    assert!(ir.contains("define private { ptr, ptr } @tacit_fn_1_direct_closure(ptr"));
+    assert!(ir.contains("define private i64 @tacit_fn_2_direct_closure(ptr"));
+}

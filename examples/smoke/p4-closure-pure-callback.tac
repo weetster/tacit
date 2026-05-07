@@ -1,0 +1,1 @@
+(app (lam (app (var 0) (int 41))) (lam (app (app (sym add) (var 0)) (int 1))))

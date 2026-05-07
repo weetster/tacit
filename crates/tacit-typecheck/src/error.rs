@@ -178,6 +178,18 @@ impl Diagnostic {
         d
     }
 
+    pub fn apply_non_function(path: &[usize], actual: &Ty) -> Self {
+        let mut d = Self::new(
+            "apply-non-function",
+            "error",
+            path,
+            format!("cannot apply non-function value of type {}", actual),
+        );
+        d.expected = Some(serde_json::json!({"fn-ty": "function"}));
+        d.actual = Some(ty_to_json(actual));
+        d
+    }
+
     pub fn buf_escape(path: &[usize]) -> Self {
         Self::new(
             "buf-escape",

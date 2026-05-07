@@ -208,3 +208,66 @@ fn p4_record_rec() {
     assert!(out.is_empty());
     assert_eq!(code, 4);
 }
+
+#[test]
+fn p4_closure_noncapturing_value() {
+    let (out, code) = run_smoke("p4-closure-noncapturing-value");
+    assert!(out.is_empty());
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn p4_closure_capture() {
+    let (out, code) = run_smoke("p4-closure-capture");
+    assert!(out.is_empty());
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn p4_closure_return() {
+    let (out, code) = run_smoke("p4-closure-return");
+    assert!(out.is_empty());
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn p4_closure_stored_record() {
+    let (out, code) = run_smoke("p4-closure-stored-record");
+    assert!(out.is_empty());
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn p4_closure_capture_function() {
+    let (out, code) = run_smoke("p4-closure-capture-function");
+    assert!(out.is_empty());
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn p4_closure_rec_value() {
+    let (out, code) = run_smoke("p4-closure-rec-value");
+    assert!(out.is_empty());
+    assert_eq!(code, 120);
+}
+
+#[test]
+fn p4_closure_rec_partial() {
+    let (out, code) = run_smoke("p4-closure-rec-partial");
+    assert!(out.is_empty());
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn p4_closure_pure_callback() {
+    let (out, code) = run_smoke("p4-closure-pure-callback");
+    assert!(out.is_empty());
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn p4_closure_effectful_callback() {
+    let (out, code) = run_smoke("p4-closure-effectful-callback");
+    assert_eq!(out, b"x\n");
+    assert_eq!(code, 0);
+}

@@ -87,6 +87,16 @@ fn neg_operator_overload_failure() {
     expect_error(&diags, "operator-overload-failure");
 }
 
+// ── apply-non-function ───────────────────────────────────────────────────────
+
+#[test]
+fn neg_apply_non_function() {
+    let ast = app(int(1), int(2));
+    let result = infer_module(&ast);
+    let diags = result.unwrap_err();
+    expect_error(&diags, "apply-non-function");
+}
+
 // ── unbound-type-variable ────────────────────────────────────────────────────
 
 /// A `ty-var` node with no enclosing `forall`.

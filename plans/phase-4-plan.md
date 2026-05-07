@@ -41,8 +41,8 @@ Locked decisions:
   does not set a numeric Rust-relative gate; measurable movement is expected,
   and failure to move is recorded as a strategic finding in the freeze ADR.
 
-Stage 1, Stage 2, and Stage 3 are complete; Stage 4 may begin with closure and
-function-value implementation.
+Stage 1 through Stage 4 are complete; Stage 5 may begin with the
+higher-order combinator surface ADR.
 
 ## Goal
 
@@ -239,7 +239,29 @@ Exit criteria:
 
 ## Stage 4: Closure And Function-Value Implementation
 
+**Status:** Complete
+
 **Purpose:** Make functions real runtime values.
+
+Outcome:
+
+- Function values lower as two-word closure pairs with typed closure-entry
+  functions.
+- Non-capturing closures, closures over local first-class values, returned
+  closures, and closures stored in records compile and execute.
+- Known saturated closed lambda chains and `rec` calls keep direct-call
+  lowering.
+- Unary `rec` members and partial applications of multi-argument `rec` members
+  reify through direct-function adapter closures when their hidden captures are
+  escapable.
+- First-class closure captures are minimized by free DeBruijn references;
+  `Buf` and `I64Vec` captures are rejected as `invalid-capture`.
+- Function-typed expressions can be applied through indirect closure calls, and
+  applying non-functions produces the structured `apply-non-function`
+  diagnostic.
+- Stage 4 smoke examples cover non-capturing values, local captures, captured
+  function values, returned closures, stored closures, reified `rec` members,
+  pure callbacks, and effectful callbacks.
 
 Work items:
 

@@ -1,0 +1,1 @@
+(let (int 40) (let (lam (app (app (sym add) (var 0)) (var 1))) (let (record apply (var 0)) (app (proj (var 0) apply) (int 2)))))

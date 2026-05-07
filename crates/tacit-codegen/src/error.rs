@@ -1,5 +1,5 @@
-//! Codegen diagnostics. Phase 1 keeps hard failures (per ADR 0023);
-//! Hole-node recovery is deferred.
+//! Codegen diagnostics. Codegen still hard-fails on Hole nodes per ADR 0023,
+//! while Phase 4 closure failures use explicit variants from ADR 0073.
 
 use thiserror::Error;
 
@@ -20,25 +20,39 @@ pub enum CodegenError {
         got: usize,
     },
 
-    /// Free DeBruijn index referencing a binder above the enclosing `Lam`.
-    /// Phase 1 lambdas must be closed (ADR 0026 § 1).
+    /// Free DeBruijn index with no runtime binding available at the current
+    /// lowering point.
     #[error("free variable in lambda: DeBruijn index {index}")]
     FreeVarInLambda { index: u64 },
 
-    /// `App` whose function position is a non-function value, or a `Var`
-    /// resolving to a non-`Lam` binding. ADR 0026 § 3.
+    /// `App` whose function position is not function-typed.
     #[error("application of non-function value")]
     AppNonFunction,
 
-    /// A direct Tacit function call supplied too few or too many arguments.
-    /// Partial application remains unsupported by codegen.
+    /// A direct Tacit function call supplied the wrong number of arguments.
+    /// Reifiable functions use closure application for partial calls.
     #[error("function expects arity {expected}, got {got}")]
     FunctionArity { expected: usize, got: usize },
 
-    /// `Var` that resolves to a `Lam` binding but appears outside `App` head
-    /// position. First-class function values are banned in Phase 1 (ADR 0026 § 4).
-    #[error("first-class function value: lambdas may only appear at App head in Phase 1")]
+    /// Compatibility alias retained for older callers that matched the Phase 1
+    /// first-class-function restriction. Stage 4 should prefer closure values
+    /// or `UnsupportedClosureEscape`.
+    #[error("unsupported first-class function value")]
     FirstClassFunction,
+
+    /// A first-class closure capture set includes a non-escapable value such
+    /// as a Buf or I64Vec handle (ADR 0073).
+    #[error("invalid closure capture of non-escapable {kind} handle at DeBruijn index {index}")]
+    InvalidCapture { index: u64, kind: &'static str },
+
+    /// A function binding cannot be reified at the requested escape site.
+    #[error("unsupported closure escape: {0}")]
+    UnsupportedClosureEscape(&'static str),
+
+    /// Internal closure-conversion guard: a DeBruijn index addressed an outer
+    /// binding that was intentionally not loaded into the closure environment.
+    #[error("internal closure conversion error: uncaptured outer binding {index} was read")]
+    UnavailableCapture { index: u64 },
 
     /// `Rec` group emission failed in member at `failing_index`.
     /// ADR 0027 § 1c: groups are emitted atomically.
@@ -52,15 +66,16 @@ pub enum CodegenError {
     #[error("primitive @{name} expects integer arguments")]
     NonIntegerArg { name: String },
 
-    /// AST node whose Phase 1 lowering is not yet implemented.
-    #[error("Phase 1 codegen does not yet support {0}")]
+    /// AST node whose lowering is not yet implemented.
+    #[error("codegen does not yet support {0}")]
     Unsupported(&'static str),
 
     /// A value appeared where codegen only supports integer-like values.
     #[error("expected integer value, got {actual}")]
     ExpectedIntValue { actual: String },
 
-    /// A source-level value type has no Phase 4 Stage 2 LLVM representation.
+    /// A source-level value type has no LLVM representation in this codegen
+    /// subset.
     #[error("unsupported value type in codegen: {ty}")]
     UnsupportedValueType { ty: String },
 

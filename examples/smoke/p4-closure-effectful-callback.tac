@@ -1,0 +1,1 @@
+(app (lam (app (var 0) (int 0))) (lam (let (app (app (app (sym write) (int 1)) (str "x\n")) (int 2)) (var 1))))

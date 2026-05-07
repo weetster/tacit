@@ -1,0 +1,1 @@
+(rec (lam (if (var 0) (app (app (sym mul) (var 0)) (app (var 1) (app (app (sym sub) (var 0)) (int 1)))) (int 1))) (let (var 0) (app (var 0) (int 5))))

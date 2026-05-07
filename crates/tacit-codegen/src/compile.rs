@@ -1,21 +1,23 @@
 //! AST → LLVM IR via `inkwell`. Built only when an `llvm<N>-<M>` feature
 //! is enabled; without it, this module is excluded from the crate.
 //!
-//! ## Lowering model (Phase 1)
+//! ## Lowering model
 //!
 //! - The whole input program is the body of an implicit `int main(void)`.
 //! - The program's value, computed as `i64`, becomes `main`'s exit code
 //!   (truncated to `i32` per C runtime convention; ADR 0025 § Phase 1
 //!   libc set notes `return 0` is preferred over `exit(0)`).
-//! - `let`/anonymous `Lam` chains are closed (ADR 0026) and hoisted as
-//!   top-level LLVM functions under default C calling convention (ADR 0027).
+//! - Known saturated closed `let`/anonymous `Lam` chains still hoist as
+//!   direct-call LLVM functions under default C calling convention (ADR 0027).
 //!   `rec` members lower as direct-call helpers; Phase 3 permits hidden
 //!   parameters for captured runtime values and buffers (ADR 0059).
-//!   Direct calls may supply every source-level argument in a consecutive
-//!   lambda chain; partial application remains unsupported.
-//! - `App(Lam_or_RecMember, arg)` lowers as a direct call. Other `App`
-//!   shapes (e.g., applying a `Var` resolving to a non-`Lam` binding)
-//!   fail with `CodegenError::AppNonFunction`.
+//! - First-class function values lower as Phase 4 closure pairs:
+//!   `{ code: ptr, env: ptr }`. Closure entries take `(env, arg)` and return
+//!   the statically known result type. Captures are minimized by free
+//!   DeBruijn references and stored by value in compiler-managed environments
+//!   (ADR 0073).
+//! - Applying a function-typed expression emits an indirect closure-entry
+//!   call unless an existing direct-call optimization applies.
 //! - `App` whose left-spine head is `Sym(name)` with `name` in the
 //!   Phase 1 allowlist (LIBC ∪ ARITH ∪ CMP per ADR 0028 + ADR 0030)
 //!   lowers as a direct primitive emission. `Sym` heads outside the
@@ -43,6 +45,7 @@
 //! name is interpreted as an integer literal arm, which mirrors how
 //! `Sym` at App head is interpreted as a primitive name.)
 
+use std::collections::BTreeSet;
 use std::fmt;
 use std::path::Path;
 
@@ -54,7 +57,7 @@ use inkwell::module::{Linkage, Module};
 use inkwell::targets::{
     CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine,
 };
-use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
+use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum, FunctionType};
 use inkwell::values::{
     BasicMetadataValueEnum, BasicValue, BasicValueEnum, FunctionValue, IntValue, PointerValue,
 };
@@ -111,8 +114,8 @@ enum Binding<'ctx> {
     /// A computed first-class scalar or product value bound by `let` or a
     /// `lam` parameter.
     Value(CompiledValue<'ctx>),
-    /// A top-level function reference. Only callable at `App` head;
-    /// reading the binding outside head position is `FirstClassFunction`.
+    /// A direct-call function reference. Saturated calls use `value`; value
+    /// position or partial application reifies `closure_template` when present.
     Function(FunctionBinding<'ctx>),
     /// A stack-allocated buffer-like handle. Handles are valid only as
     /// primitive arguments for their own family; they are not first-class values.
@@ -120,6 +123,9 @@ enum Binding<'ctx> {
         ptr: PointerValue<'ctx>,
         kind: PtrKind,
     },
+    /// Placeholder for an outer binding that was not captured into a closure
+    /// environment. A correct free-variable analysis means this is never read.
+    Unavailable,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -127,6 +133,9 @@ enum ValueTy {
     /// Runtime `i64`. Tacit `Bool` is also represented as `i64` 0/1 in the
     /// existing codegen surface.
     Int,
+    /// First-class function value. Effects remain typechecker facts; codegen
+    /// only needs the argument and result ABI shape for closure entries.
+    Fn(Box<ValueTy>, Box<ValueTy>),
     /// Canonical sorted field order. Field names remain source-level type
     /// information; LLVM layout only sees the field value types.
     Record(Vec<(String, ValueTy)>),
@@ -136,6 +145,14 @@ impl fmt::Display for ValueTy {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ValueTy::Int => write!(f, "Int"),
+            ValueTy::Fn(arg, ret) => {
+                let parens = matches!(arg.as_ref(), ValueTy::Fn(_, _));
+                if parens {
+                    write!(f, "({}) -> {}", arg, ret)
+                } else {
+                    write!(f, "{} -> {}", arg, ret)
+                }
+            }
             ValueTy::Record(fields) => {
                 write!(f, "{{")?;
                 for (i, (name, ty)) in fields.iter().enumerate() {
@@ -187,6 +204,7 @@ enum BindingTy {
         param_tys: Vec<ValueTy>,
         ret_ty: ValueTy,
     },
+    Ptr,
 }
 
 /// Direction for ASCII case shift primitives (ADR 0068).
@@ -202,12 +220,25 @@ struct FunctionBinding<'ctx> {
     param_tys: Vec<ValueTy>,
     ret_ty: ValueTy,
     captures: Vec<Binding<'ctx>>,
+    closure_template: Option<ClosureTemplate<'ctx>>,
 }
 
 impl<'ctx> FunctionBinding<'ctx> {
     fn arity(&self) -> usize {
         self.param_tys.len()
     }
+}
+
+#[derive(Clone)]
+struct ClosureTemplate<'ctx> {
+    expr: Box<Node>,
+    ty: ValueTy,
+    env: Vec<Binding<'ctx>>,
+}
+
+struct CaptureValue<'ctx> {
+    outer_index: usize,
+    value: CompiledValue<'ctx>,
 }
 
 struct LamSpec<'a> {
@@ -335,16 +366,17 @@ impl<'ctx> Compiler<'ctx> {
                 let entry = lookup_var(env, *index)?;
                 match entry {
                     Binding::Value(v) => Ok(v.clone()),
-                    Binding::Function(_) => Err(CodegenError::FirstClassFunction),
+                    Binding::Function(f) => self.reify_function_binding(f, cur_fn),
                     Binding::Ptr { .. } => Err(CodegenError::Unsupported(
                         "buffer-like handle used in integer-value position",
                     )),
+                    Binding::Unavailable => Err(CodegenError::UnavailableCapture { index: *index }),
                 }
             }
             Node::Let { rhs, body } => self.compile_let(rhs, body, env, cur_fn),
             Node::If { cond, then, else_ } => self.compile_if(cond, then, else_, env, cur_fn),
             Node::App { .. } => self.compile_app(node, env, cur_fn),
-            Node::Lam { .. } => Err(CodegenError::FirstClassFunction),
+            Node::Lam { .. } => self.compile_closure_value(node, None, env, cur_fn),
             Node::Rec { bindings, body } => self.compile_rec(bindings, body, env, cur_fn),
             Node::Module { .. } => Err(CodegenError::Unsupported("top-level module")),
             Node::Match { scrutinee, arms } => self.compile_match(scrutinee, arms, env, cur_fn),
@@ -352,7 +384,14 @@ impl<'ctx> Compiler<'ctx> {
             Node::Record { fields } => self.compile_record(fields, env, cur_fn),
             Node::Proj { record, field } => self.compile_proj(record, field, env, cur_fn),
             Node::Ctor { .. } => Err(CodegenError::Unsupported("ctor in expression position")),
-            Node::Ann { expr, .. } => self.compile_value_expr(expr, env, cur_fn),
+            Node::Ann { expr, type_ } => {
+                if matches!(expr.as_ref(), Node::Lam { .. }) {
+                    let expected = value_ty_from_ty(&ty_from_type_node(type_)?)?;
+                    self.compile_closure_value(expr, Some(expected), env, cur_fn)
+                } else {
+                    self.compile_value_expr(expr, env, cur_fn)
+                }
+            }
             Node::Sym { .. } => Err(CodegenError::Unsupported(
                 "bare sym outside primitive-call head",
             )),
@@ -448,8 +487,46 @@ impl<'ctx> Compiler<'ctx> {
     fn llvm_type(&self, ty: &ValueTy) -> Result<BasicTypeEnum<'ctx>> {
         match ty {
             ValueTy::Int => Ok(self.context.i64_type().into()),
+            ValueTy::Fn(_, _) => Ok(self.closure_type().into()),
             ValueTy::Record(_) => Ok(self.llvm_struct_type(ty)?.into()),
         }
+    }
+
+    fn closure_type(&self) -> inkwell::types::StructType<'ctx> {
+        let ptr_t = self.context.ptr_type(AddressSpace::default());
+        self.context
+            .struct_type(&[ptr_t.into(), ptr_t.into()], false)
+    }
+
+    fn closure_entry_type(&self, fn_ty: &ValueTy) -> Result<FunctionType<'ctx>> {
+        let ValueTy::Fn(arg_ty, ret_ty) = fn_ty else {
+            return Err(CodegenError::AppNonFunction);
+        };
+        let ptr_t = self.context.ptr_type(AddressSpace::default());
+        let params = &[
+            BasicMetadataTypeEnum::PointerType(ptr_t),
+            self.llvm_type(arg_ty)?.into(),
+        ];
+        Ok(self.llvm_type(ret_ty)?.fn_type(params, false))
+    }
+
+    fn build_closure_pair(
+        &mut self,
+        code_ptr: PointerValue<'ctx>,
+        env_ptr: PointerValue<'ctx>,
+    ) -> Result<BasicValueEnum<'ctx>> {
+        let mut closure = self.closure_type().get_undef();
+        closure = self
+            .builder
+            .build_insert_value(closure, code_ptr, 0, "closure_code")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?
+            .into_struct_value();
+        closure = self
+            .builder
+            .build_insert_value(closure, env_ptr, 1, "closure_env")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?
+            .into_struct_value();
+        Ok(closure.into())
     }
 
     fn llvm_struct_type(&self, ty: &ValueTy) -> Result<inkwell::types::StructType<'ctx>> {
@@ -469,6 +546,7 @@ impl<'ctx> Compiler<'ctx> {
         arity: usize,
         ann_ty: Option<&Node>,
         supplied_param_tys: &[ValueTy],
+        outer_env_tys: &[BindingTy],
     ) -> Result<(Vec<ValueTy>, ValueTy)> {
         if let Some(type_node) = ann_ty {
             let (param_tys, ret_ty) = function_signature_from_type_node(type_node)?;
@@ -486,12 +564,13 @@ impl<'ctx> Compiler<'ctx> {
         } else {
             vec![ValueTy::Int; arity]
         };
-        let body_env: Vec<BindingTy> = param_tys
+        let mut body_env: Vec<BindingTy> = param_tys
             .iter()
             .rev()
             .cloned()
             .map(BindingTy::Value)
             .collect();
+        body_env.extend_from_slice(outer_env_tys);
         let ret_ty = infer_value_ty(lam_body, &body_env).unwrap_or(ValueTy::Int);
         Ok((param_tys, ret_ty))
     }
@@ -508,10 +587,22 @@ impl<'ctx> Compiler<'ctx> {
         // ADR 0026 § 3 second bullet; Phase 3 permits direct multi-arg calls
         // when all arguments are supplied at the call site.
         if let Some((arity, lam_body, ann_ty)) = collect_annotated_lam_chain(rhs) {
-            let (param_tys, ret_ty) = self.signature_for_lam(lam_body, arity, ann_ty, &[])?;
-            let fn_val = self.hoist_lambda(lam_body, param_tys, ret_ty, "let")?;
+            let env_tys = binding_tys_from_env(env);
+            let (param_tys, ret_ty) =
+                self.signature_for_lam(lam_body, arity, ann_ty, &[], &env_tys)?;
+            if check_closed(lam_body, arity as u64).is_ok() {
+                let fn_ty = nested_fn_ty(&param_tys, ret_ty.clone());
+                let fn_val =
+                    self.hoist_lambda(lam_body, param_tys, ret_ty, "let", Some((rhs, fn_ty)))?;
+                let mut new_env = env.to_vec();
+                new_env.insert(0, Binding::Function(fn_val));
+                return self.compile_value_expr(body, &new_env, cur_fn);
+            }
+
+            let closure_ty = nested_fn_ty(&param_tys, ret_ty);
+            let closure = self.compile_closure_value(rhs, Some(closure_ty), env, cur_fn)?;
             let mut new_env = env.to_vec();
-            new_env.insert(0, Binding::Function(fn_val));
+            new_env.insert(0, Binding::Value(closure));
             return self.compile_value_expr(body, &new_env, cur_fn);
         }
 
@@ -678,36 +769,52 @@ impl<'ctx> Compiler<'ctx> {
             Node::Lam { .. } | Node::Ann { .. } => {
                 let (arity, lam_body, ann_ty) =
                     collect_annotated_lam_chain(head).ok_or(CodegenError::AppNonFunction)?;
-                if args.len() != arity {
-                    return Err(CodegenError::FunctionArity {
-                        expected: arity,
-                        got: args.len(),
-                    });
+                if args.len() == arity && check_closed(lam_body, arity as u64).is_ok() {
+                    let arg_vals = self.compile_call_args(&args, env, cur_fn)?;
+                    let arg_tys: Vec<ValueTy> = arg_vals.iter().map(|v| v.ty.clone()).collect();
+                    let (param_tys, ret_ty) =
+                        self.signature_for_lam(lam_body, arity, ann_ty, &arg_tys, &[])?;
+                    let fn_val = self.hoist_lambda(lam_body, param_tys, ret_ty, "anon", None)?;
+                    return self.call_function(&fn_val, &arg_vals);
                 }
                 let arg_vals = self.compile_call_args(&args, env, cur_fn)?;
                 let arg_tys: Vec<ValueTy> = arg_vals.iter().map(|v| v.ty.clone()).collect();
-                let (param_tys, ret_ty) =
-                    self.signature_for_lam(lam_body, arity, ann_ty, &arg_tys)?;
-                let fn_val = self.hoist_lambda(lam_body, param_tys, ret_ty, "anon")?;
-                self.call_function(&fn_val, &arg_vals)
+                let (param_tys, ret_ty) = self.signature_for_lam(
+                    lam_body,
+                    arity,
+                    ann_ty,
+                    &arg_tys,
+                    &binding_tys_from_env(env),
+                )?;
+                let closure_ty = nested_fn_ty(&param_tys, ret_ty);
+                let closure = self.compile_closure_value(head, Some(closure_ty), env, cur_fn)?;
+                self.call_closure_spine(closure, &arg_vals)
             }
             Node::Var { index } => {
                 let binding = lookup_var(env, *index)?;
                 match binding {
                     Binding::Function(fn_val) => {
-                        if args.len() != fn_val.arity() {
-                            return Err(CodegenError::FunctionArity {
-                                expected: fn_val.arity(),
-                                got: args.len(),
-                            });
-                        }
                         let arg_vals = self.compile_call_args(&args, env, cur_fn)?;
-                        self.call_function(fn_val, &arg_vals)
+                        if args.len() == fn_val.arity() {
+                            self.call_function(fn_val, &arg_vals)
+                        } else {
+                            let closure = self.reify_function_binding(fn_val, cur_fn)?;
+                            self.call_closure_spine(closure, &arg_vals)
+                        }
                     }
-                    Binding::Value(_) | Binding::Ptr { .. } => Err(CodegenError::AppNonFunction),
+                    Binding::Value(v) => {
+                        let closure = v.clone();
+                        let arg_vals = self.compile_call_args(&args, env, cur_fn)?;
+                        self.call_closure_spine(closure, &arg_vals)
+                    }
+                    Binding::Ptr { .. } | Binding::Unavailable => Err(CodegenError::AppNonFunction),
                 }
             }
-            _ => Err(CodegenError::AppNonFunction),
+            _ => {
+                let closure = self.compile_value_expr(head, env, cur_fn)?;
+                let arg_vals = self.compile_call_args(&args, env, cur_fn)?;
+                self.call_closure_spine(closure, &arg_vals)
+            }
         }
     }
 
@@ -752,7 +859,7 @@ impl<'ctx> Compiler<'ctx> {
                 Binding::Ptr { ptr, .. } => {
                     call_args.push(BasicMetadataValueEnum::PointerValue(*ptr))
                 }
-                Binding::Function(_) => {}
+                Binding::Function(_) | Binding::Unavailable => {}
             }
         }
         let call = self
@@ -766,6 +873,63 @@ impl<'ctx> Compiler<'ctx> {
             .ok_or_else(|| CodegenError::Llvm("call returned no value".into()))?;
         Ok(CompiledValue {
             ty: fn_binding.ret_ty.clone(),
+            value: ret,
+        })
+    }
+
+    fn call_closure_spine(
+        &mut self,
+        mut callee: CompiledValue<'ctx>,
+        args: &[CompiledValue<'ctx>],
+    ) -> Result<CompiledValue<'ctx>> {
+        for arg in args {
+            callee = self.call_closure_value(callee, arg)?;
+        }
+        Ok(callee)
+    }
+
+    fn call_closure_value(
+        &mut self,
+        callee: CompiledValue<'ctx>,
+        arg: &CompiledValue<'ctx>,
+    ) -> Result<CompiledValue<'ctx>> {
+        let ValueTy::Fn(param_ty, ret_ty) = &callee.ty else {
+            return Err(CodegenError::AppNonFunction);
+        };
+        if param_ty.as_ref() != &arg.ty {
+            return Err(CodegenError::ValueTypeMismatch {
+                expected: param_ty.to_string(),
+                actual: arg.ty.to_string(),
+            });
+        }
+
+        let closure = callee.value.into_struct_value();
+        let code_ptr = self
+            .builder
+            .build_extract_value(closure, 0, "closure_code")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?
+            .into_pointer_value();
+        let env_ptr = self
+            .builder
+            .build_extract_value(closure, 1, "closure_env")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?
+            .into_pointer_value();
+        let fn_type = self.closure_entry_type(&callee.ty)?;
+        let call = self
+            .builder
+            .build_indirect_call(
+                fn_type,
+                code_ptr,
+                &[env_ptr.into(), arg.value.into()],
+                "closure_call",
+            )
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let ret = call
+            .try_as_basic_value()
+            .basic()
+            .ok_or_else(|| CodegenError::Llvm("closure call returned no value".into()))?;
+        Ok(CompiledValue {
+            ty: ret_ty.as_ref().clone(),
             value: ret,
         })
     }
@@ -5093,6 +5257,7 @@ impl<'ctx> Compiler<'ctx> {
         param_tys: Vec<ValueTy>,
         ret_ty: ValueTy,
         name_hint: &str,
+        closure_template: Option<(&Node, ValueTy)>,
     ) -> Result<FunctionBinding<'ctx>> {
         let arity = param_tys.len();
         check_closed(lam_body, arity as u64)?;
@@ -5107,7 +5272,403 @@ impl<'ctx> Compiler<'ctx> {
             param_tys,
             ret_ty,
             captures: Vec::new(),
+            closure_template: closure_template.map(|(expr, ty)| ClosureTemplate {
+                expr: Box::new(expr.clone()),
+                ty,
+                env: Vec::new(),
+            }),
         })
+    }
+
+    fn reify_function_binding(
+        &mut self,
+        fn_binding: &FunctionBinding<'ctx>,
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<CompiledValue<'ctx>> {
+        if let Some(template) = &fn_binding.closure_template {
+            return self.compile_closure_value(
+                template.expr.as_ref(),
+                Some(template.ty.clone()),
+                &template.env,
+                cur_fn,
+            );
+        }
+        self.reify_direct_function_binding(fn_binding, cur_fn)
+    }
+
+    fn reify_direct_function_binding(
+        &mut self,
+        fn_binding: &FunctionBinding<'ctx>,
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<CompiledValue<'ctx>> {
+        if fn_binding.param_tys.is_empty() {
+            return Err(CodegenError::UnsupportedClosureEscape(
+                "zero-argument direct function reification is not implemented",
+            ));
+        }
+
+        let mut hidden_captures = Vec::with_capacity(fn_binding.captures.len());
+        for (i, binding) in fn_binding.captures.iter().enumerate() {
+            let value = self.capture_binding_as_value(binding, i as u64, cur_fn)?;
+            hidden_captures.push(value);
+        }
+        self.build_direct_adapter_closure(fn_binding, Vec::new(), hidden_captures)
+    }
+
+    fn build_direct_adapter_closure(
+        &mut self,
+        direct: &FunctionBinding<'ctx>,
+        supplied_args: Vec<CompiledValue<'ctx>>,
+        hidden_captures: Vec<CompiledValue<'ctx>>,
+    ) -> Result<CompiledValue<'ctx>> {
+        let supplied_count = supplied_args.len();
+        if supplied_count >= direct.param_tys.len() {
+            return Err(CodegenError::UnsupportedClosureEscape(
+                "direct function adapter has no remaining argument",
+            ));
+        }
+
+        let fn_ty = nested_fn_ty(&direct.param_tys[supplied_count..], direct.ret_ty.clone());
+        let mut capture_values = supplied_args;
+        capture_values.extend(hidden_captures);
+        let captures: Vec<CaptureValue<'ctx>> = capture_values
+            .into_iter()
+            .enumerate()
+            .map(|(outer_index, value)| CaptureValue { outer_index, value })
+            .collect();
+        let capture_tys: Vec<ValueTy> = captures.iter().map(|c| c.value.ty.clone()).collect();
+
+        let fn_name = self.fresh_fn_name("direct_closure");
+        let entry = self.module.add_function(
+            &fn_name,
+            self.closure_entry_type(&fn_ty)?,
+            Some(Linkage::Private),
+        );
+        self.compile_direct_adapter_entry(entry, direct, supplied_count, &captures)?;
+        let env_ptr = self.allocate_closure_env(&captures, &capture_tys)?;
+        let closure_value =
+            self.build_closure_pair(entry.as_global_value().as_pointer_value(), env_ptr)?;
+        Ok(CompiledValue {
+            ty: fn_ty,
+            value: closure_value,
+        })
+    }
+
+    fn compile_closure_value(
+        &mut self,
+        node: &Node,
+        expected_ty: Option<ValueTy>,
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<CompiledValue<'ctx>> {
+        match node {
+            Node::Ann { expr, type_ } => {
+                let declared = value_ty_from_ty(&ty_from_type_node(type_)?)?;
+                self.compile_closure_value(expr, Some(declared), env, cur_fn)
+            }
+            Node::Lam { body } => {
+                let fn_ty = if let Some(ty) = expected_ty {
+                    ty
+                } else {
+                    infer_value_ty(node, &binding_tys_from_env(env))?
+                };
+                self.compile_lambda_closure(body, fn_ty, env, cur_fn)
+            }
+            _ => Err(CodegenError::AppNonFunction),
+        }
+    }
+
+    fn compile_lambda_closure(
+        &mut self,
+        body: &Node,
+        fn_ty: ValueTy,
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<CompiledValue<'ctx>> {
+        let ValueTy::Fn(arg_ty, ret_ty) = &fn_ty else {
+            return Err(CodegenError::AppNonFunction);
+        };
+
+        let captures = self.collect_capture_values(body, env, cur_fn)?;
+        let capture_tys: Vec<ValueTy> = captures.iter().map(|c| c.value.ty.clone()).collect();
+
+        let fn_name = self.fresh_fn_name("closure");
+        let fn_val = self.module.add_function(
+            &fn_name,
+            self.closure_entry_type(&fn_ty)?,
+            Some(Linkage::Private),
+        );
+
+        self.compile_closure_entry(fn_val, body, arg_ty, ret_ty, &captures, env)?;
+
+        let env_ptr = self.allocate_closure_env(&captures, &capture_tys)?;
+        let code_ptr = fn_val.as_global_value().as_pointer_value();
+        let closure_value = self.build_closure_pair(code_ptr, env_ptr)?;
+        Ok(CompiledValue {
+            ty: fn_ty,
+            value: closure_value,
+        })
+    }
+
+    fn collect_capture_values(
+        &mut self,
+        body: &Node,
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<Vec<CaptureValue<'ctx>>> {
+        let mut free = BTreeSet::new();
+        collect_free_outer_indices(body, 1, &mut free);
+        let mut captures = Vec::with_capacity(free.len());
+        for outer_index in free {
+            let binding = env.get(outer_index).ok_or(CodegenError::FreeVarInLambda {
+                index: (outer_index + 1) as u64,
+            })?;
+            let value = self.capture_binding_as_value(binding, (outer_index + 1) as u64, cur_fn)?;
+            captures.push(CaptureValue { outer_index, value });
+        }
+        Ok(captures)
+    }
+
+    fn capture_binding_as_value(
+        &mut self,
+        binding: &Binding<'ctx>,
+        index: u64,
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<CompiledValue<'ctx>> {
+        match binding {
+            Binding::Value(v) => Ok(v.clone()),
+            Binding::Function(f) => self.reify_function_binding(f, cur_fn),
+            Binding::Ptr {
+                kind: PtrKind::Buf, ..
+            } => Err(CodegenError::InvalidCapture { index, kind: "Buf" }),
+            Binding::Ptr {
+                kind: PtrKind::I64Vec,
+                ..
+            } => Err(CodegenError::InvalidCapture {
+                index,
+                kind: "I64Vec",
+            }),
+            Binding::Unavailable => Err(CodegenError::UnavailableCapture { index }),
+        }
+    }
+
+    fn compile_direct_adapter_entry(
+        &mut self,
+        entry_fn: FunctionValue<'ctx>,
+        direct: &FunctionBinding<'ctx>,
+        supplied_count: usize,
+        captures: &[CaptureValue<'ctx>],
+    ) -> Result<()> {
+        let saved_block = self.builder.get_insert_block();
+        let entry = self.context.append_basic_block(entry_fn, "entry");
+        self.builder.position_at_end(entry);
+
+        let env_ptr = entry_fn
+            .get_nth_param(0)
+            .ok_or_else(|| CodegenError::Llvm("direct closure missing env param".into()))?
+            .into_pointer_value();
+        let arg = entry_fn
+            .get_nth_param(1)
+            .ok_or_else(|| CodegenError::Llvm("direct closure missing arg param".into()))?;
+        let loaded_captures = self.load_linear_captures(env_ptr, captures)?;
+
+        let hidden_count = direct.captures.len();
+        let loaded_supplied = loaded_captures[..supplied_count].to_vec();
+        let loaded_hidden = loaded_captures[supplied_count..supplied_count + hidden_count].to_vec();
+        let current_arg = CompiledValue {
+            ty: direct.param_tys[supplied_count].clone(),
+            value: arg,
+        };
+
+        let ret = if supplied_count + 1 == direct.param_tys.len() {
+            let mut call_args: Vec<BasicMetadataValueEnum<'ctx>> =
+                Vec::with_capacity(direct.param_tys.len() + hidden_count);
+            for supplied in &loaded_supplied {
+                call_args.push(supplied.value.into());
+            }
+            call_args.push(current_arg.value.into());
+            for capture in &loaded_hidden {
+                call_args.push(capture.value.into());
+            }
+
+            self.builder
+                .build_call(direct.value, &call_args, "direct_closure_call")
+                .map_err(|e| CodegenError::Llvm(e.to_string()))?
+                .try_as_basic_value()
+                .basic()
+                .ok_or_else(|| CodegenError::Llvm("direct closure call returned no value".into()))?
+        } else {
+            let mut next_supplied = loaded_supplied;
+            next_supplied.push(current_arg);
+            self.build_direct_adapter_closure(direct, next_supplied, loaded_hidden)?
+                .value
+        };
+        self.builder
+            .build_return(Some(&ret))
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        if let Some(saved) = saved_block {
+            self.builder.position_at_end(saved);
+        }
+        Ok(())
+    }
+
+    fn allocate_closure_env(
+        &mut self,
+        captures: &[CaptureValue<'ctx>],
+        capture_tys: &[ValueTy],
+    ) -> Result<PointerValue<'ctx>> {
+        let ptr_t = self.context.ptr_type(AddressSpace::default());
+        if captures.is_empty() {
+            return Ok(ptr_t.const_null());
+        }
+        let field_types = capture_tys
+            .iter()
+            .map(|ty| self.llvm_type(ty))
+            .collect::<Result<Vec<_>>>()?;
+        let env_ty = self.context.struct_type(&field_types, false);
+        let env_ptr = self
+            .builder
+            .build_malloc(env_ty, "closure_env")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        for (i, capture) in captures.iter().enumerate() {
+            let slot = self
+                .builder
+                .build_struct_gep(env_ty, env_ptr, i as u32, "closure_env_slot")
+                .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+            self.builder
+                .build_store(slot, capture.value.value)
+                .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        }
+        Ok(env_ptr)
+    }
+
+    fn compile_closure_entry(
+        &mut self,
+        fn_val: FunctionValue<'ctx>,
+        body: &Node,
+        arg_ty: &ValueTy,
+        ret_ty: &ValueTy,
+        captures: &[CaptureValue<'ctx>],
+        outer_env: &[Binding<'ctx>],
+    ) -> Result<()> {
+        let saved_block = self.builder.get_insert_block();
+        let entry = self.context.append_basic_block(fn_val, "entry");
+        self.builder.position_at_end(entry);
+
+        let env_ptr = fn_val
+            .get_nth_param(0)
+            .ok_or_else(|| CodegenError::Llvm("closure missing env param".into()))?
+            .into_pointer_value();
+        let arg = fn_val
+            .get_nth_param(1)
+            .ok_or_else(|| CodegenError::Llvm("closure missing arg param".into()))?;
+
+        let loaded_captures = self.load_closure_captures(env_ptr, captures, outer_env)?;
+        let mut body_env = Vec::with_capacity(1 + loaded_captures.len());
+        body_env.push(Binding::Value(CompiledValue {
+            ty: arg_ty.clone(),
+            value: arg,
+        }));
+        body_env.extend(loaded_captures);
+
+        let v = if matches!(body, Node::Lam { .. } | Node::Ann { .. })
+            && matches!(ret_ty, ValueTy::Fn(_, _))
+        {
+            self.compile_closure_value(body, Some(ret_ty.clone()), &body_env, fn_val)?
+        } else {
+            self.compile_value_expr(body, &body_env, fn_val)?
+        };
+        if &v.ty != ret_ty {
+            return Err(CodegenError::ValueTypeMismatch {
+                expected: ret_ty.to_string(),
+                actual: v.ty.to_string(),
+            });
+        }
+        self.builder
+            .build_return(Some(&v.value))
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        if let Some(saved) = saved_block {
+            self.builder.position_at_end(saved);
+        }
+        Ok(())
+    }
+
+    fn load_closure_captures(
+        &mut self,
+        env_ptr: PointerValue<'ctx>,
+        captures: &[CaptureValue<'ctx>],
+        outer_env: &[Binding<'ctx>],
+    ) -> Result<Vec<Binding<'ctx>>> {
+        let mut loaded = Vec::with_capacity(outer_env.len());
+        for binding in outer_env {
+            loaded.push(self.placeholder_binding(binding)?);
+        }
+        if captures.is_empty() {
+            return Ok(loaded);
+        }
+
+        let field_types = captures
+            .iter()
+            .map(|capture| self.llvm_type(&capture.value.ty))
+            .collect::<Result<Vec<_>>>()?;
+        let env_ty = self.context.struct_type(&field_types, false);
+        for (slot_index, capture) in captures.iter().enumerate() {
+            let slot = self
+                .builder
+                .build_struct_gep(env_ty, env_ptr, slot_index as u32, "closure_env_slot")
+                .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+            let loaded_value = self
+                .builder
+                .build_load(self.llvm_type(&capture.value.ty)?, slot, "closure_capture")
+                .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+            loaded[capture.outer_index] = Binding::Value(CompiledValue {
+                ty: capture.value.ty.clone(),
+                value: loaded_value,
+            });
+        }
+        Ok(loaded)
+    }
+
+    fn load_linear_captures(
+        &mut self,
+        env_ptr: PointerValue<'ctx>,
+        captures: &[CaptureValue<'ctx>],
+    ) -> Result<Vec<CompiledValue<'ctx>>> {
+        if captures.is_empty() {
+            return Ok(Vec::new());
+        }
+        let field_types = captures
+            .iter()
+            .map(|capture| self.llvm_type(&capture.value.ty))
+            .collect::<Result<Vec<_>>>()?;
+        let env_ty = self.context.struct_type(&field_types, false);
+        let mut loaded = Vec::with_capacity(captures.len());
+        for (slot_index, capture) in captures.iter().enumerate() {
+            let slot = self
+                .builder
+                .build_struct_gep(env_ty, env_ptr, slot_index as u32, "closure_env_slot")
+                .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+            let loaded_value = self
+                .builder
+                .build_load(self.llvm_type(&capture.value.ty)?, slot, "closure_capture")
+                .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+            loaded.push(CompiledValue {
+                ty: capture.value.ty.clone(),
+                value: loaded_value,
+            });
+        }
+        Ok(loaded)
+    }
+
+    fn placeholder_binding(&self, binding: &Binding<'ctx>) -> Result<Binding<'ctx>> {
+        match binding {
+            Binding::Value(_) => Ok(Binding::Unavailable),
+            Binding::Function(f) => Ok(Binding::Function(f.clone())),
+            Binding::Ptr { .. } => Ok(Binding::Unavailable),
+            Binding::Unavailable => Ok(Binding::Unavailable),
+        }
     }
 
     fn add_tacit_function(
@@ -5126,7 +5687,7 @@ impl<'ctx> Compiler<'ctx> {
             match capture {
                 Binding::Value(v) => params.push(self.llvm_type(&v.ty)?.into()),
                 Binding::Ptr { .. } => params.push(BasicMetadataTypeEnum::PointerType(ptr_t)),
-                Binding::Function(_) => {}
+                Binding::Function(_) | Binding::Unavailable => {}
             }
         }
         let fn_ty = self.llvm_type(ret_ty)?.fn_type(&params, false);
@@ -5157,7 +5718,13 @@ impl<'ctx> Compiler<'ctx> {
             }));
         }
 
-        let v = self.compile_value_expr(body, &env, fn_val)?;
+        let v = if matches!(body, Node::Lam { .. } | Node::Ann { .. })
+            && matches!(ret_ty, ValueTy::Fn(_, _))
+        {
+            self.compile_closure_value(body, Some(ret_ty.clone()), &env, fn_val)?
+        } else {
+            self.compile_value_expr(body, &env, fn_val)?
+        };
         if &v.ty != ret_ty {
             return Err(CodegenError::ValueTypeMismatch {
                 expected: ret_ty.to_string(),
@@ -5198,7 +5765,13 @@ impl<'ctx> Compiler<'ctx> {
         for (i, b) in bindings.iter().enumerate() {
             if let Some((arity, lam_body, ann_ty)) = collect_annotated_lam_chain(b) {
                 let (param_tys, ret_ty) = if ann_ty.is_some() {
-                    self.signature_for_lam(lam_body, arity, ann_ty, &[])?
+                    self.signature_for_lam(
+                        lam_body,
+                        arity,
+                        ann_ty,
+                        &[],
+                        &binding_tys_from_env(env),
+                    )?
                 } else {
                     let param_tys = vec![ValueTy::Int; arity];
                     let lambda_env: Vec<BindingTy> = param_tys
@@ -5234,6 +5807,7 @@ impl<'ctx> Compiler<'ctx> {
                 param_tys: spec.param_tys.clone(),
                 ret_ty: spec.ret_ty.clone(),
                 captures: env.to_vec(),
+                closure_template: None,
             });
         }
 
@@ -5294,6 +5868,7 @@ impl<'ctx> Compiler<'ctx> {
                 param_tys: f.param_tys.clone(),
                 ret_ty: f.ret_ty.clone(),
                 captures: captured_env.clone(),
+                closure_template: None,
             }));
         }
         rec_env.extend_from_slice(&captured_env);
@@ -5309,7 +5884,13 @@ impl<'ctx> Compiler<'ctx> {
             }));
         }
         body_env.extend_from_slice(&rec_env);
-        let v = self.compile_value_expr(body, &body_env, fn_val)?;
+        let v = if matches!(body, Node::Lam { .. } | Node::Ann { .. })
+            && matches!(ret_ty, ValueTy::Fn(_, _))
+        {
+            self.compile_closure_value(body, Some(ret_ty.clone()), &body_env, fn_val)?
+        } else {
+            self.compile_value_expr(body, &body_env, fn_val)?
+        };
         if &v.ty != ret_ty {
             return Err(CodegenError::ValueTypeMismatch {
                 expected: ret_ty.to_string(),
@@ -5365,6 +5946,7 @@ impl<'ctx> Compiler<'ctx> {
                     param_index += 1;
                 }
                 Binding::Function(f) => captured.push(Binding::Function(f.clone())),
+                Binding::Unavailable => captured.push(Binding::Unavailable),
             }
         }
         Ok(captured)
@@ -5540,6 +6122,119 @@ fn function_signature_from_type_node(type_node: &Node) -> Result<(Vec<ValueTy>, 
     }
 }
 
+fn nested_fn_ty(param_tys: &[ValueTy], ret_ty: ValueTy) -> ValueTy {
+    param_tys.iter().rev().fold(ret_ty, |acc, param| {
+        ValueTy::Fn(Box::new(param.clone()), Box::new(acc))
+    })
+}
+
+fn apply_fn_spine_ty(mut ty: ValueTy, arg_count: usize) -> Result<ValueTy> {
+    for _ in 0..arg_count {
+        match ty {
+            ValueTy::Fn(_, ret) => ty = *ret,
+            _ => return Err(CodegenError::AppNonFunction),
+        }
+    }
+    Ok(ty)
+}
+
+fn binding_tys_from_env(env: &[Binding<'_>]) -> Vec<BindingTy> {
+    env.iter()
+        .map(|binding| match binding {
+            Binding::Value(v) => BindingTy::Value(v.ty.clone()),
+            Binding::Function(f) => BindingTy::Function {
+                param_tys: f.param_tys.clone(),
+                ret_ty: f.ret_ty.clone(),
+            },
+            Binding::Ptr { .. } => BindingTy::Ptr,
+            Binding::Unavailable => BindingTy::Ptr,
+        })
+        .collect()
+}
+
+fn collect_free_outer_indices(node: &Node, depth: u64, out: &mut BTreeSet<usize>) {
+    match node {
+        Node::Var { index } => {
+            if *index >= depth {
+                out.insert((*index - depth) as usize);
+            }
+        }
+        Node::Lam { body } => collect_free_outer_indices(body, depth + 1, out),
+        Node::Let { rhs, body } => {
+            collect_free_outer_indices(rhs, depth, out);
+            collect_free_outer_indices(body, depth + 1, out);
+        }
+        Node::Rec { bindings, body } => {
+            let inner = depth + bindings.len() as u64;
+            for binding in bindings {
+                collect_free_outer_indices(binding, inner, out);
+            }
+            collect_free_outer_indices(body, inner, out);
+        }
+        Node::Module { bindings } => {
+            let inner = depth + bindings.len() as u64;
+            for binding in bindings {
+                collect_free_outer_indices(binding, inner, out);
+            }
+        }
+        Node::App { fn_, arg } => {
+            collect_free_outer_indices(fn_, depth, out);
+            collect_free_outer_indices(arg, depth, out);
+        }
+        Node::If { cond, then, else_ } => {
+            collect_free_outer_indices(cond, depth, out);
+            collect_free_outer_indices(then, depth, out);
+            collect_free_outer_indices(else_, depth, out);
+        }
+        Node::Match { scrutinee, arms } => {
+            collect_free_outer_indices(scrutinee, depth, out);
+            for arm in arms {
+                collect_free_outer_indices(arm, depth, out);
+            }
+        }
+        Node::Arm { pattern, body } => {
+            collect_free_outer_indices(body, depth + count_pat_vars_local(pattern), out);
+        }
+        Node::Record { fields } => {
+            for (_, value) in fields {
+                collect_free_outer_indices(value, depth, out);
+            }
+        }
+        Node::Proj { record, .. } => collect_free_outer_indices(record, depth, out),
+        Node::Ctor { args, .. } => {
+            for arg in args {
+                collect_free_outer_indices(arg, depth, out);
+            }
+        }
+        Node::Ann { expr, .. } => collect_free_outer_indices(expr, depth, out),
+        Node::PatCtor { sub_patterns, .. } => {
+            for pattern in sub_patterns {
+                collect_free_outer_indices(pattern, depth, out);
+            }
+        }
+        Node::Int { .. }
+        | Node::Str { .. }
+        | Node::Sym { .. }
+        | Node::Hole { .. }
+        | Node::PatWild
+        | Node::PatVar
+        | Node::PatInt { .. }
+        | Node::FnTy { .. }
+        | Node::TyVar { .. }
+        | Node::Forall { .. }
+        | Node::EffSet { .. }
+        | Node::EffVar { .. } => {}
+    }
+}
+
+fn count_pat_vars_local(pattern: &Node) -> u64 {
+    match pattern {
+        Node::PatVar => 1,
+        Node::PatCtor { sub_patterns, .. } => sub_patterns.iter().map(count_pat_vars_local).sum(),
+        _ => 0,
+    }
+}
+
 fn ty_from_type_node(type_node: &Node) -> Result<Ty> {
     let mut subst = Subst::default();
     let mut diags = Vec::new();
@@ -5553,13 +6248,17 @@ fn ty_from_type_node(type_node: &Node) -> Result<Ty> {
 fn value_ty_from_ty(ty: &Ty) -> Result<ValueTy> {
     match ty {
         Ty::Int | Ty::Bool => Ok(ValueTy::Int),
+        Ty::Fn(arg, ret, _) => Ok(ValueTy::Fn(
+            Box::new(value_ty_from_ty(arg)?),
+            Box::new(value_ty_from_ty(ret)?),
+        )),
         Ty::Record(fields) => fields
             .iter()
             .map(|(name, ty)| Ok((name.clone(), value_ty_from_ty(ty)?)))
             .collect::<Result<Vec<_>>>()
             .map(ValueTy::Record),
         Ty::Unknown | Ty::Meta(_) => Err(CodegenError::UnsupportedValueType { ty: ty.to_string() }),
-        Ty::Str | Ty::Buf | Ty::I64Vec | Ty::Fn(_, _, _) | Ty::App(_, _) => {
+        Ty::Str | Ty::Buf | Ty::I64Vec | Ty::App(_, _) => {
             Err(CodegenError::UnsupportedValueType { ty: ty.to_string() })
         }
     }
@@ -5571,7 +6270,12 @@ fn infer_value_ty(node: &Node, env: &[BindingTy]) -> Result<ValueTy> {
         Node::Str { .. } => Err(CodegenError::UnsupportedValueType { ty: "Str".into() }),
         Node::Var { index } => match lookup_binding_ty(env, *index)? {
             BindingTy::Value(ty) => Ok(ty.clone()),
-            BindingTy::Function { .. } => Err(CodegenError::FirstClassFunction),
+            BindingTy::Function { param_tys, ret_ty } => {
+                Ok(nested_fn_ty(param_tys, ret_ty.clone()))
+            }
+            BindingTy::Ptr => Err(CodegenError::UnsupportedValueType {
+                ty: "non-escapable pointer handle".into(),
+            }),
         },
         Node::Let { rhs, body } => {
             if let Some((arity, lam_body, ann_ty)) = collect_annotated_lam_chain(rhs) {
@@ -5595,9 +6299,16 @@ fn infer_value_ty(node: &Node, env: &[BindingTy]) -> Result<ValueTy> {
                     let ret_ty = infer_value_ty(lam_body, &lambda_env).unwrap_or(ValueTy::Int);
                     (param_tys, ret_ty)
                 };
-                let mut body_env = vec![BindingTy::Function { param_tys, ret_ty }];
-                body_env.extend_from_slice(env);
-                infer_value_ty(body, &body_env)
+                if check_closed(lam_body, arity as u64).is_ok() {
+                    let mut body_env = vec![BindingTy::Function { param_tys, ret_ty }];
+                    body_env.extend_from_slice(env);
+                    infer_value_ty(body, &body_env)
+                } else {
+                    let rhs_ty = nested_fn_ty(&param_tys, ret_ty);
+                    let mut body_env = vec![BindingTy::Value(rhs_ty)];
+                    body_env.extend_from_slice(env);
+                    infer_value_ty(body, &body_env)
+                }
             } else {
                 let rhs_ty = infer_value_ty(rhs, env)?;
                 let mut body_env = vec![BindingTy::Value(rhs_ty)];
@@ -5623,21 +6334,16 @@ fn infer_value_ty(node: &Node, env: &[BindingTy]) -> Result<ValueTy> {
                 Node::Sym { .. } => Ok(ValueTy::Int),
                 Node::Var { index } => match lookup_binding_ty(env, *index)? {
                     BindingTy::Function { param_tys, ret_ty } => {
-                        if args.len() != param_tys.len() {
-                            return Err(CodegenError::FunctionArity {
-                                expected: param_tys.len(),
-                                got: args.len(),
-                            });
-                        }
-                        Ok(ret_ty.clone())
+                        apply_fn_spine_ty(nested_fn_ty(param_tys, ret_ty.clone()), args.len())
                     }
-                    _ => Err(CodegenError::AppNonFunction),
+                    BindingTy::Value(ty) => apply_fn_spine_ty(ty.clone(), args.len()),
+                    BindingTy::Ptr => Err(CodegenError::AppNonFunction),
                 },
                 Node::Lam { .. } | Node::Ann { .. } => {
                     let (arity, lam_body, ann_ty) =
                         collect_annotated_lam_chain(head).ok_or(CodegenError::AppNonFunction)?;
-                    if let Some(type_node) = ann_ty {
-                        Ok(function_signature_from_type_node(type_node)?.1)
+                    let fn_ty = if let Some(type_node) = ann_ty {
+                        value_ty_from_ty(&ty_from_type_node(type_node)?)?
                     } else {
                         let param_tys = vec![ValueTy::Int; arity];
                         let lambda_env: Vec<BindingTy> = param_tys
@@ -5646,13 +6352,21 @@ fn infer_value_ty(node: &Node, env: &[BindingTy]) -> Result<ValueTy> {
                             .cloned()
                             .map(BindingTy::Value)
                             .collect();
-                        infer_value_ty(lam_body, &lambda_env)
-                    }
+                        let ret_ty = infer_value_ty(lam_body, &lambda_env)?;
+                        nested_fn_ty(&param_tys, ret_ty)
+                    };
+                    apply_fn_spine_ty(fn_ty, args.len())
                 }
-                _ => Err(CodegenError::AppNonFunction),
+                _ => apply_fn_spine_ty(infer_value_ty(head, env)?, args.len()),
             }
         }
-        Node::Lam { .. } => Err(CodegenError::FirstClassFunction),
+        Node::Lam { body } => {
+            let param_ty = ValueTy::Int;
+            let mut body_env = vec![BindingTy::Value(param_ty.clone())];
+            body_env.extend_from_slice(env);
+            let ret_ty = infer_value_ty(body, &body_env)?;
+            Ok(ValueTy::Fn(Box::new(param_ty), Box::new(ret_ty)))
+        }
         Node::Rec { bindings, body } => {
             let mut rec_types = Vec::with_capacity(bindings.len());
             for binding in bindings {
@@ -5709,11 +6423,8 @@ fn infer_value_ty(node: &Node, env: &[BindingTy]) -> Result<ValueTy> {
         }
         Node::Ctor { .. } => Err(CodegenError::Unsupported("ctor in expression position")),
         Node::Ann { expr, type_ } => {
-            if collect_lam_chain(expr).is_some() {
-                Err(CodegenError::FirstClassFunction)
-            } else {
-                value_ty_from_ty(&ty_from_type_node(type_)?)
-            }
+            let _ = expr;
+            value_ty_from_ty(&ty_from_type_node(type_)?)
         }
         Node::Sym { .. } => Err(CodegenError::Unsupported(
             "bare sym outside primitive-call head",

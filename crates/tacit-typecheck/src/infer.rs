@@ -405,12 +405,7 @@ fn infer_app(
             (subst.apply(&ret_meta), eff_meta)
         }
         other => {
-            push_type_mismatch(
-                diags,
-                &child_path(path, 0),
-                &Ty::Fn(Box::new(arg_ty), Box::new(subst.fresh()), FnEff::pure_()),
-                &other,
-            );
+            diags.push(Diagnostic::apply_non_function(&child_path(path, 0), &other));
             (Ty::Unknown, FnEff::pure_())
         }
     };
