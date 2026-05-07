@@ -67,7 +67,12 @@ enum Cmd {
         input: PathBuf,
 
         /// Which view to render (default: authoring).
-        #[arg(long = "as", value_enum, value_name = "FORMAT", default_value = "authoring")]
+        #[arg(
+            long = "as",
+            value_enum,
+            value_name = "FORMAT",
+            default_value = "authoring"
+        )]
         view_format: ViewFormat,
 
         /// Write output to FILE (must end in .taca for authoring view).
@@ -188,8 +193,8 @@ fn load_canonical(
     let ext = input.extension().and_then(|e| e.to_str()).unwrap_or("");
     match ext {
         "tac" => {
-            let node = tacit_canonical::parse(&src)
-                .map_err(|e| format!("{}: {}", input.display(), e))?;
+            let node =
+                tacit_canonical::parse(&src).map_err(|e| format!("{}: {}", input.display(), e))?;
             let tacd_path = input.with_extension("tacd");
             let sidecar = if tacd_path.exists() {
                 let s = Sidecar::read(&tacd_path)
@@ -201,8 +206,8 @@ fn load_canonical(
             Ok((node, sidecar))
         }
         "taca" => {
-            let (node, display) = parse_authoring(&src)
-                .map_err(|e| format!("{}: {}", input.display(), e))?;
+            let (node, display) =
+                parse_authoring(&src).map_err(|e| format!("{}: {}", input.display(), e))?;
             Ok((node, Some(display)))
         }
         _ => Err(format!(
@@ -280,13 +285,11 @@ fn cmd_render(
     effects: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let src = std::fs::read(&input).map_err(|e| format!("{}: {}", input.display(), e))?;
-    let node = tacit_canonical::parse(&src)
-        .map_err(|e| format!("{}: {}", input.display(), e))?;
+    let node = tacit_canonical::parse(&src).map_err(|e| format!("{}: {}", input.display(), e))?;
 
     let tacd_path = input.with_extension("tacd");
     let sidecar: Option<SidecarNode> = if tacd_path.exists() {
-        let s = Sidecar::read(&tacd_path)
-            .map_err(|e| format!("{}: {}", tacd_path.display(), e))?;
+        let s = Sidecar::read(&tacd_path).map_err(|e| format!("{}: {}", tacd_path.display(), e))?;
         Some(s.display)
     } else {
         None
@@ -295,7 +298,12 @@ fn cmd_render(
     let rendered = match view_format {
         ViewFormat::Authoring => emit_authoring(&node, sidecar.as_ref()),
         ViewFormat::Inspection => {
-            let flags = InspectFlags { debruijn, hashes, types, effects };
+            let flags = InspectFlags {
+                debruijn,
+                hashes,
+                types,
+                effects,
+            };
             emit_inspection(&node, sidecar.as_ref(), &flags)
         }
     };
@@ -369,9 +377,7 @@ fn contains_hole(node: &tacit_canonical::ast::Node) -> bool {
         Node::If { cond, then, else_ } => {
             contains_hole(cond) || contains_hole(then) || contains_hole(else_)
         }
-        Node::Rec { bindings, body } => {
-            bindings.iter().any(contains_hole) || contains_hole(body)
-        }
+        Node::Rec { bindings, body } => bindings.iter().any(contains_hole) || contains_hole(body),
         Node::Module { bindings } => bindings.iter().any(contains_hole),
         Node::Record { fields } => fields.iter().any(|(_, v)| contains_hole(v)),
         Node::Proj { record, .. } => contains_hole(record),
@@ -408,7 +414,12 @@ fn cmd_view(
             print!("{}", emit_authoring(&node, sidecar.as_ref()));
         }
         ViewFormat::Inspection => {
-            let flags = InspectFlags { debruijn, hashes, types, effects };
+            let flags = InspectFlags {
+                debruijn,
+                hashes,
+                types,
+                effects,
+            };
             print!("{}", emit_inspection(&node, sidecar.as_ref(), &flags));
         }
     }

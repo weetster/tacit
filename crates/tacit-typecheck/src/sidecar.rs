@@ -231,7 +231,10 @@ mod tests {
 
     // ── check_against_tacd tests ──────────────────────────────────────────────
 
-    fn make_tacd(type_hint: Option<&str>, effect_hint: Option<Vec<&str>>) -> tacit_views::sidecar::Sidecar {
+    fn make_tacd(
+        type_hint: Option<&str>,
+        effect_hint: Option<Vec<&str>>,
+    ) -> tacit_views::sidecar::Sidecar {
         use tacit_views::sidecar::{Sidecar, SidecarNode};
         let display = SidecarNode {
             type_hint: type_hint.map(str::to_owned),
@@ -243,21 +246,27 @@ mod tests {
 
     #[test]
     fn tacd_no_hints_passes() {
-        let ast = Node::Int { value: "42".to_string() };
+        let ast = Node::Int {
+            value: "42".to_string(),
+        };
         let sidecar = make_tacd(None, None);
         assert!(check_against_tacd(&ast, &sidecar).is_ok());
     }
 
     #[test]
     fn tacd_type_hint_match() {
-        let ast = Node::Int { value: "42".to_string() };
+        let ast = Node::Int {
+            value: "42".to_string(),
+        };
         let sidecar = make_tacd(Some("Int"), Some(vec![]));
         assert!(check_against_tacd(&ast, &sidecar).is_ok());
     }
 
     #[test]
     fn tacd_type_hint_mismatch() {
-        let ast = Node::Str { value: "hello".to_string() };
+        let ast = Node::Str {
+            value: "hello".to_string(),
+        };
         let sidecar = make_tacd(Some("Int"), None);
         let diags = check_against_tacd(&ast, &sidecar).unwrap_err();
         assert!(diags.iter().any(|d| d.kind == "type-mismatch"));
@@ -265,7 +274,9 @@ mod tests {
 
     #[test]
     fn tacd_effect_hint_mismatch() {
-        let ast = Node::Int { value: "0".to_string() };
+        let ast = Node::Int {
+            value: "0".to_string(),
+        };
         let sidecar = make_tacd(Some("Int"), Some(vec!["IO"]));
         let diags = check_against_tacd(&ast, &sidecar).unwrap_err();
         assert!(diags.iter().any(|d| d.kind == "effect-violation"));

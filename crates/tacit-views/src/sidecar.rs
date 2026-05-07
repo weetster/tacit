@@ -171,6 +171,9 @@ mod tests {
         let sidecar = Sidecar::new(b"(int 1)", node);
         let json = serde_json::to_string(&sidecar).unwrap();
         assert!(!json.contains("type_hint"), "type_hint should be absent");
-        assert!(!json.contains("effect_hint"), "effect_hint should be absent");
+        assert!(
+            !json.contains("effect_hint"),
+            "effect_hint should be absent"
+        );
     }
 }

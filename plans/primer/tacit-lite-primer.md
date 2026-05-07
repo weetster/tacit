@@ -2064,6 +2064,9 @@ let _ = @buf-set buf 0 (@ascii-toupper (@buf-get buf 0)) in
 ```
 
 ```tacit
+let buf = @buf-alloc 1 in
+let _ = @buf-set buf 0 32 in
+let i = 0 in
 let b = @buf-get buf i in
 if @eq (@ascii-is-space b) 1 then 0 else 1
 ```
@@ -2087,10 +2090,10 @@ let len = @mod packed 8 in
 
 ```tacit
 let out = @buf-alloc 4 in
-let n = @utf8-encode out 0 0x1F600 in
+let n = @utf8-encode out 0 128512 in
 @write-range 1 out 0 n
 ```
 
 ```tacit
-@utf8-len 0x4E2D
+@utf8-len 20013
 ```

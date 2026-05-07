@@ -19,8 +19,8 @@ fn check_phase3(name: &str) {
     let src =
         std::fs::read(&tac_path).unwrap_or_else(|e| panic!("could not read {}.tac: {}", name, e));
 
-    let ast = parse_canonical(&src)
-        .unwrap_or_else(|e| panic!("parse error in {}.tac: {:?}", name, e));
+    let ast =
+        parse_canonical(&src).unwrap_or_else(|e| panic!("parse error in {}.tac: {:?}", name, e));
 
     let sidecar = Sidecar::read(&tacd_path)
         .unwrap_or_else(|e| panic!("sidecar load error for {}: {}", name, e));

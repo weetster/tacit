@@ -19,7 +19,7 @@ use tacit_typecheck::infer_module;
 use tacit_views::authoring::parse_authoring;
 
 const STDLIB_APPENDIX_HEADING: &str =
-    "## Stdlib Appendix: Indexed Storage, Text Ranges, Ordering, And Grouping";
+    "## Stdlib Appendix: Indexed Storage, Text Ranges, Ordering, Grouping, Stream IO, ASCII, And UTF-8";
 
 #[derive(Debug)]
 struct Block {
@@ -268,6 +268,10 @@ fn primer_stdlib_appendix_examples_validate() {
     assert!(appendix.contains("`@lower-bound-i64 xs count value`"));
     assert!(appendix.contains("`@count-equal-ranges text table count out`"));
     assert!(appendix.contains("`@dedup-adjacent-ranges text table count out`"));
+    assert!(appendix.contains("`@stdin-slurp buf cap`"));
+    assert!(appendix.contains("`@write-range"));
+    assert!(appendix.contains("`@ascii-tolower b`"));
+    assert!(appendix.contains("`@utf8-decode buf off`"));
     for repo_term in [
         "corpus",
         "canary",
@@ -286,17 +290,34 @@ fn primer_stdlib_appendix_examples_validate() {
     let blocks = extract_tacit_blocks(appendix);
     assert_eq!(
         blocks.len(),
-        9,
+        17,
         "expected one fixture-checked Tacit block per stdlib appendix example"
     );
+
+    let appendix_primitives = [
+        "@i64-",
+        "@line-index",
+        "@token-index",
+        "@range-",
+        "@sort-i64",
+        "@sort-ranges-by-bytes",
+        "@stable-sort-pairs-i64",
+        "@lower-bound-i64",
+        "@count-equal-ranges",
+        "@dedup-adjacent-ranges",
+        "@stdin-slurp",
+        "@write-range",
+        "@buf-rev",
+        "@ascii-",
+        "@utf8-",
+    ];
 
     for (idx, block) in blocks.iter().enumerate() {
         assert_eq!(expectation(&block.info), Expectation::Success);
         assert!(
-            block.source.contains("@i64-")
-                || block.source.contains("@line-index")
-                || block.source.contains("@token-index")
-                || block.source.contains("@range-"),
+            appendix_primitives
+                .iter()
+                .any(|primitive| block.source.contains(primitive)),
             "stdlib appendix example at line {} should exercise stdlib primitives",
             block.line
         );

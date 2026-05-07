@@ -34,7 +34,17 @@ fn canonicalize_render_hash_stability() {
     assert!(d.join("prog.tacd").exists(), ".tacd not written");
 
     // Step 2: render --as authoring → prog.taca2
-    let out2 = tacit(&["render", "prog.tac", "--as", "authoring", "-o", "prog2.taca"], d);
+    let out2 = tacit(
+        &[
+            "render",
+            "prog.tac",
+            "--as",
+            "authoring",
+            "-o",
+            "prog2.taca",
+        ],
+        d,
+    );
     assert!(
         out2.status.success(),
         "render step 2 failed: {}",
@@ -54,7 +64,8 @@ fn canonicalize_render_hash_stability() {
     let bytes1 = std::fs::read(d.join("prog.tac")).unwrap();
     let bytes2 = std::fs::read(d.join("prog2.tac")).unwrap();
     assert_eq!(
-        bytes1, bytes2,
+        bytes1,
+        bytes2,
         "canonical bytes differ after round-trip: {:?} vs {:?}",
         String::from_utf8_lossy(&bytes1),
         String::from_utf8_lossy(&bytes2),
@@ -93,7 +104,11 @@ fn render_authoring_to_stdout() {
     assert!(out1.status.success());
 
     let out2 = tacit(&["render", "prog.tac"], d);
-    assert!(out2.status.success(), "{}", String::from_utf8_lossy(&out2.stderr));
+    assert!(
+        out2.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out2.stderr)
+    );
     let rendered = String::from_utf8_lossy(&out2.stdout);
     assert!(!rendered.is_empty(), "stdout should not be empty");
 }
@@ -108,7 +123,10 @@ fn render_authoring_rejects_non_taca_output() {
     let _ = tacit(&["canonicalize", "prog.taca"], d);
 
     let out = tacit(&["render", "prog.tac", "-o", "out.txt"], d);
-    assert!(!out.status.success(), "expected failure for .txt output path");
+    assert!(
+        !out.status.success(),
+        "expected failure for .txt output path"
+    );
 }
 
 /// load_canonical: view accepts both .tac and .taca input.
@@ -122,10 +140,18 @@ fn view_accepts_tac_and_taca() {
 
     // view a .taca (authoring) file directly
     let out1 = tacit(&["view", "--as", "authoring", "prog.taca"], d);
-    assert!(out1.status.success(), "{}", String::from_utf8_lossy(&out1.stderr));
+    assert!(
+        out1.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out1.stderr)
+    );
 
     // canonicalize, then view the .tac (canonical) file
     let _ = tacit(&["canonicalize", "prog.taca"], d);
     let out2 = tacit(&["view", "--as", "authoring", "prog.tac"], d);
-    assert!(out2.status.success(), "{}", String::from_utf8_lossy(&out2.stderr));
+    assert!(
+        out2.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out2.stderr)
+    );
 }

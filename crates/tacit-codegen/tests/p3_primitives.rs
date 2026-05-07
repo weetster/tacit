@@ -12,8 +12,8 @@ use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use tacit_codegen::compile::compile_to_object;
 use tacit_canonical::parse as parse_canonical;
+use tacit_codegen::compile::compile_to_object;
 
 fn examples_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
