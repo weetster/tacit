@@ -133,6 +133,7 @@ class TurnResult:
     raw_output: str | None
     source: str | None
     failure_stage: FailureStage | None
+    structural_equivalent: bool = False
     test_failures: tuple[TestFailureDetail, ...] = ()
 
     @property
@@ -183,6 +184,7 @@ class TaskMetric:
     diagnostics: dict[str, Any] | None
     duration_ms: int
     retries: int
+    structural_equivalent: bool = False
     repair: RepairMetric | None = None
 
     def to_json(self) -> dict[str, Any]:
@@ -198,6 +200,7 @@ class TaskMetric:
             "diagnostics": self.diagnostics,
             "duration_ms": self.duration_ms,
             "retries": self.retries,
+            "structural_equivalent": self.structural_equivalent,
         }
         if self.repair is not None:
             data.update(self.repair.to_json())
@@ -1058,19 +1061,38 @@ def grade_source(
     )
 
 
-def synthesize_sidecar(task: EvalTask, generated_source: Path) -> None:
-    sidecar_path = generated_source.with_suffix(generated_source.suffix + ".sidecar.toml")
-    harness_spec = task.task_dir / "harness-spec.toml"
-    reference_sidecar = task.task_dir / "reference.tac.sidecar.toml"
-    if harness_spec.is_file():
-        shutil.copyfile(harness_spec, sidecar_path)
-    elif reference_sidecar.is_file():
-        shutil.copyfile(reference_sidecar, sidecar_path)
-    else:
-        sidecar_path.write_text(
-            '[types.main]\ntype = "Int"\neffects = ["Alloc", "IO", "Mut"]\n',
-            encoding="utf-8",
-        )
+def _canonicalize_and_hash(tacit_bin: Path, authoring_path: Path) -> str | None:
+    """Canonicalize a .taca file and return the BLAKE3 hash of the canonical bytes.
+
+    Returns None if canonicalization fails (parse error, hole nodes, etc.).
+    """
+    proc = subprocess.run(
+        [str(tacit_bin), "canonicalize", "--strict", str(authoring_path)],
+        capture_output=True,
+        timeout=30,
+    )
+    if proc.returncode != 0:
+        return None
+    tacd_path = authoring_path.with_suffix(".tacd")
+    if not tacd_path.is_file():
+        return None
+    try:
+        data = json.loads(tacd_path.read_text(encoding="utf-8"))
+        return data.get("targets_hash_blake3")
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def _reference_hash(task: EvalTask) -> str | None:
+    """Return the BLAKE3 hash from the task's reference.tacd, or None if absent."""
+    tacd_path = task.task_dir / "reference.tacd"
+    if not tacd_path.is_file():
+        return None
+    try:
+        data = json.loads(tacd_path.read_text(encoding="utf-8"))
+        return data.get("targets_hash_blake3")
+    except (json.JSONDecodeError, OSError):
+        return None
 
 
 def failure_dir(base: Path, run_id: str, task_id: str) -> Path:
@@ -1094,7 +1116,7 @@ def capture_failure(
     if raw_output is not None:
         (path / "raw-response.txt").write_text(raw_output, encoding="utf-8")
     if source is not None:
-        (path / "generated.tac").write_text(source, encoding="utf-8")
+        (path / "generated.taca").write_text(source, encoding="utf-8")
     if diagnostics is not None:
         (path / "diagnostics.json").write_text(
             json.dumps(diagnostics, indent=2, sort_keys=True) + "\n",
@@ -1103,7 +1125,7 @@ def capture_failure(
 
 
 def _dry_run_response(task: EvalTask) -> ModelResponse:
-    reference = task.task_dir / "reference.tac"
+    reference = task.task_dir / "reference.taca"
     if not reference.is_file():
         return ModelResponse(
             text="```tacit\n0\n```",
@@ -1259,10 +1281,18 @@ def evaluate_turn(
 
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
-        generated = tmp / "generated.tac"
+        generated = tmp / "generated.taca"
         binary = tmp / "generated"
         generated.write_text(extraction.source, encoding="utf-8")
-        synthesize_sidecar(task, generated)
+
+        canonical_hash = _canonicalize_and_hash(tacit_bin, generated)
+        reference_hash = _reference_hash(task)
+        structural_equivalent = (
+            canonical_hash is not None
+            and reference_hash is not None
+            and canonical_hash == reference_hash
+        )
+
         grade = grade_source(
             tacit_bin=tacit_bin,
             task=task,
@@ -1295,6 +1325,7 @@ def evaluate_turn(
         raw_output=raw_output,
         source=extraction.source,
         failure_stage=grade.failure_stage,
+        structural_equivalent=structural_equivalent,
         test_failures=grade.test_failures,
     )
 
@@ -1412,6 +1443,7 @@ def evaluate_task(
         diagnostics=primary.diagnostics,
         duration_ms=duration_ms,
         retries=sum(turn.retries for turn in turns),
+        structural_equivalent=primary.structural_equivalent,
         repair=repair,
     )
 
