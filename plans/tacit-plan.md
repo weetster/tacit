@@ -70,6 +70,7 @@ These decisions define the shape of Tacit-Lite. They are deliberately chosen to 
 - Self-hosting (bootstrap compiler in Tacit itself — only attempt once language is stable)
 - Multiple parallel representations of same logic (4x token multiplier not worth the consistency benefit)
 - Mandatory performance contracts (optional annotations only)
+- Synthetic training corpus / fine-tuning. Was originally planned as a conditional Phase 5 ("urgent if primer-only fluency falls short"). Phase 3 measured primer-only fluency at 97.9% Sonnet (library-mediated) and 91.5% GPT-5.4 (primer-only) per [ADR 0070](../decisions/0070-p3-frozen.md), so the triggering condition cannot fire. Re-open only if Phase 4+ language-shape work materially degrades fluency.
 
 ---
 
@@ -226,35 +227,37 @@ Deliverables:
 
 Exit criteria: Sonnet achieves > 70% pass rate on a defined task corpus using only the primer in context, AND end-to-end token usage is at least 30% lower than equivalent Python. The maintenance and cross-family sub-tracks each have their own success criteria, not yet defined; they are reported alongside the primary gate but are not part of the go/no-go decision in Phase 3 itself. A material cross-family regression (e.g. open-weight pass rate collapses) is grounds for re-opening the primer design rather than a Phase-3 fail.
 
-### Phase 4: Inspection and debugging tooling
+### Phase 4: Language-surface expansion
 
-**Goal:** Make Tacit debuggable by AI and inspectable by humans.
+**Goal:** Close the dominant remaining structural gap from Phase 3 — the no-tuples / no-closures / no-higher-order-combinators ceiling — by expanding Tacit-Lite's language surface. Per [ADR 0070](../decisions/0070-p3-frozen.md) § Strategic direction, this is the binding scope for Phase 4: language-shape work justified primarily as "reasoning support" rather than density chase.
 
 Deliverables:
-- `tacit-view foo.tac` — render AST in any registered view (authoring, inspection, and future views like data-flow or dependency)
-- `tacit-debug` — **AI-first CLI debugger**: step through execution, inspect values and types at any AST node, emit structured JSON output designed for AI consumption rather than human terminal readability
-- `tacit-diff` — structural diff over AST (ignores cosmetic renames, node ID reshuffling)
-- `tacit-blame` — AST history traversal
-- Git integration: `.gitattributes` config so standard git operations fall back gracefully on canonical text
+- **Tuples / records.** Value-level product types with structural typing, addressing the pattern-5 multi-return failure mode from [ADR 0070](../decisions/0070-p3-frozen.md). The tuples-vs-records-vs-both choice is an early Phase 4 ADR decision.
+- **Closures / first-class function values.** Generalizes the closed-lambda surface of [ADR 0026](../decisions/0026-closed-lambda-surface.md) so functions can be passed, returned, and stored. Free-variable capture, escape analysis, and codegen-time closure conversion.
+- **Higher-order combinators.** `map`, `fold`, `for-each` and similar shapes over collections — not expressible without the value-of-function story above.
+- **Effect-system extension for closures.** Function values carry an effect signature; capture sites reconcile effect rows. A modest extension to the Lite effect lattice ([ADR 0035](../decisions/0035-p2-effect-set-canonical.md)), not a move to row polymorphism (which remains Phase 7).
+- **Primer revision.** Extend the Phase 3 primer with the new constructs, idioms, and worked examples; re-baseline the primer token budget against the expanded surface.
+- **Corpus re-evaluation.** Re-run the Phase 3 open and held-out corpora against models with the new primer. Report per-task density delta vs the Phase 3 baseline and per-model fluency delta.
+- **Density baseline switch.** `corpus-tokens` reporting promotes the Rust ratio to primary and demotes the Python ratio to descriptive (per [ADR 0070](../decisions/0070-p3-frozen.md) § item 4). Phase 4 *may* set a Rust-relative aspiration (e.g., ≤ 1.5× Rust on the corpus); it *may not* set a Python-relative gate.
+
+Deliberately out of scope: refinement types, effect handlers, user-defined effects, row polymorphism, capabilities — all Phase 7. Concurrency remains absent.
+
+Exit criteria: tuples/records, closures, and at least the `map`/`fold`/`for-each` family compile, typecheck, and execute correctly on a Phase 4 smoke corpus. Corpus re-evaluation shows non-regression on Phase 3 fluency metrics and a measurable Rust-density improvement on the open corpus. The Phase 4 plan ADR (forthcoming `plans/phase-4-plan.md`) is the binding scope artifact.
+
+### Phase 5: Inspection and debugging tooling
+
+**Goal:** Make Tacit debuggable by AI and inspectable by humans. Sequenced after Phase 4 because the existing inspection surface — structured error output ([ADR 0041](../decisions/0041-p2-structured-error-format.md)), `tacit view --types --effects`, and the `corpus-eval` repair loop — already covers the load-bearing inspection needs for advancing the language. Tooling becomes load-bearing once programs grow past the Phase 4 surface and exceed what the existing views and error format make legible.
+
+Deliverables:
+- `tacit view` extensions — registered-view system supporting authoring, inspection, and future views (data-flow, dependency). Phase 1–2 already shipped the renderer; Phase 5 generalizes it.
+- `tacit-debug` — **AI-first CLI debugger**: step through execution, inspect values and types at any AST node, emit structured JSON output designed for AI consumption rather than human terminal readability.
+- `tacit-diff` — structural diff over AST (ignores cosmetic renames and sidecar shuffles).
+- `tacit-blame` — AST history traversal.
+- Git integration: `.gitattributes` config so standard git operations fall back gracefully on canonical text.
 
 Deferred to stretch: `tacit-merge` (semantic three-way AST merge). Collaborative development isn't a v0 concern, and multiple AI agents concurrently editing the same file isn't a current use case.
 
-Exit criteria: An AI agent can diagnose a failing Tacit program end-to-end using only `tacit-debug` output; a human can read diffs and inspect state through `tacit-view`.
-
-### Phase 5 (conditional): Synthetic training corpus
-
-**Goal:** Generate large-scale aligned pairs for fine-tuning and evaluation.
-
-**Conditional on Phase 3 outcome.** The primary bet is primer-only prompting. If Phase 3 hits its >70% pass-rate target with the primer alone, Phase 5 is deferred indefinitely; fine-tuning becomes a long-term goal only if the project sees public success. If the primer approach falls short, Phase 5 becomes urgent.
-
-Deliverables (if undertaken):
-- Rust-to-Tacit-Lite rule-based transpiler (deterministic, not LLM-based)
-- Corpus of ~1M aligned Rust/Tacit-Lite pairs from public Rust codebases
-- Secondary corpus from Haskell / OCaml (~200K pairs)
-- Quality metrics: percentage of pairs that round-trip correctly, percentage that compile, percentage that preserve behavior under test
-- Held-out evaluation set separate from any fine-tuning corpus
-
-Exit criteria: Corpus is large enough and clean enough that fine-tuning experiments become viable.
+Exit criteria: An AI agent can diagnose a failing Tacit program end-to-end using only `tacit-debug` output; a human can read diffs and inspect state through `tacit view`.
 
 ### Phase 6: Optimization and hardening
 
@@ -324,7 +327,7 @@ No fixed timeline. Deferrable indefinitely.
 **Goal:** Support multiple agents (AI or human) working on the same codebase.
 
 Deliverables:
-- `tacit-merge` — semantic three-way AST merge (pulled forward from Phase 4's deferred list)
+- `tacit-merge` — semantic three-way AST merge (pulled forward from Phase 5's deferred list)
 - Conflict resolution heuristics at the AST node level
 - Integration with review tooling (GitHub-like interfaces that render views of diffs)
 
@@ -334,40 +337,46 @@ Prerequisites: real use cases justifying the complexity. Not a v0 concern.
 
 ## Open Questions
 
-These need answers before or during Phase 0:
+Phase 0–3 questions are all resolved (Phase 0–2 in their respective freeze ADRs; Phase 3's Q-P3-1 through Q-P3-9 closed by [ADR 0056](../decisions/0056-p3-stage-1-frozen.md), and the phase as a whole by [ADR 0070](../decisions/0070-p3-frozen.md)). The questions below surface for Phase 4 and beyond; the binding enumeration will live in `plans/phase-4-plan.md` once written.
 
-1. **Authoring view format.** S-expressions over integer IDs? Single-glyph operators? Tokenizer-specific encoding optimized for a target model's BPE? Must round-trip losslessly with the canonical storage view. This is the single most consequential Phase 0 decision — primer, eval harness, and model fluency all depend on it.
-2. **Effect polymorphism surface syntax.** How effect variables appear in signatures, especially in higher-order functions; how effect mismatches are rendered in the inspection view.
-3. **Scope of libc wrappers for v0.** *Resolved 2026-04-24 by [ADR 0025](../decisions/0025-phase-1-libc-surface.md):* Phase 1's libc surface is three OS-boundary symbols (`write`, `read`, `exit`); pure-compute libc functions are not used. Effect signatures live in `stdlib/libc-effects.toml` as a dormant table for Phase 2's checker. The broader architectural framing — pure computational kernel with in-language stdlib, ecosystem-library impurity quarantined to the host — is settled by [ADR 0022](../decisions/0022-pure-kernel-host-model.md); libc remains the stdlib's backing implementation until Phase 10's scratch stdlib replaces it with direct syscalls.
-4. **Testing conventions.** How are tests expressed in Tacit? As regular functions with a marker, or as a separate construct?
-5. **Metadata sidecar format.** JSON? A separate canonical-text format? How tightly coupled to the `.tac` file?
-6. **License.** Permissive (MIT/Apache-2.0) or copyleft? Affects corpus choices if Phase 5 is undertaken.
-7. **Target tokenizer for authoring view optimization.** Optimize for a specific model family (Claude's tokenizer, GPT's tiktoken) or aim for tokenizer-agnostic density? A specific target yields sharper wins but creates a dependency.
+**Phase 4 (language surface):**
+
+1. **Tuples vs records vs both.** Pattern-5 from Phase 3 motivates product types; the design choice is open. Tuples-only (positional, lighter) and records-only (named fields, structural-typing-friendly) both have working precedents. Decide via early Phase 4 ADR.
+2. **Closure representation.** Free-variable capture rules, escape analysis, and the codegen-time closure conversion strategy. Affects how effect rows propagate through function values.
+3. **Higher-order combinator surface.** Named `@map` / `@fold` / `@for-each` primitives extending the [ADR 0047](../decisions/0047-p3-stdlib-expansion-surface.md) family, or syntactic combinators in the AST? The closure story above is a prerequisite either way.
+4. **Effect-row extension shape.** The Lite lattice ([ADR 0035](../decisions/0035-p2-effect-set-canonical.md)) needs minimal extension to carry closure-captured effects without drifting into row polymorphism (which remains Phase 7).
+5. **Testing conventions.** How tests are expressed in Tacit — regular functions with a marker, or a separate construct. Deferred from earlier phases; becomes pressing as the language surface and corpus grow.
+
+**Cross-phase / project-level:**
+
+6. **License.** Permissive (MIT/Apache-2.0) or copyleft. Still open; low urgency until external distribution is on the table.
 
 ---
 
 ## Risk Register
 
 **Risk: Nobody can write Tacit without AI assistance.**
-Mitigation: This is by design for the long term, but early development needs human contributors. Ship `tacit-view` early (Phase 4) so humans can inspect at least. Keep Tacit-Lite semantics close enough to Rust that a human can reason about it with effort.
+Mitigation: This is by design for the long term, but early development needs human contributors. `tacit view` shipped in Phase 1 with type/effect annotations added in Phase 2; Phase 5 extends it. Keep Tacit-Lite semantics close enough to Rust that a human can reason about it with effort.
 
-**Risk: AI models don't learn Tacit well from primers alone.**
-Mitigation: Phase 3 measures this directly. If baseline performance is poor, Phase 5's synthetic corpus becomes urgent. Worst case, the project becomes a fine-tuning project rather than a prompting project.
+**Risk: AI models don't learn Tacit well from primers alone.** *Resolved by Phase 3.* Sonnet hit 97.9% library-mediated and GPT-5.4 91.5% primer-only on the open corpus per [ADR 0070](../decisions/0070-p3-frozen.md). Tracked forward as a Phase 4 regression watch: a material fluency drop after the language-surface expansion re-opens the question.
 
 **Risk: LLVM churn or breaking changes.**
-Mitigation: Pin LLVM version. The `inkwell` crate handles a lot of this.
+Mitigation: Pin LLVM version (LLVM 19 via `inkwell` 0.9 per [ADR 0032](../decisions/0032-stage-4-frozen.md)). Bumps are deliberate release-engineering tasks.
 
 **Risk: Scope creep toward Tacit-Full before Tacit-Lite is solid.**
 Mitigation: Discipline. Phase 7 is explicitly stretch. Do not start refinement types before Phase 6 is complete.
 
-**Risk: Effect system creep in Phase 2.**
-Mitigation: Phase 2 is scoped to simple effects — fixed lattice, basic polymorphism, no handlers. Effect systems are notorious for nerd-sniping compiler authors into research-grade complexity (Koka took years to nail handler-style effects). If we find ourselves designing row polymorphism or user-defined effects, stop and move it to Phase 7.
+**Risk: Effect system creep in Phase 4.**
+Mitigation: Phase 4 extends the existing fixed lattice ([ADR 0035](../decisions/0035-p2-effect-set-canonical.md)) only as far as closure-capture requires. Row polymorphism, handlers, and user-defined effects remain Phase 7. If the closure-effect story drifts toward research-grade machinery, stop and defer.
+
+**Risk: Tuples-vs-records-vs-both indecision in Phase 4.**
+Mitigation: Resolve early in Phase 4 via ADR. Both have working precedents (Rust tuples + structs, OCaml tuples + records, Haskell records). The risk is open-ended litigation, not a wrong answer.
 
 **Risk: View system treated as UI instead of core infrastructure.**
-Mitigation: Two views in Phase 0/1, not one. If the authoring view is the only thing implemented and the inspection view is postponed, it effectively *becomes* the canonical form and the view abstraction rots. Keep both real from the start, even if the inspection view is minimal.
+Mitigation: Two views from Phase 1, both real. Phase 5's tooling work generalizes the existing view system; it does not retrofit one.
 
-**Risk: The token savings don't materialize in practice.**
-Mitigation: Phase 3's evaluation harness measures real tokens on real tasks. If savings are less than 30% vs equivalent Python, reconsider the project's premise before continuing.
+**Risk: Phase 3's structural findings don't translate into Phase 4 wins.**
+Mitigation: Phase 3 identified pattern-5 (multi-return / accumulator threading) as the dominant token-density blocker. If tuples + closures + combinators do not measurably reduce Rust-relative density on the corpus, the structural-positioning thesis from [ADR 0070](../decisions/0070-p3-frozen.md) needs re-examination, not more language surface.
 
 **Risk: Nobody uses it.**
 Mitigation: Accept this. The stated worst case is "waste tokens and have fun." Publishing a design paper is a valid outcome even if nobody adopts the language.
@@ -376,8 +385,10 @@ Mitigation: Accept this. The stated worst case is "waste tokens and have fun." P
 
 ## Success Criteria
 
-**Minimum viable success:** Phase 3 complete, with a working compiler and a primer that lets Sonnet write Tacit-Lite competently on a defined task set. This alone is publishable as a research artifact.
+**Minimum viable success:** *Achieved.* Phase 3 closed with a working compiler, a primer, and frontier-model fluency on Tacit-Lite (97.9% Sonnet library-mediated, 91.5% GPT-5.4 primer-only) per [ADR 0070](../decisions/0070-p3-frozen.md). The primer-only thesis is empirically established; the artifact is publishable as-is.
 
-**Strong success:** Phase 6 complete, with measured token savings over Python and at-parity performance with Rust. Publishable with comparative benchmarks.
+**Reasoning-support success:** Phase 4 complete, with tuples/records, closures, and higher-order combinators landed; Phase 3 fluency holds or improves under the expanded surface; and Rust-relative density on the corpus measurably narrows from the Phase 3 baseline (2.92×). This is the pivot promised by [ADR 0070](../decisions/0070-p3-frozen.md) § Strategic direction — structural reasoning support, not Python-relative density chase.
+
+**Strong success:** Phase 6 complete, with Tacit-Lite within 20% of hand-written Rust on standard benchmarks and a Phase 4-era Rust-density aspiration met (e.g., ≤ 1.5× Rust on the corpus). Publishable with comparative benchmarks.
 
 **Ambitious success:** Phase 7 or 8 complete, demonstrating that AI-first languages can offer genuinely new capabilities (proof-carrying code at scale, or self-hosting without human maintainers).
