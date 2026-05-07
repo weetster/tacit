@@ -41,8 +41,8 @@ Locked decisions:
   does not set a numeric Rust-relative gate; measurable movement is expected,
   and failure to move is recorded as a strategic finding in the freeze ADR.
 
-Stage 1 and Stage 2 are complete; Stage 3 may begin with closure/function-value
-design.
+Stage 1, Stage 2, and Stage 3 are complete; Stage 4 may begin with closure and
+function-value implementation.
 
 ## Goal
 
@@ -87,16 +87,18 @@ gaps, but not as a Phase 4 density play.
 | --- | --- | --- |
 | Q-P4-1 | Product type choice: tuples, records, or both? | Resolved by [ADR 0072](../decisions/0072-p4-record-products.md): records first, tuples deferred |
 | Q-P4-2 | Product syntax, canonical form, projection, destructuring, and patterns | Resolved by [ADR 0072](../decisions/0072-p4-record-products.md): existing `record` / `proj`, projection-based destructuring, no record patterns |
-| Q-P4-3 | Closure representation, capture rules, environment layout, and ABI | Stage 3 ADR |
-| Q-P4-4 | Function-value effect signatures and closure-captured effects | Stage 3 ADR |
+| Q-P4-3 | Closure representation, capture rules, environment layout, and ABI | Resolved by [ADR 0073](../decisions/0073-p4-function-values-and-closures.md): minimized by-value captures, two-word closure pair |
+| Q-P4-4 | Function-value effect signatures and closure-captured effects | Resolved by [ADR 0073](../decisions/0073-p4-function-values-and-closures.md): `fn-ty` call effects, no row polymorphism |
 | Q-P4-5 | Higher-order combinator surface: primitives or core-language constructs | Stage 5 ADR |
 | Q-P4-6 | Testing conventions for larger Tacit programs | Stage 6 or Stage 7 ADR |
 
 ## Required ADR Sequence
 
 1. Product types. Done: [ADR 0072](../decisions/0072-p4-record-products.md).
-2. Closure representation and function values.
-3. Closure effect handling, unless folded cleanly into the closure ADR.
+2. Closure representation and function values. Done:
+   [ADR 0073](../decisions/0073-p4-function-values-and-closures.md).
+3. Closure effect handling. Done: folded into
+   [ADR 0073](../decisions/0073-p4-function-values-and-closures.md).
 4. Higher-order combinator surface.
 5. Phase 4 testing conventions, if existing conventions are insufficient.
 6. Phase 4 freeze.
@@ -197,7 +199,21 @@ Exit criteria:
 
 ## Stage 3: Closure And Function-Value Design
 
+**Status:** Complete
+
 **Purpose:** Lift ADR 0026's closed-lambda restriction deliberately.
+
+Decision summary:
+
+- Function values lower as closure pairs: code pointer plus immutable
+  environment pointer.
+- Capture sets are minimized, by value, and deterministic by DeBruijn index.
+- Direct calls for known saturated lambda chains and `rec` members are
+  preserved as optimizations.
+- Function call effects remain in `fn-ty`; compiler-managed closure storage is
+  not a source-level `Alloc` effect.
+- `Buf` and `I64Vec` handles remain non-escapable and cannot be captured by
+  first-class closures.
 
 Work items:
 

@@ -4,6 +4,7 @@
 **Date:** 2026-04-27
 **Phase:** 2, Stage 1
 **Closes:** [phase-2-plan.md Q-P2-8](../plans/phase-2-plan.md)
+**Amended by:** [ADR 0073](0073-p4-function-values-and-closures.md)
 
 ## Context
 
@@ -152,6 +153,8 @@ Used for:
 | `module-missing-annotation` | warning  | Exported binding has no type+effect signature.      |
 | `operator-overload-failure` | error    | Operator applied to operands with incompatible types.|
 | `buf-escape`                | error    | Buffer handle used outside its `let` scope.         |
+| `apply-non-function`        | error    | `app` function position has a non-function type.    |
+| `invalid-capture`           | error    | Closure capture set includes a non-capturable value.|
 
 **Effect errors (`tacit-typecheck` crate):**
 

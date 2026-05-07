@@ -88,3 +88,4 @@ Keep ADRs short. They record the decision, not the full analysis that led to it.
 - [0070 — Phase 3 frozen](0070-p3-frozen.md)
 - [0071 — Storage format reconciliation: `.tac` is canonical, `.taca` is transient authoring](0071-storage-format-reconciliation.md)
 - [0072 — Phase 4 product types: records first, tuples deferred](0072-p4-record-products.md)
+- [0073 — Phase 4 function values and closures](0073-p4-function-values-and-closures.md)
