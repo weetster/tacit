@@ -232,7 +232,7 @@ Exit criteria: Sonnet achieves > 70% pass rate on a defined task corpus using on
 **Goal:** Close the dominant remaining structural gap from Phase 3 — the no-tuples / no-closures / no-higher-order-combinators ceiling — by expanding Tacit-Lite's language surface. Per [ADR 0070](../decisions/0070-p3-frozen.md) § Strategic direction, this is the binding scope for Phase 4: language-shape work justified primarily as "reasoning support" rather than density chase.
 
 Deliverables:
-- **Tuples / records.** Value-level product types with structural typing, addressing the pattern-5 multi-return failure mode from [ADR 0070](../decisions/0070-p3-frozen.md). The tuples-vs-records-vs-both choice is an early Phase 4 ADR decision.
+- **Records first.** Value-level product types with structural typing, addressing the pattern-5 multi-return failure mode from [ADR 0070](../decisions/0070-p3-frozen.md). [ADR 0072](../decisions/0072-p4-record-products.md) resolves the tuples-vs-records-vs-both choice: records are the Phase 4 product type, tuple syntax is deferred.
 - **Closures / first-class function values.** Generalizes the closed-lambda surface of [ADR 0026](../decisions/0026-closed-lambda-surface.md) so functions can be passed, returned, and stored. Free-variable capture, escape analysis, and codegen-time closure conversion.
 - **Higher-order combinators.** `map`, `fold`, `for-each` and similar shapes over collections — not expressible without the value-of-function story above.
 - **Effect-system extension for closures.** Function values carry an effect signature; capture sites reconcile effect rows. A modest extension to the Lite effect lattice ([ADR 0035](../decisions/0035-p2-effect-set-canonical.md)), not a move to row polymorphism (which remains Phase 7).
@@ -242,7 +242,7 @@ Deliverables:
 
 Deliberately out of scope: refinement types, effect handlers, user-defined effects, row polymorphism, capabilities — all Phase 7. Concurrency remains absent.
 
-Exit criteria: tuples/records, closures, and at least the `map`/`fold`/`for-each` family compile, typecheck, and execute correctly on a Phase 4 smoke corpus. Corpus re-evaluation shows non-regression on Phase 3 fluency metrics and a measurable Rust-density improvement on the open corpus. The Phase 4 plan ADR (forthcoming `plans/phase-4-plan.md`) is the binding scope artifact.
+Exit criteria: records, closures, and at least the `map`/`fold`/`for-each` family compile, typecheck, and execute correctly on a Phase 4 smoke corpus. Corpus re-evaluation shows non-regression on Phase 3 fluency metrics and a measurable Rust-density improvement on the open corpus. `plans/phase-4-plan.md` is the binding scope artifact.
 
 ### Phase 5: Inspection and debugging tooling
 
@@ -337,7 +337,7 @@ Prerequisites: real use cases justifying the complexity. Not a v0 concern.
 
 ## Open Questions
 
-Phase 0–3 questions are all resolved (Phase 0–2 in their respective freeze ADRs; Phase 3's Q-P3-1 through Q-P3-9 closed by [ADR 0056](../decisions/0056-p3-stage-1-frozen.md), and the phase as a whole by [ADR 0070](../decisions/0070-p3-frozen.md)). The questions below surface for Phase 4 and beyond; the binding enumeration will live in `plans/phase-4-plan.md` once written.
+Phase 0–3 questions are all resolved (Phase 0–2 in their respective freeze ADRs; Phase 3's Q-P3-1 through Q-P3-9 closed by [ADR 0056](../decisions/0056-p3-stage-1-frozen.md), and the phase as a whole by [ADR 0070](../decisions/0070-p3-frozen.md)). The questions below surface for Phase 4 and beyond; the binding enumeration lives in `plans/phase-4-plan.md`.
 
 **Phase 4 (language surface):**
 
@@ -369,14 +369,14 @@ Mitigation: Discipline. Phase 7 is explicitly stretch. Do not start refinement t
 **Risk: Effect system creep in Phase 4.**
 Mitigation: Phase 4 extends the existing fixed lattice ([ADR 0035](../decisions/0035-p2-effect-set-canonical.md)) only as far as closure-capture requires. Row polymorphism, handlers, and user-defined effects remain Phase 7. If the closure-effect story drifts toward research-grade machinery, stop and defer.
 
-**Risk: Tuples-vs-records-vs-both indecision in Phase 4.**
-Mitigation: Resolve early in Phase 4 via ADR. Both have working precedents (Rust tuples + structs, OCaml tuples + records, Haskell records). The risk is open-ended litigation, not a wrong answer.
+**Risk: Record-first products do not address the Phase 3 structural gap.**
+Mitigation: [ADR 0072](../decisions/0072-p4-record-products.md) defers tuple syntax rather than rejecting it permanently. If records plus projection do not measurably improve the target examples, re-open tuple syntax with corpus evidence.
 
 **Risk: View system treated as UI instead of core infrastructure.**
 Mitigation: Two views from Phase 1, both real. Phase 5's tooling work generalizes the existing view system; it does not retrofit one.
 
 **Risk: Phase 3's structural findings don't translate into Phase 4 wins.**
-Mitigation: Phase 3 identified pattern-5 (multi-return / accumulator threading) as the dominant token-density blocker. If tuples + closures + combinators do not measurably reduce Rust-relative density on the corpus, the structural-positioning thesis from [ADR 0070](../decisions/0070-p3-frozen.md) needs re-examination, not more language surface.
+Mitigation: Phase 3 identified pattern-5 (multi-return / accumulator threading) as the dominant token-density blocker. If records + closures + combinators do not measurably reduce Rust-relative density on the corpus, the structural-positioning thesis from [ADR 0070](../decisions/0070-p3-frozen.md) needs re-examination, not more language surface.
 
 **Risk: Nobody uses it.**
 Mitigation: Accept this. The stated worst case is "waste tokens and have fun." Publishing a design paper is a valid outcome even if nobody adopts the language.
@@ -387,7 +387,7 @@ Mitigation: Accept this. The stated worst case is "waste tokens and have fun." P
 
 **Minimum viable success:** *Achieved.* Phase 3 closed with a working compiler, a primer, and frontier-model fluency on Tacit-Lite (97.9% Sonnet library-mediated, 91.5% GPT-5.4 primer-only) per [ADR 0070](../decisions/0070-p3-frozen.md). The primer-only thesis is empirically established; the artifact is publishable as-is.
 
-**Reasoning-support success:** Phase 4 complete, with tuples/records, closures, and higher-order combinators landed; Phase 3 fluency holds or improves under the expanded surface; and Rust-relative density on the corpus measurably narrows from the Phase 3 baseline (2.92×). This is the pivot promised by [ADR 0070](../decisions/0070-p3-frozen.md) § Strategic direction — structural reasoning support, not Python-relative density chase.
+**Reasoning-support success:** Phase 4 complete, with records, closures, and higher-order combinators landed; Phase 3 fluency holds or improves under the expanded surface; and Rust-relative density on the corpus measurably narrows from the Phase 3 baseline (2.92×). This is the pivot promised by [ADR 0070](../decisions/0070-p3-frozen.md) § Strategic direction — structural reasoning support, not Python-relative density chase.
 
 **Strong success:** Phase 6 complete, with Tacit-Lite within 20% of hand-written Rust on standard benchmarks and a Phase 4-era Rust-density aspiration met (e.g., ≤ 1.5× Rust on the corpus). Publishable with comparative benchmarks.
 

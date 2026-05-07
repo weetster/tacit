@@ -86,3 +86,5 @@ Keep ADRs short. They record the decision, not the full analysis that led to it.
 - [0068 — Phase 3 stdlib Bundle F: ASCII classification and case](0068-p3-stdlib-bundle-f-ascii-classification.md)
 - [0069 — Phase 3 stdlib Bundle G: UTF-8 codepoint decode and encode](0069-p3-stdlib-bundle-g-utf8-codepoints.md)
 - [0070 — Phase 3 frozen](0070-p3-frozen.md)
+- [0071 — Storage format reconciliation: `.tac` is canonical, `.taca` is transient authoring](0071-storage-format-reconciliation.md)
+- [0072 — Phase 4 product types: records first, tuples deferred](0072-p4-record-products.md)

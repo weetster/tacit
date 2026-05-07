@@ -2,7 +2,7 @@
 
 Tacit is an AI-first programming language. See [plans/tacit-plan.md](plans/tacit-plan.md) for the full vision and [plans/phase-3-plan.md](plans/phase-3-plan.md) for the just-frozen phase.
 
-**Current phase: Phase 3 complete; Phase 4 is next.** Phase 3 is frozen ([ADR 0070](decisions/0070-p3-frozen.md)); the Python-relative density gate was retired as structurally miscalibrated and density work going forward tracks against Rust. Phase 2 is frozen ([ADR 0046](decisions/0046-p2-stage-5-frozen.md)). Phase 1 is frozen ([ADR 0033](decisions/0033-phase-1-frozen.md)). Phase 4 scope will live in `plans/phase-4-plan.md` (not yet created).
+**Current phase: Phase 4 active.** Phase 3 is frozen ([ADR 0070](decisions/0070-p3-frozen.md)); the Python-relative density gate was retired as structurally miscalibrated and density work going forward tracks against Rust. Phase 2 is frozen ([ADR 0046](decisions/0046-p2-stage-5-frozen.md)). Phase 1 is frozen ([ADR 0033](decisions/0033-phase-1-frozen.md)). Phase 4 scope lives in `plans/phase-4-plan.md`.
 
 ## What Phase 1 produced (frozen baseline)
 
@@ -83,10 +83,10 @@ CI lives at `.github/workflows/ci.yml`: Python (`uv run pytest`), Rust (`cargo f
 
 ## Open questions
 
-All Phase 0, Phase 1, Phase 2, and Phase 3 open questions are resolved (Q-P3-1 through Q-P3-9 closed by [ADR 0056](decisions/0056-p3-stage-1-frozen.md); the Phase 3 freeze itself is [ADR 0070](decisions/0070-p3-frozen.md)). Phase 4 questions surface as the language-shape work (tuples / records, closures, higher-order combinators) begins; they will be enumerated in `plans/phase-4-plan.md` (not yet created).
+All Phase 0, Phase 1, Phase 2, and Phase 3 open questions are resolved (Q-P3-1 through Q-P3-9 closed by [ADR 0056](decisions/0056-p3-stage-1-frozen.md); the Phase 3 freeze itself is [ADR 0070](decisions/0070-p3-frozen.md)). Phase 4 questions are enumerated in `plans/phase-4-plan.md` as Q-P4-1 through Q-P4-6.
 
 ## Working style
 
 - Prefer editing existing plan/spec files over creating new ones.
 - When a design choice is made, write the ADR before writing the spec text or code that depends on it.
-- Phase 4 starts with `plans/phase-4-plan.md` before any implementation. Per [ADR 0070 § Strategic direction](decisions/0070-p3-frozen.md), Phase 4 scope is language-shape work (tuples / records, closures, higher-order combinators) and debugging tooling, justified primarily as "reasoning support" rather than density chase. Phase 4 may not relitigate Python-relative density parity. Resist over-abstracting beyond Phase 4's stated scope.
+- Phase 4 is governed by `plans/phase-4-plan.md`. Per [ADR 0070 § Strategic direction](decisions/0070-p3-frozen.md) and [ADR 0072](decisions/0072-p4-record-products.md), Phase 4 scope is language-shape work (records first with tuple syntax deferred, closures, higher-order combinators) and only the inspection/diagnostic tooling required by that surface, justified primarily as "reasoning support" rather than density chase. Phase 4 may not relitigate Python-relative density parity. Resist over-abstracting beyond Phase 4's stated scope.

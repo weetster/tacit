@@ -1,6 +1,6 @@
 # Phase 4 Plan
 
-**Status:** Draft
+**Status:** Active working plan
 **Scope:** Tacit-Lite language-surface expansion
 
 ## Context
@@ -23,6 +23,26 @@ baseline infrastructure:
 All Phase 4 work must preserve that storage model. New tooling must not
 reintroduce authoring-view `.tac` files.
 
+## Stage 0 Outcome
+
+Stage 0 scope lock is complete. Phase 4 is active under this plan.
+
+Locked decisions:
+
+- Phase 4 is language-surface work: product types, first-class closures, and
+  higher-order combinators.
+- Canonical storage reconciliation is baseline infrastructure, not a Phase 4
+  gate.
+- Phase 7 boundaries are locked: no row polymorphism, handlers,
+  user-defined effects, capabilities, refinement types, or concurrency.
+- Phase 5 debugging work is not pulled forward, except for inspection and
+  diagnostics required to make Phase 4 programs reasoned about.
+- Rust-relative density is reported as the primary density comparison. Phase 4
+  does not set a numeric Rust-relative gate; measurable movement is expected,
+  and failure to move is recorded as a strategic finding in the freeze ADR.
+
+Stage 1 is complete; Stage 2 may begin with record codegen.
+
 ## Goal
 
 Close the dominant remaining structural gap from Phase 3: no product types,
@@ -31,7 +51,8 @@ Tacit programs easier to structure, inspect, and repair, not merely shorter.
 
 ## Deliverables
 
-1. Product types: tuples, records, or both, with structural typing.
+1. Record product types with structural typing; tuple syntax is deferred by
+   [ADR 0072](../decisions/0072-p4-record-products.md).
 2. First-class function values and capturing closures.
 3. A minimal closure-effect story that remains inside Tacit-Lite.
 4. Higher-order combinators, at least `map`, `fold`, and `for-each`.
@@ -63,8 +84,8 @@ gaps, but not as a Phase 4 density play.
 
 | ID | Question | Resolution Point |
 | --- | --- | --- |
-| Q-P4-1 | Product type choice: tuples, records, or both? | Stage 1 ADR |
-| Q-P4-2 | Product syntax, canonical form, projection, destructuring, and patterns | Stage 1 ADR |
+| Q-P4-1 | Product type choice: tuples, records, or both? | Resolved by [ADR 0072](../decisions/0072-p4-record-products.md): records first, tuples deferred |
+| Q-P4-2 | Product syntax, canonical form, projection, destructuring, and patterns | Resolved by [ADR 0072](../decisions/0072-p4-record-products.md): existing `record` / `proj`, projection-based destructuring, no record patterns |
 | Q-P4-3 | Closure representation, capture rules, environment layout, and ABI | Stage 3 ADR |
 | Q-P4-4 | Function-value effect signatures and closure-captured effects | Stage 3 ADR |
 | Q-P4-5 | Higher-order combinator surface: primitives or core-language constructs | Stage 5 ADR |
@@ -72,7 +93,7 @@ gaps, but not as a Phase 4 density play.
 
 ## Required ADR Sequence
 
-1. Product types.
+1. Product types. Done: [ADR 0072](../decisions/0072-p4-record-products.md).
 2. Closure representation and function values.
 3. Closure effect handling, unless folded cleanly into the closure ADR.
 4. Higher-order combinator surface.
@@ -83,7 +104,9 @@ The ADRs must land before implementation that depends on them.
 
 ## Stage 0: Scope Lock
 
-**Purpose:** Turn this draft into the binding Phase 4 scope artifact before
+**Status:** Complete
+
+**Purpose:** Turn this plan into the binding Phase 4 scope artifact before
 implementation begins.
 
 Work items:
@@ -104,7 +127,19 @@ Exit criteria:
 
 ## Stage 1: Product-Type Design
 
+**Status:** Complete
+
 **Purpose:** Resolve the first Phase 4 design dependency.
+
+Decision summary:
+
+- Records are the Phase 4 product type.
+- Tuple syntax and tuple canonical nodes are deferred until records have been
+  measured.
+- No canonical-format amendment is required for Stage 2.
+- Product destructuring is projection-based; record patterns are deferred.
+
+Stage 2 may begin with record codegen and product diagnostics.
 
 Work items:
 
@@ -137,7 +172,7 @@ Work items:
 - Extend type inference and structural type checking.
 - Implement codegen representation for product construction and projection.
 - Add diagnostics for wrong arity, missing fields, duplicate fields,
-  incompatible shapes, invalid projection, and invalid destructuring.
+  incompatible shapes, invalid projection, and record type mismatch.
 - Add smoke programs for multi-return, accumulator threading, nested products,
   and product values crossing `let` and `rec`.
 
@@ -318,7 +353,7 @@ Exit criteria:
 
 | Risk | Mitigation |
 | --- | --- |
-| Product-type design stalls on tuples versus records | Resolve in Stage 1 ADR before implementation. Either answer is acceptable if structurally typed and hash-stable. |
+| Record-first product implementation fails to address Phase 3 accumulator threading | Keep tuple syntax deferred, not rejected forever. Re-open with corpus evidence if records do not move the target examples. |
 | Closure work expands into Phase 7 effect machinery | Keep the effect story to fixed-lattice sets plus existing basic effect polymorphism. Stop if row polymorphism becomes necessary. |
 | Combinators become a second stdlib expansion phase | Gate them on closure semantics and implement only the family needed for Phase 4: `map`, `fold`, and `for-each`. |
 | Debugging work expands into Phase 5 | Limit Phase 4 to inspection and diagnostics required for the new surface. |
