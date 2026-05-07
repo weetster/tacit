@@ -74,6 +74,9 @@ jobs:
           ./target/debug/tacit view examples/smoke/hello.tac --as authoring > /dev/null
           ./target/debug/tacit view examples/smoke/hello.tac --as inspection > /dev/null
 
+      - name: Round-trip stability (canonical → authoring → canonical)
+        run: cargo test -p tacit-views --test round_trip_stability
+
       - name: Phase 3 carry-over programs (compile + check)
         run: |
           ./target/debug/tacit check examples/phase-3/sort.tac
