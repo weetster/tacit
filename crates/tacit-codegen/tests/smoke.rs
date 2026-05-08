@@ -271,3 +271,24 @@ fn p4_closure_effectful_callback() {
     assert_eq!(out, b"x\n");
     assert_eq!(code, 0);
 }
+
+#[test]
+fn p4_combinator_map() {
+    let (out, code) = run_smoke("p4-combinator-map");
+    assert!(out.is_empty());
+    assert_eq!(code, 18);
+}
+
+#[test]
+fn p4_combinator_fold() {
+    let (out, code) = run_smoke("p4-combinator-fold");
+    assert!(out.is_empty());
+    assert_eq!(code, 15);
+}
+
+#[test]
+fn p4_combinator_for_each_effectful() {
+    let (out, code) = run_smoke("p4-combinator-for-each-effectful");
+    assert_eq!(out, b"x\nx\n");
+    assert_eq!(code, 0);
+}

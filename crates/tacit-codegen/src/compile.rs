@@ -1012,6 +1012,9 @@ impl<'ctx> Compiler<'ctx> {
             PrimKind::Utf8Decode => self.emit_utf8_decode(args, env, cur_fn),
             PrimKind::Utf8Encode => self.emit_utf8_encode(args, env, cur_fn),
             PrimKind::Utf8Len => self.emit_utf8_len(args, env, cur_fn),
+            PrimKind::Map => self.emit_map_i64(args, env, cur_fn),
+            PrimKind::Fold => self.emit_fold_i64(args, env, cur_fn),
+            PrimKind::ForEach => self.emit_for_each_i64(args, env, cur_fn),
         }
     }
 
@@ -2035,6 +2038,197 @@ impl<'ctx> Compiler<'ctx> {
             )
             .map_err(|e| CodegenError::Llvm(e.to_string()))?;
         Ok(i64_t.const_zero())
+    }
+
+    /// `@map src count f out` → for each `i`, `out[i] = f(src[i])`; return 0.
+    fn emit_map_i64(
+        &mut self,
+        args: &[&Node],
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<IntValue<'ctx>> {
+        let src = self.compile_i64_vec_arg(args[0], env)?;
+        let count = self.compile_expr(args[1], env, cur_fn)?;
+        let callback = self.compile_value_expr(args[2], env, cur_fn)?;
+        let out = self.compile_i64_vec_arg(args[3], env)?;
+
+        let i64_t = self.context.i64_type();
+        let zero64 = i64_t.const_zero();
+        let one64 = i64_t.const_int(1, false);
+
+        let entry_bb = self.builder.get_insert_block().unwrap();
+        let hdr_bb = self.context.append_basic_block(cur_fn, "map_i64_hdr");
+        let body_bb = self.context.append_basic_block(cur_fn, "map_i64_body");
+        let ret_bb = self.context.append_basic_block(cur_fn, "map_i64_ret");
+
+        self.builder
+            .build_unconditional_branch(hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(hdr_bb);
+        let i_phi = self
+            .builder
+            .build_phi(i64_t, "map_i64_i")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let i_val = i_phi.as_basic_value().into_int_value();
+        let more = self
+            .builder
+            .build_int_compare(IntPredicate::SLT, i_val, count, "map_i64_more")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(more, body_bb, ret_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(body_bb);
+        let elem = self.load_i64(src, i_val, "map_i64_elem")?;
+        let mapped = self
+            .call_closure_value(callback.clone(), &CompiledValue::int(elem))?
+            .into_int()?;
+        self.store_i64(out, i_val, mapped)?;
+        let i_next = self
+            .builder
+            .build_int_add(i_val, one64, "map_i64_i_next")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_unconditional_branch(hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        i_phi.add_incoming(&[
+            (&zero64 as &dyn BasicValue<'ctx>, entry_bb),
+            (&i_next as &dyn BasicValue<'ctx>, body_bb),
+        ]);
+
+        self.builder.position_at_end(ret_bb);
+        Ok(zero64)
+    }
+
+    /// `@fold src count init f` → accumulator-first fold: `f acc src[i]`.
+    fn emit_fold_i64(
+        &mut self,
+        args: &[&Node],
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<IntValue<'ctx>> {
+        let src = self.compile_i64_vec_arg(args[0], env)?;
+        let count = self.compile_expr(args[1], env, cur_fn)?;
+        let init = self.compile_expr(args[2], env, cur_fn)?;
+        let callback = self.compile_value_expr(args[3], env, cur_fn)?;
+
+        let i64_t = self.context.i64_type();
+        let zero64 = i64_t.const_zero();
+        let one64 = i64_t.const_int(1, false);
+
+        let entry_bb = self.builder.get_insert_block().unwrap();
+        let hdr_bb = self.context.append_basic_block(cur_fn, "fold_i64_hdr");
+        let body_bb = self.context.append_basic_block(cur_fn, "fold_i64_body");
+        let ret_bb = self.context.append_basic_block(cur_fn, "fold_i64_ret");
+
+        self.builder
+            .build_unconditional_branch(hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(hdr_bb);
+        let i_phi = self
+            .builder
+            .build_phi(i64_t, "fold_i64_i")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let acc_phi = self
+            .builder
+            .build_phi(i64_t, "fold_i64_acc")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let i_val = i_phi.as_basic_value().into_int_value();
+        let acc_val = acc_phi.as_basic_value().into_int_value();
+        let more = self
+            .builder
+            .build_int_compare(IntPredicate::SLT, i_val, count, "fold_i64_more")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(more, body_bb, ret_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(body_bb);
+        let elem = self.load_i64(src, i_val, "fold_i64_elem")?;
+        let partial = self.call_closure_value(callback.clone(), &CompiledValue::int(acc_val))?;
+        let acc_next = self
+            .call_closure_value(partial, &CompiledValue::int(elem))?
+            .into_int()?;
+        let i_next = self
+            .builder
+            .build_int_add(i_val, one64, "fold_i64_i_next")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_unconditional_branch(hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        i_phi.add_incoming(&[
+            (&zero64 as &dyn BasicValue<'ctx>, entry_bb),
+            (&i_next as &dyn BasicValue<'ctx>, body_bb),
+        ]);
+        acc_phi.add_incoming(&[
+            (&init as &dyn BasicValue<'ctx>, entry_bb),
+            (&acc_next as &dyn BasicValue<'ctx>, body_bb),
+        ]);
+
+        self.builder.position_at_end(ret_bb);
+        Ok(acc_val)
+    }
+
+    /// `@for-each src count f` → call `f(src[i])` for each element; return 0.
+    fn emit_for_each_i64(
+        &mut self,
+        args: &[&Node],
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<IntValue<'ctx>> {
+        let src = self.compile_i64_vec_arg(args[0], env)?;
+        let count = self.compile_expr(args[1], env, cur_fn)?;
+        let callback = self.compile_value_expr(args[2], env, cur_fn)?;
+
+        let i64_t = self.context.i64_type();
+        let zero64 = i64_t.const_zero();
+        let one64 = i64_t.const_int(1, false);
+
+        let entry_bb = self.builder.get_insert_block().unwrap();
+        let hdr_bb = self.context.append_basic_block(cur_fn, "foreach_i64_hdr");
+        let body_bb = self.context.append_basic_block(cur_fn, "foreach_i64_body");
+        let ret_bb = self.context.append_basic_block(cur_fn, "foreach_i64_ret");
+
+        self.builder
+            .build_unconditional_branch(hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(hdr_bb);
+        let i_phi = self
+            .builder
+            .build_phi(i64_t, "foreach_i64_i")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let i_val = i_phi.as_basic_value().into_int_value();
+        let more = self
+            .builder
+            .build_int_compare(IntPredicate::SLT, i_val, count, "foreach_i64_more")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(more, body_bb, ret_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(body_bb);
+        let elem = self.load_i64(src, i_val, "foreach_i64_elem")?;
+        let _ = self.call_closure_value(callback.clone(), &CompiledValue::int(elem))?;
+        let i_next = self
+            .builder
+            .build_int_add(i_val, one64, "foreach_i64_i_next")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_unconditional_branch(hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        i_phi.add_incoming(&[
+            (&zero64 as &dyn BasicValue<'ctx>, entry_bb),
+            (&i_next as &dyn BasicValue<'ctx>, body_bb),
+        ]);
+
+        self.builder.position_at_end(ret_bb);
+        Ok(zero64)
     }
 
     /// `@sort-i64 vec count` → stable insertion sort of `vec[0..count)`; return 0.

@@ -1,4 +1,4 @@
-//! Type and effect signatures for built-in @name primitives (ADR 0028, 0030, 0042, 0047, 0061, 0062, 0063, 0064, 0067, 0068, 0069).
+//! Type and effect signatures for built-in @name primitives (ADR 0028, 0030, 0042, 0047, 0061, 0062, 0063, 0064, 0067, 0068, 0069, 0074).
 //!
 //! Effect sets mirror `stdlib/libc-effects.toml` (ADR 0025, consumed in Stage 3).
 //! The canonical source for primitive effects is that TOML file; values here match it.
@@ -14,6 +14,7 @@
 //!   classification (`ascii-is-alpha`, `ascii-is-digit`, `ascii-is-space`).
 //! - ADR 0069: Bundle G UTF-8 codepoint primitives (`utf8-decode`,
 //!   `utf8-encode`, `utf8-len`).
+//! - ADR 0074: Phase 4 higher-order combinators (`map`, `fold`, `for-each`).
 
 use crate::ty::{EffAtom, EffSet, FnEff, Ty};
 
@@ -110,6 +111,11 @@ pub fn prim_type(name: &str) -> Option<Ty> {
         "utf8-encode" => fn3_mut(Ty::Buf, Ty::Int, Ty::Int, Ty::Int),
         // UTF8: utf8-len(cp: Int) -> Int (pure, ADR 0069)
         "utf8-len" => fn1_pure(Ty::Int, Ty::Int),
+        // P4 COMBINATORS: full applications are inferred specially in
+        // infer.rs so callback effects can be propagated precisely.
+        "map" => map_i64_ty(),
+        "fold" => fold_i64_ty(),
+        "for-each" => for_each_i64_ty(),
         // ARITH: Int → Int → Int (pure)
         "add" | "sub" | "mul" | "div" | "mod" => fn2_pure(Ty::Int, Ty::Int, Ty::Int),
         // CMP: Int → Int → Bool (pure, ADR 0042)
@@ -162,6 +168,7 @@ pub fn is_mut_prim(name: &str) -> bool {
             | "stdin-slurp"
             | "buf-rev"
             | "utf8-encode"
+            | "map"
     )
 }
 
@@ -181,6 +188,66 @@ fn mut_eff() -> FnEff {
 
 fn io_mut_eff() -> FnEff {
     FnEff::from_set(EffSet::of([EffAtom::IO, EffAtom::Mut]))
+}
+
+fn full_eff() -> FnEff {
+    FnEff::from_set(EffSet::of([
+        EffAtom::Alloc,
+        EffAtom::Div,
+        EffAtom::IO,
+        EffAtom::Mut,
+    ]))
+}
+
+fn map_i64_ty() -> Ty {
+    let callback = Ty::Fn(Box::new(Ty::Int), Box::new(Ty::Int), full_eff());
+    Ty::Fn(
+        Box::new(Ty::I64Vec),
+        Box::new(Ty::Fn(
+            Box::new(Ty::Int),
+            Box::new(Ty::Fn(
+                Box::new(callback),
+                Box::new(Ty::Fn(Box::new(Ty::I64Vec), Box::new(Ty::Int), full_eff())),
+                FnEff::pure_(),
+            )),
+            FnEff::pure_(),
+        )),
+        FnEff::pure_(),
+    )
+}
+
+fn fold_i64_ty() -> Ty {
+    let callback = Ty::Fn(
+        Box::new(Ty::Int),
+        Box::new(Ty::Fn(Box::new(Ty::Int), Box::new(Ty::Int), full_eff())),
+        FnEff::pure_(),
+    );
+    Ty::Fn(
+        Box::new(Ty::I64Vec),
+        Box::new(Ty::Fn(
+            Box::new(Ty::Int),
+            Box::new(Ty::Fn(
+                Box::new(Ty::Int),
+                Box::new(Ty::Fn(Box::new(callback), Box::new(Ty::Int), full_eff())),
+                FnEff::pure_(),
+            )),
+            FnEff::pure_(),
+        )),
+        FnEff::pure_(),
+    )
+}
+
+fn for_each_i64_ty() -> Ty {
+    let callback = Ty::Fn(Box::new(Ty::Int), Box::new(Ty::Int), full_eff());
+    Ty::Fn(
+        Box::new(Ty::I64Vec),
+        Box::new(Ty::Fn(
+            Box::new(Ty::Int),
+            Box::new(Ty::Fn(Box::new(callback), Box::new(Ty::Int), full_eff())),
+            FnEff::pure_(),
+        )),
+        FnEff::pure_(),
+    )
 }
 
 /// Unary function with IO on the single application.

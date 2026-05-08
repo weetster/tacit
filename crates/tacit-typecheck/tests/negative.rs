@@ -600,3 +600,45 @@ fn neg_utf8_encode_rejects_i64_vector_buffer() {
 fn neg_utf8_len_rejects_buf_argument() {
     expect_authoring_error("let buf = @buf-alloc 1 in @utf8-len buf", "type-mismatch");
 }
+
+// ── Phase 4 combinators (ADR 0074) ───────────────────────────────────────────
+
+#[test]
+fn neg_map_rejects_non_i64vec_collection() {
+    expect_authoring_error(
+        "let buf = @buf-alloc 1 in
+         let out = @i64-alloc 1 in
+         @map buf 1 (lambda x. x) out",
+        "unsupported-collection-shape",
+    );
+}
+
+#[test]
+fn neg_map_rejects_non_function_callback() {
+    expect_authoring_error(
+        "let xs = @i64-alloc 1 in
+         let out = @i64-alloc 1 in
+         @map xs 1 42 out",
+        "callback-type-mismatch",
+    );
+}
+
+#[test]
+fn neg_fold_rejects_non_int_initial_accumulator() {
+    expect_authoring_error(
+        "let xs = @i64-alloc 1 in
+         @fold xs 1 {value: 0} (lambda acc. lambda x. @add acc x)",
+        "invalid-accumulator-shape",
+    );
+}
+
+#[test]
+fn neg_fold_rejects_effectful_first_callback_application() {
+    expect_authoring_error(
+        "let xs = @i64-alloc 1 in
+         @fold xs 1 0 (lambda acc.
+           let _ = @write 1 \"x\" 1 in
+           lambda x. @add acc x)",
+        "callback-effect-mismatch",
+    );
+}

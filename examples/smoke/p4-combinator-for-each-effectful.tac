@@ -1,0 +1,1 @@
+(let (app (sym i64-alloc) (int 2)) (let (app (app (app (sym i64-set) (var 0)) (int 0)) (int 7)) (let (app (app (app (sym i64-set) (var 1)) (int 1)) (int 8)) (app (app (app (sym for-each) (var 2)) (int 2)) (lam (let (app (app (app (sym write) (int 1)) (str "x\n")) (int 2)) (var 1)))))))

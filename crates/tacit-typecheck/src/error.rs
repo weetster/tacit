@@ -190,6 +190,86 @@ impl Diagnostic {
         d
     }
 
+    pub fn callback_type_mismatch(
+        path: &[usize],
+        combinator: &str,
+        expected: &Ty,
+        actual: &Ty,
+    ) -> Self {
+        let mut d = Self::new(
+            "callback-type-mismatch",
+            "error",
+            path,
+            format!(
+                "@{} callback type mismatch: expected {}, got {}",
+                combinator, expected, actual
+            ),
+        );
+        d.expected = Some(ty_to_json(expected));
+        d.actual = Some(ty_to_json(actual));
+        d
+    }
+
+    pub fn callback_effect_mismatch(
+        path: &[usize],
+        combinator: &str,
+        expected: &EffSet,
+        actual: &EffSet,
+    ) -> Self {
+        let mut d = Self::new(
+            "callback-effect-mismatch",
+            "error",
+            path,
+            format!(
+                "@{} callback effect mismatch: expected {}, got {}",
+                combinator, expected, actual
+            ),
+        );
+        d.expected = Some(eff_set_to_json(expected));
+        d.actual = Some(eff_set_to_json(actual));
+        d
+    }
+
+    pub fn invalid_accumulator_shape(
+        path: &[usize],
+        combinator: &str,
+        expected: &Ty,
+        actual: &Ty,
+    ) -> Self {
+        let mut d = Self::new(
+            "invalid-accumulator-shape",
+            "error",
+            path,
+            format!(
+                "@{} accumulator shape mismatch: expected {}, got {}",
+                combinator, expected, actual
+            ),
+        );
+        d.expected = Some(ty_to_json(expected));
+        d.actual = Some(ty_to_json(actual));
+        d
+    }
+
+    pub fn unsupported_collection_shape(
+        path: &[usize],
+        combinator: &str,
+        expected: &Ty,
+        actual: &Ty,
+    ) -> Self {
+        let mut d = Self::new(
+            "unsupported-collection-shape",
+            "error",
+            path,
+            format!(
+                "@{} collection shape is unsupported: expected {}, got {}",
+                combinator, expected, actual
+            ),
+        );
+        d.expected = Some(ty_to_json(expected));
+        d.actual = Some(ty_to_json(actual));
+        d
+    }
+
     pub fn buf_escape(path: &[usize]) -> Self {
         Self::new(
             "buf-escape",

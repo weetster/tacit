@@ -19,6 +19,9 @@ fn p4_closure_examples_typecheck() {
         "p4-closure-rec-partial",
         "p4-closure-pure-callback",
         "p4-closure-effectful-callback",
+        "p4-combinator-map",
+        "p4-combinator-fold",
+        "p4-combinator-for-each-effectful",
     ] {
         let path = smoke_dir().join(format!("{name}.tac"));
         let src = std::fs::read(&path).unwrap_or_else(|e| panic!("read {}: {}", path.display(), e));

@@ -433,6 +433,9 @@ fn infer_full_primitive_app(
         "token-index-any" if args.len() == 6 => {
             Some(infer_token_index_any_app(ctx, &args, subst, path, diags))
         }
+        "map" if args.len() == 4 => Some(infer_map_app(ctx, &args, subst, path, diags)),
+        "fold" if args.len() == 4 => Some(infer_fold_app(ctx, &args, subst, path, diags)),
+        "for-each" if args.len() == 3 => Some(infer_for_each_app(ctx, &args, subst, path, diags)),
         _ => None,
     }
 }
@@ -539,6 +542,185 @@ fn infer_token_index_any_app(
         subst,
     );
     (Ty::Int, eval_eff)
+}
+
+fn infer_map_app(
+    ctx: &[Ty],
+    args: &[&Node],
+    subst: &mut Subst,
+    path: &[usize],
+    diags: &mut Vec<Diagnostic>,
+) -> (Ty, FnEff) {
+    let mut eval_eff =
+        infer_i64_collection_arg(ctx, args[0], subst, &child_path(path, 0), "map", diags);
+
+    let (count_ty, count_eff) = infer(ctx, args[1], subst, &child_path(path, 1), diags);
+    expect_type(&child_path(path, 1), &Ty::Int, &count_ty, subst, diags);
+    eval_eff = join_fn_eff(&eval_eff, &count_eff, subst);
+
+    let (callback_ty, callback_eval_eff) = infer(ctx, args[2], subst, &child_path(path, 2), diags);
+    let callback_call_eff =
+        expect_unary_int_callback(&child_path(path, 2), "map", &callback_ty, subst, diags);
+    eval_eff = join_fn_eff(&eval_eff, &callback_eval_eff, subst);
+    eval_eff = join_fn_eff(&eval_eff, &callback_call_eff, subst);
+
+    let out_eff = infer_i64_collection_arg(ctx, args[3], subst, &child_path(path, 3), "map", diags);
+    eval_eff = join_fn_eff(&eval_eff, &out_eff, subst);
+    eval_eff = join_fn_eff(
+        &eval_eff,
+        &FnEff::from_set(EffSet::of([EffAtom::Mut])),
+        subst,
+    );
+
+    (Ty::Int, eval_eff)
+}
+
+fn infer_fold_app(
+    ctx: &[Ty],
+    args: &[&Node],
+    subst: &mut Subst,
+    path: &[usize],
+    diags: &mut Vec<Diagnostic>,
+) -> (Ty, FnEff) {
+    let mut eval_eff =
+        infer_i64_collection_arg(ctx, args[0], subst, &child_path(path, 0), "fold", diags);
+
+    let (count_ty, count_eff) = infer(ctx, args[1], subst, &child_path(path, 1), diags);
+    expect_type(&child_path(path, 1), &Ty::Int, &count_ty, subst, diags);
+    eval_eff = join_fn_eff(&eval_eff, &count_eff, subst);
+
+    let (init_ty, init_eff) = infer(ctx, args[2], subst, &child_path(path, 2), diags);
+    if !unify(&Ty::Int, &init_ty, subst) {
+        let actual = subst.apply(&init_ty);
+        if !actual.is_unknown() {
+            diags.push(Diagnostic::invalid_accumulator_shape(
+                &child_path(path, 2),
+                "fold",
+                &Ty::Int,
+                &actual,
+            ));
+        }
+    }
+    eval_eff = join_fn_eff(&eval_eff, &init_eff, subst);
+
+    let (callback_ty, callback_eval_eff) = infer(ctx, args[3], subst, &child_path(path, 3), diags);
+    let callback_call_eff =
+        expect_fold_int_callback(&child_path(path, 3), &callback_ty, subst, diags);
+    eval_eff = join_fn_eff(&eval_eff, &callback_eval_eff, subst);
+    eval_eff = join_fn_eff(&eval_eff, &callback_call_eff, subst);
+
+    (Ty::Int, eval_eff)
+}
+
+fn infer_for_each_app(
+    ctx: &[Ty],
+    args: &[&Node],
+    subst: &mut Subst,
+    path: &[usize],
+    diags: &mut Vec<Diagnostic>,
+) -> (Ty, FnEff) {
+    let mut eval_eff =
+        infer_i64_collection_arg(ctx, args[0], subst, &child_path(path, 0), "for-each", diags);
+
+    let (count_ty, count_eff) = infer(ctx, args[1], subst, &child_path(path, 1), diags);
+    expect_type(&child_path(path, 1), &Ty::Int, &count_ty, subst, diags);
+    eval_eff = join_fn_eff(&eval_eff, &count_eff, subst);
+
+    let (callback_ty, callback_eval_eff) = infer(ctx, args[2], subst, &child_path(path, 2), diags);
+    let callback_call_eff =
+        expect_unary_int_callback(&child_path(path, 2), "for-each", &callback_ty, subst, diags);
+    eval_eff = join_fn_eff(&eval_eff, &callback_eval_eff, subst);
+    eval_eff = join_fn_eff(&eval_eff, &callback_call_eff, subst);
+
+    (Ty::Int, eval_eff)
+}
+
+fn infer_i64_collection_arg(
+    ctx: &[Ty],
+    arg: &Node,
+    subst: &mut Subst,
+    path: &[usize],
+    combinator: &str,
+    diags: &mut Vec<Diagnostic>,
+) -> FnEff {
+    let (ty, eff) = infer(ctx, arg, subst, path, diags);
+    if !unify(&Ty::I64Vec, &ty, subst) {
+        let actual = subst.apply(&ty);
+        if !actual.is_unknown() {
+            diags.push(Diagnostic::unsupported_collection_shape(
+                path,
+                combinator,
+                &Ty::I64Vec,
+                &actual,
+            ));
+        }
+    }
+    eff
+}
+
+fn expect_unary_int_callback(
+    path: &[usize],
+    combinator: &str,
+    actual: &Ty,
+    subst: &mut Subst,
+    diags: &mut Vec<Diagnostic>,
+) -> FnEff {
+    let call_eff = subst.fresh_eff();
+    let expected = Ty::Fn(Box::new(Ty::Int), Box::new(Ty::Int), call_eff);
+    if !unify(&expected, actual, subst) {
+        let e = subst.apply(&expected);
+        let a = subst.apply(actual);
+        if !a.is_unknown() {
+            diags.push(Diagnostic::callback_type_mismatch(path, combinator, &e, &a));
+        }
+        return FnEff::pure_();
+    }
+
+    match subst.apply(&expected) {
+        Ty::Fn(_, _, eff) => eff,
+        _ => FnEff::pure_(),
+    }
+}
+
+fn expect_fold_int_callback(
+    path: &[usize],
+    actual: &Ty,
+    subst: &mut Subst,
+    diags: &mut Vec<Diagnostic>,
+) -> FnEff {
+    let inner_eff = subst.fresh_eff();
+    let expected = Ty::Fn(
+        Box::new(Ty::Int),
+        Box::new(Ty::Fn(Box::new(Ty::Int), Box::new(Ty::Int), inner_eff)),
+        FnEff::pure_(),
+    );
+    if !unify(&expected, actual, subst) {
+        let e = subst.apply(&expected);
+        let a = subst.apply(actual);
+        if !a.is_unknown() {
+            diags.push(Diagnostic::invalid_accumulator_shape(path, "fold", &e, &a));
+        }
+        return FnEff::pure_();
+    }
+
+    match subst.apply(actual) {
+        Ty::Fn(_, ret, outer_eff) => {
+            let outer_set = subst.resolve_eff(&outer_eff);
+            if !outer_set.is_pure() {
+                diags.push(Diagnostic::callback_effect_mismatch(
+                    path,
+                    "fold",
+                    &EffSet::empty(),
+                    &outer_set,
+                ));
+            }
+            match ret.as_ref() {
+                Ty::Fn(_, _, inner_eff) => join_fn_eff(&outer_eff, inner_eff, subst),
+                _ => FnEff::pure_(),
+            }
+        }
+        _ => FnEff::pure_(),
+    }
 }
 
 fn expect_type(

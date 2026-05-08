@@ -1,4 +1,4 @@
-//! `@name` primitive allowlist and classification (ADR 0028, 0030, 0038, 0047, 0061, 0062, 0063, 0064, 0067, 0068, 0069).
+//! `@name` primitive allowlist and classification (ADR 0028, 0030, 0038, 0047, 0061, 0062, 0063, 0064, 0067, 0068, 0069, 0074).
 //!
 //! Categories per ADR 0028 + 0030 + 0038 + 0047:
 //! - LIBC: external libc call (`write`, `read`, `exit`).
@@ -21,6 +21,7 @@
 //! - ASCII-CASE: pure ASCII case shifts (ADR 0068).
 //! - ASCII-CLASS: pure ASCII character classification predicates (ADR 0068).
 //! - UTF8: codepoint decode/encode/length helpers (ADR 0069).
+//! - COMBINATOR: higher-order I64Vec traversal forms (ADR 0074).
 //!
 //! Codegen pattern-matches an `App` left-spine whose head is `Sym(name)`,
 //! looks up `name` here, collects right-spine args, and emits accordingly.
@@ -108,6 +109,12 @@ pub enum PrimKind {
     Utf8Encode,
     /// UTF-8 byte length of a codepoint (ADR 0069): `cp → i64` in 1..=4 or 0 on invalid.
     Utf8Len,
+    /// I64Vec map (ADR 0074): `src count callback out -> i64`.
+    Map,
+    /// I64Vec fold (ADR 0074): `src count init callback -> i64`.
+    Fold,
+    /// I64Vec for-each (ADR 0074): `src count callback -> i64`.
+    ForEach,
     /// Binary `i64 → i64 → i64` arithmetic, lowering as a single LLVM op.
     Arith(ArithOp),
     /// Binary `i64 → i64 → i64` comparison: emits `icmp` + `zext`.
@@ -175,6 +182,9 @@ impl PrimKind {
             "utf8-decode" => PrimKind::Utf8Decode,
             "utf8-encode" => PrimKind::Utf8Encode,
             "utf8-len" => PrimKind::Utf8Len,
+            "map" => PrimKind::Map,
+            "fold" => PrimKind::Fold,
+            "for-each" => PrimKind::ForEach,
             "add" => PrimKind::Arith(ArithOp::Add),
             "sub" => PrimKind::Arith(ArithOp::Sub),
             "mul" => PrimKind::Arith(ArithOp::Mul),
@@ -220,9 +230,12 @@ impl PrimKind {
             PrimKind::ScanByte
             | PrimKind::CountEqualRanges
             | PrimKind::DedupAdjacentRanges
-            | PrimKind::WriteRange => 4,
+            | PrimKind::WriteRange
+            | PrimKind::Map
+            | PrimKind::Fold => 4,
             PrimKind::BufCopy | PrimKind::BufEq | PrimKind::I64Copy | PrimKind::TokenIndex => 5,
             PrimKind::TokenIndexAny => 6,
+            PrimKind::ForEach => 3,
             PrimKind::Arith(_) | PrimKind::Cmp(_) => 2,
         }
     }
@@ -342,6 +355,9 @@ mod tests {
         assert_eq!(PrimKind::lookup("utf8-decode"), Some(PrimKind::Utf8Decode));
         assert_eq!(PrimKind::lookup("utf8-encode"), Some(PrimKind::Utf8Encode));
         assert_eq!(PrimKind::lookup("utf8-len"), Some(PrimKind::Utf8Len));
+        assert_eq!(PrimKind::lookup("map"), Some(PrimKind::Map));
+        assert_eq!(PrimKind::lookup("fold"), Some(PrimKind::Fold));
+        assert_eq!(PrimKind::lookup("for-each"), Some(PrimKind::ForEach));
     }
 
     #[test]
@@ -384,6 +400,9 @@ mod tests {
         assert_eq!(PrimKind::Utf8Decode.arity(), 2);
         assert_eq!(PrimKind::Utf8Encode.arity(), 3);
         assert_eq!(PrimKind::Utf8Len.arity(), 1);
+        assert_eq!(PrimKind::Map.arity(), 4);
+        assert_eq!(PrimKind::Fold.arity(), 4);
+        assert_eq!(PrimKind::ForEach.arity(), 3);
         assert_eq!(PrimKind::Arith(ArithOp::Add).arity(), 2);
         assert_eq!(PrimKind::Cmp(CmpOp::Lt).arity(), 2);
     }

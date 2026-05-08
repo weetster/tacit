@@ -286,7 +286,19 @@ Exit criteria:
 
 ## Stage 5: Higher-Order Combinators
 
+**Status:** Complete
+
 **Purpose:** Land the combinator family that motivated closures.
+
+Outcome:
+
+- `map`, `fold`, and `for-each` are compiler-recognized `@name` forms over
+  `I64Vec` prefixes per [ADR 0074](../decisions/0074-p4-higher-order-combinators.md).
+- `map` writes into an explicit output vector, `fold` uses accumulator-first
+  callbacks, and `for-each` ignores callback results.
+- Pure and effectful callbacks lower through the Stage 4 closure ABI.
+- Stage 5 smoke examples cover mapping, folding, and effectful traversal;
+  the fold example replaces the Phase 3 recursive conceptual-list sum shape.
 
 Work items:
 

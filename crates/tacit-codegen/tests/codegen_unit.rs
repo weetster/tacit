@@ -48,6 +48,9 @@ fn primitive_lookup_smoke() {
         PrimKind::lookup("dedup-adjacent-ranges").map(PrimKind::arity),
         Some(4)
     );
+    assert_eq!(PrimKind::lookup("map").map(PrimKind::arity), Some(4));
+    assert_eq!(PrimKind::lookup("fold").map(PrimKind::arity), Some(4));
+    assert_eq!(PrimKind::lookup("for-each").map(PrimKind::arity), Some(3));
     assert!(PrimKind::lookup("frobnicate").is_none());
 }
 
@@ -231,4 +234,13 @@ fn multi_arg_rec_member_partial_application_returns_closure() {
     let ir = compile_to_ir_string(&node, "rec_partial").expect("codegen");
     assert!(ir.contains("define private { ptr, ptr } @tacit_fn_1_direct_closure(ptr"));
     assert!(ir.contains("define private i64 @tacit_fn_2_direct_closure(ptr"));
+}
+
+#[test]
+fn i64_combinators_lower_to_callback_loops() {
+    let src = b"let xs = @i64-alloc 1 in let _ = @i64-set xs 0 41 in let ys = @i64-alloc 1 in let _ = @map xs 1 (lambda x. @add x 1) ys in @i64-get ys 0";
+    let (node, _) = parse_authoring(src).expect("parse");
+    let ir = compile_to_ir_string(&node, "map_i64").expect("codegen");
+    assert!(ir.contains("map_i64_hdr"));
+    assert!(ir.contains("closure_call"));
 }
