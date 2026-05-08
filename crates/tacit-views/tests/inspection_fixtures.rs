@@ -23,6 +23,13 @@ fn l1() -> InspectFlags {
         ..Default::default()
     }
 }
+fn types_effects() -> InspectFlags {
+    InspectFlags {
+        types: true,
+        effects: true,
+        ..Default::default()
+    }
+}
 fn sidecar_from_json(json: &str) -> SidecarNode {
     serde_json::from_str(json).expect("valid sidecar JSON")
 }
@@ -257,4 +264,41 @@ fn ctor_propagates_var_annot_through_let() {
     let out = emit_inspection(&node, Some(&sc), &l1());
     let expected = "let p = lambda x. Pair x x in  # x \u{2261} var 0, x \u{2261} var 0\n  p  # p \u{2261} var 0";
     assert_eq!(out, expected, "ctor annot propagation: {:?}", out);
+}
+
+#[test]
+fn phase_4_record_type_annotation_renders_structurally() {
+    let node = parse(
+        b"(ann (lam (proj (var 0) x)) (fn-ty (record x (sym Int) y (sym Int)) (sym Int) (eff-set)))",
+    )
+    .unwrap();
+    let sc = sidecar_from_json(r#"{"children":[{"binder":"p"},{}]}"#);
+    let out = emit_inspection(&node, Some(&sc), &types_effects());
+    assert_eq!(out, "(lambda p. p.x : {x: Int, y: Int} -> Int)");
+}
+
+#[test]
+fn phase_4_closure_capture_overlay_is_flag_gated() {
+    let (node, sc) =
+        tacit_views::authoring::parse_authoring(b"let n = 1 in lambda x. @add x n").unwrap();
+    let out = emit_inspection(&node, Some(&sc), &types_effects());
+    assert_eq!(out, "let n = 1 in\n  lambda x [captures n]. @add x n");
+}
+
+#[test]
+fn phase_4_combinator_application_uses_labeled_inspection_block() {
+    let (node, sc) = tacit_views::authoring::parse_authoring(
+        b"let xs = @i64-alloc 1 in let ys = @i64-alloc 1 in @map xs 1 (lambda x. @add x 1) ys",
+    )
+    .unwrap();
+    let out = emit_inspection(&node, Some(&sc), &types_effects());
+    let expected = "\
+let xs = @i64-alloc 1 in
+let ys = @i64-alloc 1 in
+  @map
+    input xs
+    count 1
+    callback lambda x. @add x 1
+    output ys";
+    assert_eq!(out, expected);
 }

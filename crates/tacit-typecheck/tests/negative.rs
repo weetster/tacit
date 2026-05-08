@@ -97,6 +97,14 @@ fn neg_apply_non_function() {
     expect_error(&diags, "apply-non-function");
 }
 
+#[test]
+fn neg_invalid_capture_of_i64vec_in_closure() {
+    expect_authoring_error(
+        "let xs = @i64-alloc 1 in lambda x. @i64-get xs x",
+        "invalid-capture",
+    );
+}
+
 // ── unbound-type-variable ────────────────────────────────────────────────────
 
 /// A `ty-var` node with no enclosing `forall`.

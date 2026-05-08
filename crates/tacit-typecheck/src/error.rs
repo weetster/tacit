@@ -190,6 +190,26 @@ impl Diagnostic {
         d
     }
 
+    pub fn invalid_capture(path: &[usize], index: u64, actual: &Ty) -> Self {
+        let mut d = Self::new(
+            "invalid-capture",
+            "error",
+            path,
+            format!(
+                "closure capture at DeBruijn index {} has non-capturable type {}",
+                index, actual
+            ),
+        );
+        d.expected = Some(serde_json::json!({"capturable": true}));
+        d.actual = Some(serde_json::json!({
+            "capture": {
+                "index": index,
+                "type": ty_to_json(actual),
+            }
+        }));
+        d
+    }
+
     pub fn callback_type_mismatch(
         path: &[usize],
         combinator: &str,

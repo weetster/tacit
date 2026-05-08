@@ -4,6 +4,8 @@
 //! with optional L1 (--debruijn) and L2 (--hashes) annotation overlays.
 //! Reference: decisions/0015-inspection-view-scope.md.
 
+use std::collections::BTreeSet;
+
 use tacit_canonical::ast::Node;
 use tacit_canonical::hash_node;
 
@@ -159,7 +161,7 @@ impl<'f> Ctx<'f> {
                 if self.flags.types {
                     let arg_s = format_type_node_nice(arg);
                     let ret_s = format_type_node_nice(ret);
-                    let eff_s = format_eff_node_nice(eff, self.flags.effects);
+                    let eff_s = format_eff_node_nice(eff, true);
                     let needs_parens =
                         matches!(arg.as_ref(), Node::FnTy { .. } | Node::Forall { .. });
                     let text = if needs_parens {
@@ -331,6 +333,8 @@ impl<'f> Ctx<'f> {
             }
         }
 
+        let capture_names = self.capture_names(cur_body, params.len() as u64);
+
         // Push all params (outermost first → outermost ends up deepest in stack).
         let old_depth = self.lam_let_depth;
         for name in &params {
@@ -346,11 +350,17 @@ impl<'f> Ctx<'f> {
         self.lam_let_depth = old_depth;
 
         let param_str = params.join(" ");
+        let capture_suffix =
+            if (self.flags.types || self.flags.effects) && !capture_names.is_empty() {
+                format!(" [captures {}]", capture_names.join(", "))
+            } else {
+                String::new()
+            };
         let result = if body_r.inline {
             // Propagate annots up; a parent line-builder (let header, arm body,
             // top-level emit, …) appends the trailing comment so it lands at the
             // end of the assembled line — keeping `in`/`=>` outside the comment.
-            let text = format!("lambda {}. {}", param_str, body_r.text);
+            let text = format!("lambda {}{}. {}", param_str, capture_suffix, body_r.text);
             Rendered {
                 text,
                 inline: true,
@@ -358,8 +368,9 @@ impl<'f> Ctx<'f> {
             }
         } else {
             let text = format!(
-                "lambda {}.\n{}{}",
+                "lambda {}{}.\n{}{}",
                 param_str,
+                capture_suffix,
                 Self::pad(indent + 2),
                 body_r.text
             );
@@ -371,6 +382,21 @@ impl<'f> Ctx<'f> {
         } else {
             result
         }
+    }
+
+    fn capture_names(&self, body: &Node, depth: u64) -> Vec<String> {
+        let mut free = BTreeSet::new();
+        collect_free_outer_indices(body, depth, &mut free);
+        let len = self.stack.len();
+        free.into_iter()
+            .map(|outer_index| {
+                if outer_index < len {
+                    self.stack[len - 1 - outer_index].clone()
+                } else {
+                    format!("?var{}", outer_index as u64 + depth)
+                }
+            })
+            .collect()
     }
 
     // -----------------------------------------------------------------------
@@ -399,6 +425,17 @@ impl<'f> Ctx<'f> {
             cur_fn_sc = f2_sc;
         }
         args.reverse(); // args[0] = first argument, args[N-1] = last argument
+
+        if let Node::Sym { name } = cur_fn {
+            if let Some(labels) = combinator_labels(name, args.len()) {
+                let result = self.render_combinator_app(name, labels, &args, indent);
+                return if self.flags.hashes {
+                    self.badge(node, result)
+                } else {
+                    result
+                };
+            }
+        }
 
         let head_r = self.render(cur_fn, cur_fn_sc, indent);
         let mut arg_rs: Vec<Rendered> = Vec::new();
@@ -441,6 +478,31 @@ impl<'f> Ctx<'f> {
         } else {
             result
         }
+    }
+
+    fn render_combinator_app(
+        &mut self,
+        name: &str,
+        labels: &[&str],
+        args: &[(&Node, Option<&SidecarNode>)],
+        indent: usize,
+    ) -> Rendered {
+        let mut text = format!("@{}", name);
+        for (label, (arg, arg_sc)) in labels.iter().zip(args.iter()) {
+            let arg_r = self.render(arg, *arg_sc, indent + 4);
+            text.push('\n');
+            text.push_str(&Self::pad(indent + 2));
+            if arg_r.inline {
+                let line = format!("{} {}", label, arg_r.text);
+                text.push_str(&Self::annotate(&line, &arg_r.annots, self.flags));
+            } else {
+                text.push_str(label);
+                text.push('\n');
+                text.push_str(&Self::pad(indent + 4));
+                text.push_str(&arg_r.text);
+            }
+        }
+        Rendered::always_break(text)
     }
 
     /// Render a node in argument position, wrapping in parens when needed.
@@ -1146,6 +1208,25 @@ fn format_type_node_nice(node: &Node) -> String {
     match node {
         Node::Sym { name } => name.clone(),
         Node::TyVar { index } => format!("\u{03b1}{}", index),
+        Node::Record { fields } => {
+            if fields.is_empty() {
+                "{}".to_string()
+            } else {
+                let rendered = fields
+                    .iter()
+                    .map(|(name, value)| format!("{}: {}", name, format_type_node_nice(value)))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("{{{}}}", rendered)
+            }
+        }
+        Node::App { fn_, arg } => {
+            format!(
+                "{} {}",
+                format_type_node_nice(fn_),
+                format_type_node_nice(arg)
+            )
+        }
         Node::FnTy { arg, ret, eff } => {
             let arg_s = format_type_node_nice(arg);
             let ret_s = format_type_node_nice(ret);
@@ -1194,6 +1275,98 @@ fn format_forall_nice(ty_count: u32, eff_count: u32, body: &Node) -> String {
     vars.extend((0..eff_count).map(|i| format!("\u{03b5}{}", i)));
     let body_s = format_type_node_nice(body);
     format!("\u{2200}[{}]. {}", vars.join(", "), body_s)
+}
+
+fn combinator_labels(name: &str, arity: usize) -> Option<&'static [&'static str]> {
+    match (name, arity) {
+        ("map", 4) => Some(&["input", "count", "callback", "output"]),
+        ("fold", 4) => Some(&["input", "count", "initial", "callback"]),
+        ("for-each", 3) => Some(&["input", "count", "callback"]),
+        _ => None,
+    }
+}
+
+fn collect_free_outer_indices(node: &Node, depth: u64, out: &mut BTreeSet<usize>) {
+    match node {
+        Node::Var { index } => {
+            if *index >= depth {
+                out.insert((*index - depth) as usize);
+            }
+        }
+        Node::Lam { body } => collect_free_outer_indices(body, depth + 1, out),
+        Node::Let { rhs, body } => {
+            collect_free_outer_indices(rhs, depth, out);
+            collect_free_outer_indices(body, depth + 1, out);
+        }
+        Node::Rec { bindings, body } => {
+            let inner = depth + bindings.len() as u64;
+            for binding in bindings {
+                collect_free_outer_indices(binding, inner, out);
+            }
+            collect_free_outer_indices(body, inner, out);
+        }
+        Node::Module { bindings } => {
+            let inner = depth + bindings.len() as u64;
+            for binding in bindings {
+                collect_free_outer_indices(binding, inner, out);
+            }
+        }
+        Node::App { fn_, arg } => {
+            collect_free_outer_indices(fn_, depth, out);
+            collect_free_outer_indices(arg, depth, out);
+        }
+        Node::If { cond, then, else_ } => {
+            collect_free_outer_indices(cond, depth, out);
+            collect_free_outer_indices(then, depth, out);
+            collect_free_outer_indices(else_, depth, out);
+        }
+        Node::Match { scrutinee, arms } => {
+            collect_free_outer_indices(scrutinee, depth, out);
+            for arm in arms {
+                collect_free_outer_indices(arm, depth, out);
+            }
+        }
+        Node::Arm { pattern, body } => {
+            collect_free_outer_indices(body, depth + count_pat_vars(pattern), out);
+        }
+        Node::Record { fields } => {
+            for (_, value) in fields {
+                collect_free_outer_indices(value, depth, out);
+            }
+        }
+        Node::Proj { record, .. } => collect_free_outer_indices(record, depth, out),
+        Node::Ctor { args, .. } => {
+            for arg in args {
+                collect_free_outer_indices(arg, depth, out);
+            }
+        }
+        Node::Ann { expr, .. } => collect_free_outer_indices(expr, depth, out),
+        Node::PatCtor { sub_patterns, .. } => {
+            for pattern in sub_patterns {
+                collect_free_outer_indices(pattern, depth, out);
+            }
+        }
+        Node::Int { .. }
+        | Node::Str { .. }
+        | Node::Sym { .. }
+        | Node::Hole { .. }
+        | Node::PatWild
+        | Node::PatVar
+        | Node::PatInt { .. }
+        | Node::FnTy { .. }
+        | Node::TyVar { .. }
+        | Node::Forall { .. }
+        | Node::EffSet { .. }
+        | Node::EffVar { .. } => {}
+    }
+}
+
+fn count_pat_vars(node: &Node) -> u64 {
+    match node {
+        Node::PatVar => 1,
+        Node::PatCtor { sub_patterns, .. } => sub_patterns.iter().map(count_pat_vars).sum(),
+        _ => 0,
+    }
 }
 
 // ---------------------------------------------------------------------------

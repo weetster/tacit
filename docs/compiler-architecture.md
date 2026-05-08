@@ -35,13 +35,19 @@ No edges between `tacit-codegen` and `tacit-views` or `tacit-typecheck`.
 | Module         | Purpose                                                                        |
 |----------------|--------------------------------------------------------------------------------|
 | `ty`           | `Ty`, `EffSet`, `FnEff`, `Subst` — type and effect representation + unification. |
-| `infer`        | Bidirectional inference pass; walks the AST and populates the substitution.    |
+| `infer`        | Bidirectional inference pass; walks the AST, populates the substitution, and emits Phase 4 product/closure/combinator diagnostics. |
 | `type_from_node` | Converts type-level AST nodes (`FnTy`, `TyVar`, `Forall`, `EffSet`, `EffVar`) to `Ty`. |
 | `primitives`   | Builtin type and effect signatures for `@write`, `@read`, `@exit`, `@buf-alloc`, arithmetic. |
 | `error`        | `Diagnostic` / `DiagOutput` — JSON-serialisable error format per ADR 0041.    |
-| `sidecar`      | `.tac.sidecar.toml` type expectation loading and comparison (per ADR 0043).   |
+| `sidecar`      | `.tacd` type/effect expectation loading and comparison (ADR 0043 as amended by ADR 0071). |
 
 Public entry point: `infer_module(node) -> Result<TypedModule, Vec<Diagnostic>>`.
+Phase 4 diagnostics are ordinary ADR 0041 diagnostics: record projection and
+shape failures use `missing-field`, `invalid-projection`, and
+`record-type-mismatch`; closure capture failures use `invalid-capture` with
+machine-readable capture index/type details; combinator failures use
+`callback-type-mismatch`, `callback-effect-mismatch`,
+`invalid-accumulator-shape`, and `unsupported-collection-shape`.
 
 Effect signatures for `@write`, `@read`, `@exit` are loaded from
 [`stdlib/libc-effects.toml`](../stdlib/libc-effects.toml) at inference time
@@ -230,8 +236,16 @@ Inspection flags:
 - `--hashes` (L2): prepends 4-byte BLAKE3 badges to each node.
 - `--types` (Phase 2): renders type annotations (`FnTy`, `TyVar`, `Forall`) in
   human-readable form (e.g., `α0 -> Bool / {IO}`) instead of compact canonical.
+  Phase 4 extends this to structural record types and closure capture overlays.
 - `--effects` (Phase 2): renders effect sets with spaces (`{IO, Mut}`) and
-  effect variables as `ε0`.
+  effect variables as `ε0`. Phase 4 also uses this flag to show closure capture
+  overlays, because capture sets are part of the reasoning surface for
+  function values.
+
+Full Phase 4 `@map`, `@fold`, and `@for-each` applications render in
+inspection view as labeled blocks (`input`, `count`, `callback`, and
+`output`/`initial`) so callback and collection roles remain visible even after
+canonicalization to ordinary `app` + `sym` nodes.
 
 ### How the sidecar flows through `tacit view`
 

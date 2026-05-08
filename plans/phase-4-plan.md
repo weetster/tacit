@@ -41,8 +41,8 @@ Locked decisions:
   does not set a numeric Rust-relative gate; measurable movement is expected,
   and failure to move is recorded as a strategic finding in the freeze ADR.
 
-Stage 1 through Stage 4 are complete; Stage 5 may begin with the
-higher-order combinator surface ADR.
+Stage 1 through Stage 6 are complete; Stage 7 may begin with primer and
+durable Phase 4 examples.
 
 ## Goal
 
@@ -90,7 +90,7 @@ gaps, but not as a Phase 4 density play.
 | Q-P4-3 | Closure representation, capture rules, environment layout, and ABI | Resolved by [ADR 0073](../decisions/0073-p4-function-values-and-closures.md): minimized by-value captures, two-word closure pair |
 | Q-P4-4 | Function-value effect signatures and closure-captured effects | Resolved by [ADR 0073](../decisions/0073-p4-function-values-and-closures.md): `fn-ty` call effects, no row polymorphism |
 | Q-P4-5 | Higher-order combinator surface: primitives or core-language constructs | Stage 5 ADR |
-| Q-P4-6 | Testing conventions for larger Tacit programs | Stage 6 or Stage 7 ADR |
+| Q-P4-6 | Testing conventions for larger Tacit programs | Resolved in Stage 6: ADR 0043 remains sufficient for Phase 4 smoke and negative coverage; no new ADR until Stage 7 produces evidence that larger examples need different conventions |
 
 ## Required ADR Sequence
 
@@ -321,8 +321,29 @@ Exit criteria:
 
 ## Stage 6: Reasoning And Diagnostics
 
+**Status:** Complete
+
 **Purpose:** Make the expanded surface inspectable without pulling Phase 5
 debugging work forward.
+
+Outcome:
+
+- Inspection rendering now makes Phase 4 constructs easier to read:
+  record types render structurally under `--types`, capturing lambdas show
+  their capture set under `--types` or `--effects`, and full `@map`,
+  `@fold`, and `@for-each` applications render as labeled inspection blocks.
+- `tacit view --as inspection --types --effects` is covered by Phase 4
+  inspection fixtures for records, closures, and combinator applications.
+- Typecheck emits the ADR 0073 `invalid-capture` diagnostic for closures that
+  capture non-escapable `Buf` or `I64Vec` values, with machine-readable
+  capture index and type details.
+- Existing product and combinator diagnostics remain the structured repair-loop
+  surface for missing fields, record mismatches, callback mismatches,
+  accumulator shape errors, and unsupported collection shape errors.
+- Testing conventions do not need a new ADR in Stage 6. ADR 0043, as amended
+  by ADR 0071 for `.tacd`, remains sufficient for smoke sidecar expectations
+  and negative diagnostic coverage. Stage 7 may reopen this only if larger
+  examples expose a concrete convention gap.
 
 Work items:
 

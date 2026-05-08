@@ -19,7 +19,7 @@
 //! - Primitives (`@write`, `@read`, `@exit`): IO sits at the innermost
 //!   application (fully-applied call).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use tacit_canonical::ast::Node;
 
@@ -65,17 +65,10 @@ pub fn infer(
             (ty, FnEff::pure_())
         }
 
-        Node::Lam { body } => {
-            let param_ty = subst.fresh();
-            let ctx_body = extend(ctx, param_ty.clone());
-            let (body_ty, body_eff) = infer(&ctx_body, body, subst, &child_path(path, 0), diags);
-            // body_eff is FnEff — use it directly as the lam's call-effect.
-            let lam_ty = Ty::Fn(
-                Box::new(subst.apply(&param_ty)),
-                Box::new(body_ty),
-                body_eff,
-            );
-            (lam_ty, FnEff::pure_())
+        Node::Lam { .. } => {
+            let (arity, lam_body) = collect_lam_chain(node).expect("lam node has arity");
+            validate_lambda_captures(ctx, lam_body, arity as u64, subst, path, diags);
+            infer_lam_chain_type(ctx, lam_body, arity, subst, path, diags)
         }
 
         Node::App { fn_, arg } => infer_app(ctx, fn_, arg, subst, path, diags),
@@ -204,6 +197,14 @@ pub fn infer(
             let declared = type_from_node(type_, &[], &[], subst, &child_path(path, 1), diags);
 
             if let Some((arity, lam_body)) = collect_lam_chain(expr) {
+                validate_lambda_captures(
+                    ctx,
+                    lam_body,
+                    arity as u64,
+                    subst,
+                    &child_path(path, 0),
+                    diags,
+                );
                 if let Some((param_tys, ret_ty, call_eff)) = flatten_fn_type(&declared, subst) {
                     if param_tys.len() == arity {
                         let debruijn_params: Vec<Ty> = param_tys.iter().rev().cloned().collect();
@@ -320,6 +321,166 @@ fn flatten_fn_type(ty: &Ty, subst: &Subst) -> Option<(Vec<Ty>, Ty, FnEff)> {
     }
 }
 
+fn infer_lam_chain_type(
+    ctx: &[Ty],
+    lam_body: &Node,
+    arity: usize,
+    subst: &mut Subst,
+    path: &[usize],
+    diags: &mut Vec<Diagnostic>,
+) -> (Ty, FnEff) {
+    let param_tys: Vec<Ty> = (0..arity).map(|_| subst.fresh()).collect();
+    let debruijn_params: Vec<Ty> = param_tys.iter().rev().cloned().collect();
+    let ctx_body = extend_many(ctx, &debruijn_params);
+    let (body_ty, body_eff) = infer(
+        &ctx_body,
+        lam_body,
+        subst,
+        &lam_body_path(path, arity),
+        diags,
+    );
+
+    let mut ty = body_ty;
+    for (i, param_ty) in param_tys.into_iter().enumerate().rev() {
+        let call_eff = if i + 1 == arity {
+            body_eff.clone()
+        } else {
+            FnEff::pure_()
+        };
+        ty = Ty::Fn(Box::new(subst.apply(&param_ty)), Box::new(ty), call_eff);
+    }
+    (ty, FnEff::pure_())
+}
+
+fn validate_lambda_captures(
+    ctx: &[Ty],
+    lam_body: &Node,
+    depth: u64,
+    subst: &Subst,
+    path: &[usize],
+    diags: &mut Vec<Diagnostic>,
+) {
+    let mut free = BTreeSet::new();
+    collect_free_outer_indices(lam_body, depth, &mut free);
+    for outer_index in free {
+        let Some(ty) = ctx.get(outer_index) else {
+            continue;
+        };
+        let actual = subst.apply(ty);
+        if !is_capturable_type(&actual) {
+            diags.push(Diagnostic::invalid_capture(
+                path,
+                outer_index as u64 + depth,
+                &actual,
+            ));
+        }
+    }
+}
+
+fn is_capturable_type(ty: &Ty) -> bool {
+    match ty {
+        Ty::Buf | Ty::I64Vec => false,
+        Ty::Record(fields) => fields.values().all(is_capturable_type),
+        Ty::Fn(_, _, _) | Ty::Int | Ty::Bool | Ty::Str | Ty::Unknown | Ty::Meta(_) => true,
+        Ty::App(_, _) => true,
+    }
+}
+
+fn collect_free_outer_indices(node: &Node, depth: u64, out: &mut BTreeSet<usize>) {
+    match node {
+        Node::Var { index } => {
+            if *index >= depth {
+                out.insert((*index - depth) as usize);
+            }
+        }
+        Node::Lam { body } => collect_free_outer_indices(body, depth + 1, out),
+        Node::Let { rhs, body } => {
+            collect_free_outer_indices(rhs, depth, out);
+            collect_free_outer_indices(body, depth + 1, out);
+        }
+        Node::Rec { bindings, body } => {
+            let inner = depth + bindings.len() as u64;
+            for binding in bindings {
+                collect_free_outer_indices(binding, inner, out);
+            }
+            collect_free_outer_indices(body, inner, out);
+        }
+        Node::Module { bindings } => {
+            let inner = depth + bindings.len() as u64;
+            for binding in bindings {
+                collect_free_outer_indices(binding, inner, out);
+            }
+        }
+        Node::App { fn_, arg } => {
+            collect_free_outer_indices(fn_, depth, out);
+            collect_free_outer_indices(arg, depth, out);
+        }
+        Node::If { cond, then, else_ } => {
+            collect_free_outer_indices(cond, depth, out);
+            collect_free_outer_indices(then, depth, out);
+            collect_free_outer_indices(else_, depth, out);
+        }
+        Node::Match { scrutinee, arms } => {
+            collect_free_outer_indices(scrutinee, depth, out);
+            for arm in arms {
+                collect_free_outer_indices(arm, depth, out);
+            }
+        }
+        Node::Arm { pattern, body } => {
+            collect_free_outer_indices(body, depth + count_pat_vars(pattern), out);
+        }
+        Node::Record { fields } => {
+            for (_, value) in fields {
+                collect_free_outer_indices(value, depth, out);
+            }
+        }
+        Node::Proj { record, .. } => collect_free_outer_indices(record, depth, out),
+        Node::Ctor { args, .. } => {
+            for arg in args {
+                collect_free_outer_indices(arg, depth, out);
+            }
+        }
+        Node::Ann { expr, .. } => collect_free_outer_indices(expr, depth, out),
+        Node::PatCtor { sub_patterns, .. } => {
+            for pattern in sub_patterns {
+                collect_free_outer_indices(pattern, depth, out);
+            }
+        }
+        Node::Int { .. }
+        | Node::Str { .. }
+        | Node::Sym { .. }
+        | Node::Hole { .. }
+        | Node::PatWild
+        | Node::PatVar
+        | Node::PatInt { .. }
+        | Node::FnTy { .. }
+        | Node::TyVar { .. }
+        | Node::Forall { .. }
+        | Node::EffSet { .. }
+        | Node::EffVar { .. } => {}
+    }
+}
+
+fn count_pat_vars(node: &Node) -> u64 {
+    match node {
+        Node::PatVar => 1,
+        Node::PatCtor { sub_patterns, .. } => sub_patterns.iter().map(count_pat_vars).sum(),
+        _ => 0,
+    }
+}
+
+fn app_head_path(path: &[usize], arg_count: usize) -> Vec<usize> {
+    let mut head = path.to_vec();
+    head.extend(std::iter::repeat_n(0, arg_count));
+    head
+}
+
+fn lam_body_path(path: &[usize], arity: usize) -> Vec<usize> {
+    let mut body = path.to_vec();
+    body.extend(std::iter::repeat_n(0, arity));
+    body
+}
+
 fn push_type_mismatch(diags: &mut Vec<Diagnostic>, path: &[usize], expected: &Ty, actual: &Ty) {
     if matches!((expected, actual), (Ty::Record(_), Ty::Record(_))) {
         diags.push(Diagnostic::record_type_mismatch(path, expected, actual));
@@ -345,6 +506,8 @@ fn infer_app(
     let (head, spine_args) = unfold_app_from_parts(fn_, arg);
     if let Some((arity, lam_body)) = collect_lam_chain(head) {
         if arity == spine_args.len() {
+            let head_path = app_head_path(path, spine_args.len());
+            validate_lambda_captures(ctx, lam_body, arity as u64, subst, &head_path, diags);
             let mut arg_tys = Vec::with_capacity(spine_args.len());
             let mut total_eff = FnEff::pure_();
             for (i, spine_arg) in spine_args.iter().enumerate() {
@@ -817,7 +980,20 @@ fn infer_rec(
 
     let mut binding_types: Vec<Ty> = vec![Ty::Unknown; n];
     for (i, binding) in bindings.iter().enumerate() {
-        let (ty, _eff) = infer(&ctx_pass1, binding, subst, &child_path(path, i), diags);
+        let (ty, _eff) = if let Some((arity, lam_body)) = collect_lam_chain(binding) {
+            // Rec members may use non-escapable outer handles through direct-call
+            // hidden captures. Reification remains guarded later by closure capture checks.
+            infer_lam_chain_type(
+                &ctx_pass1,
+                lam_body,
+                arity,
+                subst,
+                &child_path(path, i),
+                diags,
+            )
+        } else {
+            infer(&ctx_pass1, binding, subst, &child_path(path, i), diags)
+        };
         let resolved = subst.apply(&ty);
         unify(&metas[i], &resolved, subst);
         binding_types[i] = subst.apply(&metas[i]);
