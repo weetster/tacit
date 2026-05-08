@@ -151,7 +151,7 @@ def smoke_check_compile(tacit_bin: Path) -> list[PreflightFailure]:
         tdp = Path(td)
         for primitive, source in SMOKE_PROGRAMS.items():
             stem = primitive.lstrip("@").replace("-", "_")
-            src_path = tdp / f"{stem}.tac"
+            src_path = tdp / f"{stem}.taca"
             src_path.write_text(source, encoding="utf-8")
 
             check = subprocess.run(
