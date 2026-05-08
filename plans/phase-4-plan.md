@@ -424,6 +424,9 @@ Outcome:
 - Rust-relative density did not improve under the current end-to-end
   primer-plus-generation accounting: the repair aggregate was 1,305,263 Tacit
   tokens, higher than the recorded Phase 3 repair-loop comparison points.
+- Primer-excluded, LLM-facing generated authoring output did improve: Phase 4
+  repair generation was 20,157 tokens, or 2.85x Rust, versus 24,367 tokens
+  and 3.45x Rust for the Phase 3 library-mediated repair run.
 - The density miss is recorded as a strategic finding in
   [ADR 0075](../decisions/0075-phase-4-frozen.md), not as a reason to reopen
   Phase 4 scope.
@@ -463,8 +466,9 @@ Outcome:
 - Final smoke, example, and open-corpus metrics are recorded in this plan,
   [ADR 0075](../decisions/0075-phase-4-frozen.md), and
   `plans/phase-4-results/`.
-- The Rust-relative aspiration result is negative under the current
-  end-to-end metric; generated output shrank, but primer cost dominates.
+- The Rust-relative aspiration result is mixed: generated authoring output
+  improved when primer is excluded, but the current end-to-end metric remains
+  negative because primer cost dominates.
 - Explicit deferrals to Phase 5+ and Phase 7 are recorded in
   [ADR 0075](../decisions/0075-phase-4-frozen.md).
 
@@ -508,7 +512,8 @@ Phase 4 is frozen with product types, first-class closures, and the
 `map`/`fold`/`for-each` combinator family working end to end across parse,
 canonicalization, views, type/effect checking, codegen, execution, diagnostics,
 examples, and evaluation. Phase 3 fluency is preserved and materially
-improved. Rust-relative density did not improve under the current end-to-end
-metric; [ADR 0075](../decisions/0075-phase-4-frozen.md) records this as a
-strategic finding while preserving the project direction around reasoning
-support rather than Python token parity.
+improved. LLM-facing generated authoring output improved when primer is
+excluded, but Rust-relative density did not improve under the current
+end-to-end primer-plus-generation metric; [ADR 0075](../decisions/0075-phase-4-frozen.md)
+records this as a strategic finding while preserving the project direction
+around reasoning support rather than Python token parity.

@@ -44,29 +44,49 @@ improves fluency:
 ## Density
 
 The token counter reports the open-corpus Rust reference total at `7,064`
-tokens and the open Tacit reference total at `42,376` tokens, or about `6.00x`
-Rust.
+tokens.
 
-For this paid repair-loop run, the model-output Tacit totals were:
+For LLM-facing generated Tacit output with primer cost excluded, Phase 4
+improves substantially over the recorded Phase 3 repair-loop runs:
 
-- One-shot: `1,057,570` Tacit tokens, or `149.7x` the Rust reference total
-- Repair aggregate: `1,305,263` Tacit tokens, or `184.7x` the Rust reference total
+| Run | Generated Tacit tokens, no primer | Ratio vs Rust |
+| --- | ---: | ---: |
+| Phase 3 core-language repair `019de6ef-e75e-70d8-aa52-e98c4c577f7d` | `42,314` | `5.99x` |
+| Phase 3 library-mediated repair `019df533-fc2a-7511-ad6f-ebdc653878ae` | `24,367` | `3.45x` |
+| Phase 4 one-shot generation `019e0891-4143-78f6-9146-2c701c408bbb` | `16,191` | `2.29x` |
+| Phase 4 repair generation `019e0891-4143-78f6-9146-2c701c408bbb` | `20,157` | `2.85x` |
 
-Compared with the recorded Phase 3 open repair-loop baseline, the repair
-aggregate is higher, so Rust-relative density did not improve on this run.
+This is the more relevant density signal for model authoring: the evaluation
+feeds the primer and authoring-view output to the LLM, not canonical `.tac`
+storage. On that measure, Phase 4 narrowed generated Tacit from the Phase 3
+library-mediated `3.45x` Rust ratio to `2.85x` after repair, and the one-shot
+generated program output was `2.29x` Rust.
 
-The density miss is driven by primer cost, not generated-output volume. Phase 4
-generated `20,157` model-output tokens across all turns, below the Phase 3
-core-language repair run's `42,314` and the Phase 3 library-mediated run's
-`24,367`. The current end-to-end metric charges the 22,157-token primer once
-per model call, so 58 calls dominate the aggregate.
+The end-to-end primer-plus-generation aggregate still worsened:
+
+- One-shot aggregate: `1,057,570` Tacit tokens, or `149.7x` the Rust reference
+  total.
+- Repair aggregate: `1,305,263` Tacit tokens, or `184.7x` the Rust reference
+  total.
+
+That aggregate is driven by primer cost. The current metric charges the
+22,157-token primer once per model call, so 58 calls dominate the repair
+aggregate.
+
+The canonical `.tac` reference total is `42,376` tokens, or about `6.00x`
+Rust. That remains useful as a storage and compiler-surface measurement, but
+it is less important for LLM authoring density because canonical `.tac` is not
+the normal prompt-facing surface.
 
 ## Interpretation
 
 Phase 4 Stage 8 supports freezing with a mixed result:
 
 - Fluency and repair behavior improved enough to close the phase.
-- Rust-relative density did not improve under the current metric and is
-  recorded as a strategic finding in ADR 0075.
+- LLM-facing generated authoring output improved from `3.45x` Rust in the
+  Phase 3 library-mediated repair run to `2.85x` Rust in the Phase 4 repair
+  run, excluding primer.
+- End-to-end primer-plus-generation density did not improve under the current
+  metric and is recorded as a strategic finding in ADR 0075.
 - No sealed-corpus contents, paths, or task metadata were accessed for this
   open-corpus re-evaluation note.

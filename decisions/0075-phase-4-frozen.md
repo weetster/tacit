@@ -102,40 +102,58 @@ one-shot correctness, final correctness, repair recovery, and call count.
 ## Density finding
 
 Phase 4 does **not** satisfy the Rust-relative density aspiration under the
-recorded end-to-end accounting.
+recorded end-to-end primer-plus-generation accounting. It does, however,
+improve the LLM-facing generated authoring-output count when primer cost is
+excluded.
 
 The Stage 8 token counter reports:
 
 | Quantity | Tokens | Ratio vs Rust references |
 | --- | ---: | ---: |
 | Open Rust references | 7,064 | 1.00x |
+| Phase 4 one-shot generated Tacit, no primer | 16,191 | 2.29x |
+| Phase 4 repair generated Tacit, no primer | 20,157 | 2.85x |
 | Open canonical Tacit references | 42,376 | 6.00x |
 | Phase 4 one-shot model aggregate | 1,057,570 | 149.7x |
 | Phase 4 repair model aggregate | 1,305,263 | 184.7x |
 
-The repair aggregate is higher than both recorded Phase 3 comparison points:
+The generated-output comparison is favorable:
+
+- Phase 3 core-language repair generated output: 42,314 tokens, 5.99x Rust.
+- Phase 3 library-mediated repair generated output: 24,367 tokens, 3.45x Rust.
+- Phase 4 repair generated output: 20,157 tokens, 2.85x Rust.
+- Phase 4 one-shot generated output: 16,191 tokens, 2.29x Rust.
+
+This is the more relevant density signal for model authoring: the LLM sees the
+primer and authoring-view output, not canonical `.tac` storage. The canonical
+reference count remains a storage/compiler-surface measurement and is less
+important for LLM authoring density.
+
+The end-to-end repair aggregate is still higher than both recorded Phase 3
+comparison points:
 
 - Phase 3 core-language repair aggregate: 1,160,690 tokens.
 - Phase 3 library-mediated repair aggregate: 1,255,151 tokens.
 
 The important nuance is that Phase 4 reduced output and repair burden but grew
-the primer. Total generation tokens fell to 20,157, below the Phase 3
-core-language repair run's 42,314 and the Phase 3 library-mediated run's
-24,367. However, the 22,157-token primer is paid once per model call in the
-current metric. With 58 total model calls, primer cost dominates the aggregate
-and erases the generated-output improvement.
+the primer. The 22,157-token primer is paid once per model call in the current
+metric. With 58 total model calls, primer cost dominates the aggregate and
+erases the generated-output improvement.
 
 The density result is therefore mixed but not ambiguous:
 
 1. The language surface improved correctness and repair efficiency.
-2. The current end-to-end primer-plus-generation density metric worsened.
-3. Phase 4 cannot claim the "Rust-relative density narrows" success criterion.
-4. More Phase 4 primitives or more primer prose are not justified by this data.
+2. LLM-facing generated authoring output narrowed materially against Rust when
+   primer is excluded.
+3. The current end-to-end primer-plus-generation density metric worsened.
+4. Phase 4 cannot claim the "Rust-relative density narrows" success criterion
+   under the end-to-end metric used by the Stage 8 report.
+5. More Phase 4 primitives or more primer prose are not justified by this data.
 
 ## Decision
 
 **Phase 4 is frozen.** The phase is accepted as a successful language-surface
-slice and a negative density finding:
+slice with a mixed density finding:
 
 1. Product types, function values, closures, callback effects, and the
    `map`/`fold`/`for-each` combinator family work end to end across parsing,
@@ -144,9 +162,11 @@ slice and a negative density finding:
 2. Phase 3 fluency did not regress. The primary Stage 8 open run improved from
    30/47 to 38/47 one-shot versus the Phase 3 core-language repair baseline
    and from 40/47 to 47/47 final after repair.
-3. Rust-relative density did not improve under the current end-to-end metric.
-   This is recorded as a strategic finding, not a reason to expand Phase 4
-   beyond its scoped language surface.
+3. LLM-facing generated Tacit output improved from the Phase 3
+   library-mediated repair run's 3.45x Rust ratio to 2.85x Rust after repair
+   when primer is excluded. End-to-end primer-plus-generation density did not
+   improve under the current metric. This is recorded as a strategic finding,
+   not a reason to expand Phase 4 beyond its scoped language surface.
 4. The Python-relative gate remains retired. Python-relative numbers may be
    reported descriptively but must not return as a Phase 5+ gate.
 5. No sealed-corpus development feedback was used for Phase 4.
@@ -181,4 +201,3 @@ expansion.
   dominant token cost.
 - If a future phase reopens density, it should do so with a metric ADR before
   changing language surface.
-

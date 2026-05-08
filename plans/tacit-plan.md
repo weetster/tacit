@@ -245,7 +245,7 @@ Deliverables:
 
 Deliberately out of scope: refinement types, effect handlers, user-defined effects, row polymorphism, capabilities — all Phase 7. Concurrency remains absent.
 
-Outcome: records, closures, and the `map`/`fold`/`for-each` family compile, typecheck, inspect, round-trip, and execute correctly on the Phase 4 smoke corpus and examples. Open-corpus re-evaluation shows material fluency improvement (38/47 one-shot, 47/47 final after repair) but no measurable Rust-density improvement under the current end-to-end primer-plus-generation metric. `plans/phase-4-plan.md` is the frozen scope artifact; [ADR 0075](../decisions/0075-phase-4-frozen.md) records the negative density finding.
+Outcome: records, closures, and the `map`/`fold`/`for-each` family compile, typecheck, inspect, round-trip, and execute correctly on the Phase 4 smoke corpus and examples. Open-corpus re-evaluation shows material fluency improvement (38/47 one-shot, 47/47 final after repair) and generated authoring-output improvement when primer is excluded (2.85× Rust after repair), but no measurable Rust-density improvement under the current end-to-end primer-plus-generation metric. `plans/phase-4-plan.md` is the frozen scope artifact; [ADR 0075](../decisions/0075-phase-4-frozen.md) records the mixed density finding.
 
 ### Phase 5: Inspection and debugging tooling
 
@@ -379,7 +379,7 @@ Mitigation: [ADR 0072](../decisions/0072-p4-record-products.md) defers tuple syn
 Mitigation: Two views from Phase 1, both real. Phase 5's tooling work generalizes the existing view system; it does not retrofit one.
 
 **Risk: Phase 3's structural findings don't translate into Phase 4 wins.** *Partly materialized in Phase 4.*
-Mitigation: [ADR 0075](../decisions/0075-phase-4-frozen.md) records the result: records + closures + combinators improved open-corpus fluency and repair efficiency, but did not reduce Rust-relative density under the current end-to-end metric. Future density work must start with a metric ADR separating primer cost, generated authoring output, canonical storage size, and reference size rather than adding more Phase 4 surface.
+Mitigation: [ADR 0075](../decisions/0075-phase-4-frozen.md) records the result: records + closures + combinators improved open-corpus fluency and repair efficiency, and reduced generated authoring output to 2.85× Rust after repair when primer is excluded. They did not reduce Rust-relative density under the current end-to-end metric. Future density work must start with a metric ADR separating primer cost, generated authoring output, canonical storage size, and reference size rather than adding more Phase 4 surface.
 
 **Risk: Nobody uses it.**
 Mitigation: Accept this. The stated worst case is "waste tokens and have fun." Publishing a design paper is a valid outcome even if nobody adopts the language.

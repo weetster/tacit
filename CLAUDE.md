@@ -68,8 +68,9 @@ Per [ADR 0075](decisions/0075-phase-4-frozen.md):
 - Stage 8 open-corpus repair-loop run
   `019e0891-4143-78f6-9146-2c701c408bbb`: 38/47 one-shot, 47/47 final after
   repair, 9/9 repairs, 1.23 average model calls. Fluency improved versus Phase
-  3, but Rust-relative density did not improve under the current end-to-end
-  primer-plus-generation metric.
+  3. LLM-facing generated output improved to 2.85× Rust after repair when
+  primer is excluded, but Rust-relative density did not improve under the
+  current end-to-end primer-plus-generation metric.
 
 ## Ground rules
 
