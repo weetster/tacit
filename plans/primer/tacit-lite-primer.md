@@ -984,8 +984,8 @@ let state = {sum: 6, count: 3} in
 Field order is not semantic. `{sum: 6, count: 3}` and `{count: 3, sum: 6}`
 have the same structural type. Projection is exact: `state.sum` typechecks
 only when the inferred record type contains a `sum` field. There is no record
-width subtyping, no row polymorphism, and no record pattern syntax in
-Tacit-Lite Phase 4. Destructure with projection:
+width subtyping, no row polymorphism, and no record pattern syntax.
+Destructure with projection:
 
 ```tacit
 let result = {value: 40, next: 2} in
@@ -1510,7 +1510,7 @@ When a program fails, use this sequence:
 9. Wrong output after compile success: keep the type/effect shape and debug
    the algorithm with smaller input.
 
-### Phase 4 Worked Examples
+### Worked Examples
 
 Record state can make an accumulator's meaning visible without positional
 conventions:
@@ -1782,7 +1782,7 @@ unknown primitive. Bind the name with `let`, move it into lambda scope, or use
 one of the allowed primitive names.
 
 If a program uses an unsupported executable shape, simplify toward the
-Phase 4 executable subset. Prefer integer results at the program boundary,
+current executable subset. Prefer integer results at the program boundary,
 buffers or `I64Vec` for explicit storage, records for small named bundles,
 closures over first-class values, `let`, `if`, `match`, `lambda`, `rec`,
 combinators, and primitive calls.
@@ -2080,7 +2080,7 @@ rec {fill = lambda i.
 ```
 
 First-class closures and records must not capture or store the `I64Vec`
-handle. When traversal is just element-wise, prefer the Phase 4 combinators:
+handle. When traversal is just element-wise, prefer the combinators:
 `@map` writes to an explicit output vector, `@fold` returns an integer
 accumulator, and `@for-each` is for effectful callbacks whose result is
 ignored.

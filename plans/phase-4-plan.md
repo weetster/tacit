@@ -379,7 +379,7 @@ Outcome:
   `vector-combinators`.
 - Typecheck, codegen, and dedicated round-trip smoke coverage now includes the
   Phase 4 examples.
-- Primer token count is re-baselined at 22,174 `o200k_base` tokens, measured
+- Primer token count is re-baselined at 22,157 `o200k_base` tokens, measured
   with `tiktoken` via `uv run` from `corpus/harness` on 2026-05-08.
 
 Work items:
