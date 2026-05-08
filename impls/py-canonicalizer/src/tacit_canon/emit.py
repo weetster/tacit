@@ -81,6 +81,20 @@ def _emit(node: A.Node) -> str:
                 return f"(pat-ctor {name})"
             inner = " ".join(_emit(s) for s in sub)
             return f"(pat-ctor {name} {inner})"
+        case A.PatInt(value):
+            return f"(pat-int {value})"
+        case A.FnTy(arg, ret, eff):
+            return f"(fn-ty {_emit(arg)} {_emit(ret)} {_emit(eff)})"
+        case A.TyVar(index):
+            return f"(ty-var {index})"
+        case A.Forall(ty_count, eff_count, body):
+            return f"(forall {ty_count} {eff_count} {_emit(body)})"
+        case A.EffSet(atoms):
+            if not atoms:
+                return "(eff-set)"
+            return "(eff-set " + " ".join(atoms) + ")"
+        case A.EffVar(index):
+            return f"(eff-var {index})"
         case _:  # pragma: no cover - exhaustive by construction
             raise TypeError(f"cannot emit {node!r}")
 

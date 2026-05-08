@@ -1,8 +1,15 @@
 # Tacit — Development Guide
 
-Tacit is an AI-first programming language. See [plans/tacit-plan.md](plans/tacit-plan.md) for the full vision and [plans/phase-3-plan.md](plans/phase-3-plan.md) for the just-frozen phase.
+Tacit is an AI-first programming language. See [plans/tacit-plan.md](plans/tacit-plan.md) for the full vision and [plans/phase-4-plan.md](plans/phase-4-plan.md) for the just-frozen phase.
 
-**Current phase: Phase 4 active.** Phase 3 is frozen ([ADR 0070](decisions/0070-p3-frozen.md)); the Python-relative density gate was retired as structurally miscalibrated and density work going forward tracks against Rust. Phase 2 is frozen ([ADR 0046](decisions/0046-p2-stage-5-frozen.md)). Phase 1 is frozen ([ADR 0033](decisions/0033-phase-1-frozen.md)). Phase 4 scope lives in `plans/phase-4-plan.md`.
+**Current phase: Phase 4 frozen; Phase 5 is next.** Phase 4 is frozen
+([ADR 0075](decisions/0075-phase-4-frozen.md)) with records, first-class
+closures, and `@map` / `@fold` / `@for-each` delivered. Phase 3 is frozen
+([ADR 0070](decisions/0070-p3-frozen.md)); the Python-relative density gate
+was retired as structurally miscalibrated and density work going forward
+tracks against Rust. Phase 2 is frozen
+([ADR 0046](decisions/0046-p2-stage-5-frozen.md)). Phase 1 is frozen
+([ADR 0033](decisions/0033-phase-1-frozen.md)).
 
 ## What Phase 1 produced (frozen baseline)
 
@@ -38,9 +45,35 @@ Per [ADR 0070](decisions/0070-p3-frozen.md):
 - Stage 9 baseline + Stage 10 maintenance and cross-family run records under `plans/phase-3-results/`.
 - **Strategic finding:** the 30%-below-Python density gate was missed (best Sonnet 61.7%) and structurally miscalibrated (Rust loses to it by +54%). The Python-relative gate is retired; future density work tracks against Rust (Tacit currently 2.92× on the open corpus) as a Phase 4+ aspiration, not a gate. Frontier-model fluency on Tacit-Lite under feedback is established (Sonnet 97.9% library-mediated; GPT-5.4 91.5% primer-only).
 
+## What Phase 4 produced (frozen baseline)
+
+Per [ADR 0075](decisions/0075-phase-4-frozen.md):
+
+- Record product values with structural typing, projection, canonical sorted
+  field layout, authoring field-order sidecar metadata, codegen, inspection,
+  and structured diagnostics.
+- First-class function values and capturing closures lowered as two-word
+  closure pairs with minimized by-value captures, direct-call preservation,
+  and invalid-capture diagnostics for non-escapable `Buf` / `I64Vec` handles.
+- Closure call effects carried in `fn-ty` inside the fixed Lite effect lattice;
+  no row polymorphism, handlers, user-defined effects, capabilities, or
+  concurrency were pulled forward.
+- Compiler-recognized `@map`, `@fold`, and `@for-each` over `I64Vec` prefixes,
+  including pure/effectful callbacks and combinator-specific diagnostics.
+- Inspection support for structural record types, closure capture overlays, and
+  labeled combinator blocks under `tacit view --as inspection --types
+  --effects`.
+- Phase 4 primer baseline at 22,157 `o200k_base` tokens and durable examples
+  under `examples/phase-4/`.
+- Stage 8 open-corpus repair-loop run
+  `019e0891-4143-78f6-9146-2c701c408bbb`: 38/47 one-shot, 47/47 final after
+  repair, 9/9 repairs, 1.23 average model calls. Fluency improved versus Phase
+  3, but Rust-relative density did not improve under the current end-to-end
+  primer-plus-generation metric.
+
 ## Ground rules
 
-- **Frozen artifacts stay frozen.** The canonical text format ([ADR 0013](decisions/0013-canonical-text-format-frozen.md)), Stage 3 view grammars + AST enum ([ADR 0017](decisions/0017-stage-3-frozen.md)), Stage 5 repo scaffolding ([ADR 0018](decisions/0018-stage-5-frozen.md)), Phase 1 Stages 1–4 ([ADR 0032](decisions/0032-stage-4-frozen.md)), Phase 1 as a whole ([ADR 0033](decisions/0033-phase-1-frozen.md)), Phase 2 Stages 1–4 ([ADR 0044](decisions/0044-p2-stage-1-frozen.md), [ADR 0045](decisions/0045-p2-stage-4-frozen.md)), Phase 2 as a whole ([ADR 0046](decisions/0046-p2-stage-5-frozen.md)), Phase 3 Stage 1 ([ADR 0056](decisions/0056-p3-stage-1-frozen.md)), and Phase 3 as a whole ([ADR 0070](decisions/0070-p3-frozen.md)) are all frozen. Changes require a new ADR and are treated as spec bugs, not scope negotiation.
+- **Frozen artifacts stay frozen.** The canonical text format ([ADR 0013](decisions/0013-canonical-text-format-frozen.md)), Stage 3 view grammars + AST enum ([ADR 0017](decisions/0017-stage-3-frozen.md)), Stage 5 repo scaffolding ([ADR 0018](decisions/0018-stage-5-frozen.md)), Phase 1 Stages 1–4 ([ADR 0032](decisions/0032-stage-4-frozen.md)), Phase 1 as a whole ([ADR 0033](decisions/0033-phase-1-frozen.md)), Phase 2 Stages 1–4 ([ADR 0044](decisions/0044-p2-stage-1-frozen.md), [ADR 0045](decisions/0045-p2-stage-4-frozen.md)), Phase 2 as a whole ([ADR 0046](decisions/0046-p2-stage-5-frozen.md)), Phase 3 Stage 1 ([ADR 0056](decisions/0056-p3-stage-1-frozen.md)), Phase 3 as a whole ([ADR 0070](decisions/0070-p3-frozen.md)), and Phase 4 as a whole ([ADR 0075](decisions/0075-phase-4-frozen.md)) are all frozen. Changes require a new ADR and are treated as spec bugs, not scope negotiation.
 - **Spec ambiguities are bugs against the relevant frozen artifact.** Resolve via a new ADR, not in-line spec edits.
 - **Two views from day one.** Authoring and inspection grammars exist together. Round-trip and rendering tests are the load-bearing checks.
 - **Decision log is load-bearing.** Every non-trivial design choice gets an ADR-style entry in `decisions/NNNN-title.md`.
@@ -58,11 +91,11 @@ Per [ADR 0070](decisions/0070-p3-frozen.md):
 ## Repository layout
 
 ```
-plans/        — phase plans, specs (canonical-text-format.md, inspection-view.md, sidecar-format.md), primer, test vectors, phase-3 results
+plans/        — phase plans, specs (canonical-text-format.md, inspection-view.md, sidecar-format.md), primer, test vectors, phase results
 docs/         — design docs (compiler-architecture.md, effect-system.md, phase-3-metrics.schema.json)
-decisions/    — ADR-style decision log (0001–0071)
+decisions/    — ADR-style decision log (0001–0075)
 crates/       — Cargo workspace: tacit-canonical, tacit-views, tacit-typecheck, tacit-codegen, tacit-cli
-examples/     — Phase 1 smoke corpus under smoke/; Phase 3 carry-over programs under phase-3/
+examples/     — Phase 1 smoke corpus under smoke/; Phase 3 carry-over programs under phase-3/; Phase 4 examples under phase-4/
 corpus/       — Phase 3 evaluation corpus (60 tasks, sealed held-out subset, Tacit references for the open 47)
 stdlib/       — libc-effects.toml (Phase 1–2 effect signatures consumed by tacit-typecheck)
 ```
@@ -83,11 +116,22 @@ CI lives at `.github/workflows/ci.yml`: Python (`uv run pytest`), Rust (`cargo f
 
 ## Open questions
 
-All Phase 0, Phase 1, Phase 2, and Phase 3 open questions are resolved (Q-P3-1 through Q-P3-9 closed by [ADR 0056](decisions/0056-p3-stage-1-frozen.md); the Phase 3 freeze itself is [ADR 0070](decisions/0070-p3-frozen.md)). Phase 4 questions are enumerated in `plans/phase-4-plan.md` as Q-P4-1 through Q-P4-6.
+All Phase 0, Phase 1, Phase 2, Phase 3, and Phase 4 open questions are
+resolved. Q-P3-1 through Q-P3-9 are closed by
+[ADR 0056](decisions/0056-p3-stage-1-frozen.md) and the Phase 3 freeze itself
+is [ADR 0070](decisions/0070-p3-frozen.md). Q-P4-1 through Q-P4-6 are closed
+by [ADR 0072](decisions/0072-p4-record-products.md),
+[ADR 0073](decisions/0073-p4-function-values-and-closures.md),
+[ADR 0074](decisions/0074-p4-higher-order-combinators.md), and
+[ADR 0075](decisions/0075-phase-4-frozen.md).
 
 ## Working style
 
 - Prefer editing existing plan/spec files over creating new ones.
 - When a design choice is made, write the ADR before writing the spec text or code that depends on it.
-- Phase 4 is governed by `plans/phase-4-plan.md`. Per [ADR 0070 § Strategic direction](decisions/0070-p3-frozen.md) and [ADR 0072](decisions/0072-p4-record-products.md), Phase 4 scope is language-shape work (records first with tuple syntax deferred, closures, higher-order combinators) and only the inspection/diagnostic tooling required by that surface, justified primarily as "reasoning support" rather than density chase. Phase 4 may not relitigate Python-relative density parity. Resist over-abstracting beyond Phase 4's stated scope.
+- Phase 4 is frozen by [ADR 0075](decisions/0075-phase-4-frozen.md). Do not
+  reopen Phase 4 density by adding primitives or primer prose; the freeze
+  records strong fluency and a negative Rust-relative density finding under
+  current end-to-end accounting. Phase 5 work should focus on inspection and
+  debugging tooling unless a new ADR changes the direction.
 - When updating the Tacit-Lite primer, keep it prompt-facing and language-facing: do not include repository paths, phase/stage process notes, ADR references, CI/test instructions, corpus/evaluation logistics, or recipes tailored to known corpus tasks. Primer examples should teach general Tacit-Lite constructs and idioms, be compilable or clearly marked as explanatory snippets, and remain independent of repository layout and evaluation harness details. Re-baseline the `o200k_base` token count after primer edits and record the new count in the active phase plan when the plan tracks it.

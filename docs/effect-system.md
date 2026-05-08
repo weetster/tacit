@@ -37,6 +37,29 @@ map :: (a → b / e) → [a] → [b] / e
 
 Here `e` is a variable standing for whatever effect set the callback has. Call `map` with a pure callback, the result is pure. Call it with an IO callback, the result is IO. One variable per function is "basic polymorphism" — enough for standard combinators (map, filter, fold) but not for composing multiple effectful operations in complex ways.
 
+### Phase 4 function values and combinators
+
+Phase 4 implements the Lite version of higher-order effects without crossing
+into row polymorphism. A function value carries a `fn-ty` call effect. Calling
+that function contributes the recorded effect at the call site, whether the
+function is a direct lambda, a capturing closure, a returned function value, or
+a callback stored in a record.
+
+The Phase 4 combinators use this existing mechanism:
+
+- `@map xs count f out` calls `f : Int -> Int / e`; the combinator has the
+  callback effect `e` plus `Mut` because it writes the output `I64Vec`.
+- `@fold xs count init f` calls `f : Int -> Int -> Int / e` with the
+  accumulator first and element second. The first curried application must be
+  pure; the final element-consuming application carries `e`.
+- `@for-each xs count f` calls `f : Int -> Int / e`, ignores the integer
+  result, and has callback effect `e`.
+
+Closure environment allocation is compiler-managed and is not exposed as a
+source-level `Alloc` effect. `Buf` and `I64Vec` handles are non-escapable and
+cannot be captured by first-class closures; that restriction keeps the Lite
+effect story inside the fixed lattice.
+
 ## What "advanced" adds (Full)
 
 ### Effect handlers

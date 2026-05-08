@@ -1,7 +1,7 @@
 # Evaluation Harness Runbook
 
 **Status:** Operational instructions
-**Date:** 2026-05-04
+**Date:** 2026-05-08
 
 This runbook is for agents or lower-capability models that need to run the
 Phase 3 evaluation harness correctly on the first try.
@@ -184,6 +184,13 @@ Run a library-mediated experiment:
 uv run corpus-eval --model claude-sonnet-4-6 --result-label library-mediated --tasks 025,035 --tacit-bin ../../target/debug/tacit
 ```
 
+Run a Phase 4 open repair-loop evaluation artifact into the Phase 4 results
+directory:
+
+```bash
+uv run corpus-eval --model claude-sonnet-4-6 --result-label core-language --repair-turns 2 --output-dir ../../plans/phase-4-results --tacit-bin ../../target/debug/tacit
+```
+
 Run sealed grading only when explicitly instructed:
 
 ```bash
@@ -279,6 +286,10 @@ After `corpus-eval` exits, report:
 - Paths to `<run-id>.run.json` and `<run-id>.metrics.json`.
 - Final aggregate line, such as `tasks_passed`, `compile_pass`, and
   `token_delta`, or repair-loop aggregate values.
+- For Phase 4+ reports, treat Rust-relative density as the primary comparison
+  and Python-relative density as descriptive only. Also report generation
+  tokens separately from primer-plus-generation aggregate tokens when repair
+  mode is used.
 - Any failure directories the harness wrote under the output directory.
   Failure records contain `generated.taca` (the model's authoring-view output)
   and `diagnostics.json`. They do not contain a `generated.tac`; use

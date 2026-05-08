@@ -183,6 +183,35 @@ def _build_form(tag: str, args: tuple[SItem, ...]) -> A.Node:
             name = _bare_sym(args[0], "pat-ctor name")
             sub = tuple(_build(a) for a in args[1:])
             return A.PatCtor(name, sub)
+        case "pat-int":
+            _check_arity(tag, args, 1)
+            return A.PatInt(int(_bare_int(args[0], "pat-int literal")))
+        case "fn-ty":
+            _check_arity(tag, args, 3)
+            return A.FnTy(_build(args[0]), _build(args[1]), _build(args[2]))
+        case "ty-var":
+            _check_arity(tag, args, 1)
+            n = int(_bare_int(args[0], "ty-var index"))
+            if n < 0:
+                raise ParseError("ty-var index must be >= 0")
+            return A.TyVar(n)
+        case "forall":
+            _check_arity(tag, args, 3)
+            ty_count = int(_bare_int(args[0], "forall ty-count"))
+            eff_count = int(_bare_int(args[1], "forall eff-count"))
+            if ty_count < 0:
+                raise ParseError("forall ty-count must be >= 0")
+            if eff_count < 0:
+                raise ParseError("forall eff-count must be >= 0")
+            return A.Forall(ty_count, eff_count, _build(args[2]))
+        case "eff-set":
+            return A.EffSet(tuple(_bare_sym(a, "eff-set atom") for a in args))
+        case "eff-var":
+            _check_arity(tag, args, 1)
+            n = int(_bare_int(args[0], "eff-var index"))
+            if n < 0:
+                raise ParseError("eff-var index must be >= 0")
+            return A.EffVar(n)
         case _:
             raise ParseError(f"unknown tag {tag!r}")
 

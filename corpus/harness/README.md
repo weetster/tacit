@@ -1,6 +1,6 @@
 # corpus/harness
 
-Python test-runner and token-counter for the Phase 3 evaluation corpus.
+Python test-runner and token-counter for the Phase 3/4 evaluation corpus.
 
 ## Setup
 
@@ -47,7 +47,7 @@ references; and prints the binary path, mtime, and BLAKE3 hash. Pass `--json`
 for machine-readable output. Exits non-zero if any smoke or canary check
 fails. Run this before any paid stdlib-mediated rerun.
 
-`corpus-eval` drives the Phase 3 model-generation loop and writes paired
+`corpus-eval` drives the evaluation model-generation loop and writes paired
 `<run-id>.run.json` / `<run-id>.metrics.json` files under
 `../../plans/phase-3-results/` by default. Real Anthropic runs read
 `ANTHROPIC_API_KEY`; OpenRouter runs read `OPENROUTER_API_KEY`. Each
@@ -74,3 +74,8 @@ Use `--result-label library-mediated` for stdlib-mediated experiments. The
 label is written to both `run.json` and `metrics.json`; primary Phase 3 gates
 are marked reporting-only for these runs so they cannot satisfy the
 primer-only core-language gate.
+
+For Phase 4+ runs, keep the default open-task scope and pass
+`--output-dir ../../plans/phase-4-results` when writing phase-specific
+artifacts. Phase 4 reporting treats Rust-relative density as primary and
+Python-relative density as descriptive only.

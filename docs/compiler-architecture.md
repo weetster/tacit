@@ -1,8 +1,10 @@
 # Compiler Architecture
 
-**Status:** Phase 2 complete. All five stages frozen; see
-[ADR 0046](../decisions/0046-p2-stage-5-frozen.md) for Phase 2 freeze details.
-LLVM 19 pinned via `inkwell` 0.9's `llvm19-1` feature.
+**Status:** Phase 4 complete. Phases 1 through 4 are frozen; see
+[ADR 0046](../decisions/0046-p2-stage-5-frozen.md),
+[ADR 0070](../decisions/0070-p3-frozen.md), and
+[ADR 0075](../decisions/0075-phase-4-frozen.md) for the recent freeze
+baselines. LLVM 19 pinned via `inkwell` 0.9's `llvm19-1` feature.
 
 ## Crate layout
 
@@ -59,7 +61,7 @@ Two layers, with the LLVM-touching one gated behind feature flags:
 
 | Module          | LLVM dep | Purpose                                                                  |
 |-----------------|----------|--------------------------------------------------------------------------|
-| `analysis`      | no       | Pure AST checks: closed-lambda check, hole check, App-spine unfolding, integer-literal parsing. |
+| `analysis`      | no       | Pure AST checks: hole check, App-spine unfolding, integer-literal parsing, legacy closed-lambda checks for direct-call paths. |
 | `error`         | no       | `CodegenError` enum; structured diagnostics for both layers.            |
 | `primitives`    | no       | `@name` allowlist (LIBC ∪ ARITH ∪ CMP) and arity table.                |
 | `compile`       | **yes**  | `inkwell`-based IR construction, object-file emission, target-machine setup. |
@@ -377,6 +379,40 @@ Out of scope for Phase 1–3 (per the relevant ADRs):
 - Records, projection, ctors as first-class values.
 - Effect handlers, user-defined effects (Phase 7).
 
+## Phase 4 codegen additions
+
+Phase 4 adds the language surface that was explicitly out of scope for Phase
+1–3 while preserving the existing canonical `app` + `sym` shape where possible.
+
+| AST kind / pattern | Lowering |
+|--------------------|----------|
+| `Record { fields }` | LLVM aggregate value with fields in canonical sorted order. |
+| `Proj { record, field }` | `extractvalue` at the field's canonical index after structural type resolution. |
+| Function-typed lambda value | Two-word closure pair: code pointer plus immutable environment pointer. |
+| Capturing closure | Heap-allocated environment struct containing minimized by-value captures ordered by free DeBruijn reference. |
+| Indirect function application | Load closure code/env pair and call the typed closure-entry function. |
+| Known saturated closed lambda / `rec` call | Preserved as a direct call when the target is statically known. |
+| Reified `rec` member / partial application | Direct-function adapter closure with hidden captures when the captured values are escapable. |
+| `@map xs count f out` | Loop over the `I64Vec` prefix, call `f` for each element, write each result to `out`. |
+| `@fold xs count init f` | Loop over the prefix, threading an integer accumulator through accumulator-first callback calls. |
+| `@for-each xs count f` | Loop over the prefix, call `f` for each element, ignore callback results. |
+
+The closure ABI is intentionally narrow: `Buf` and `I64Vec` handles remain
+non-escapable and cannot be captured by first-class closures. The typechecker
+emits `invalid-capture` before codegen for those cases. Compiler-managed
+closure environment allocation is not surfaced as a source-level `Alloc`
+effect.
+
+Phase 4 examples under `examples/phase-4/` are covered by typecheck, codegen,
+execution, and round-trip tests:
+
+| Example | Surface |
+|---------|---------|
+| `record-accumulator.tac` | Records and projection for structured accumulator state. |
+| `closure-pipeline.tac` | Returned capturing closure applied through a local function value. |
+| `stored-callback-record.tac` | Function values stored in and projected from a record. |
+| `vector-combinators.tac` | `@map`, `@fold`, `@for-each`, captured callback state, and callback effects. |
+
 ## See also
 
 - [phase-2-plan.md](../plans/phase-2-plan.md) — Phase 2 plan + stage gates.
@@ -398,4 +434,8 @@ Out of scope for Phase 1–3 (per the relevant ADRs):
 - [ADR 0047](../decisions/0047-p3-stdlib-expansion-surface.md) — Phase 3 `@name` surface expansion (PARSE/FORMAT/MEM + `@buf-alloc-dyn`).
 - [ADR 0058](../decisions/0058-p3-closed-multi-arg-helper-lowering.md) — direct multi-argument helper lowering.
 - [ADR 0059](../decisions/0059-p3-rec-hidden-captures.md) — hidden capture parameters for `rec` helpers.
+- [ADR 0072](../decisions/0072-p4-record-products.md) — Phase 4 record products.
+- [ADR 0073](../decisions/0073-p4-function-values-and-closures.md) — Phase 4 function values and closures.
+- [ADR 0074](../decisions/0074-p4-higher-order-combinators.md) — Phase 4 higher-order combinators.
+- [ADR 0075](../decisions/0075-phase-4-frozen.md) — Phase 4 freeze.
 - [phase-3-plan.md](../plans/phase-3-plan.md) — Phase 3 plan + stage gates.

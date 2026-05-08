@@ -123,9 +123,44 @@ class PatCtor:
     sub_patterns: tuple["Node", ...]
 
 
+@dataclass(frozen=True, slots=True)
+class PatInt:
+    value: int
+
+
+@dataclass(frozen=True, slots=True)
+class FnTy:
+    arg: "Node"
+    ret: "Node"
+    eff: "Node"
+
+
+@dataclass(frozen=True, slots=True)
+class TyVar:
+    index: int
+
+
+@dataclass(frozen=True, slots=True)
+class Forall:
+    ty_count: int
+    eff_count: int
+    body: "Node"
+
+
+@dataclass(frozen=True, slots=True)
+class EffSet:
+    atoms: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class EffVar:
+    index: int
+
+
 Node = Union[
     Lam, App, Let, Rec, Module, If_, Match, Arm,
     Record, Proj, Ctor, Ann,
     Var, Int_, Str_, Sym, Hole,
     PatWild, PatVar, PatCtor,
+    PatInt, FnTy, TyVar, Forall, EffSet, EffVar,
 ]

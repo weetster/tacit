@@ -1,6 +1,6 @@
 # Phase 4 Plan
 
-**Status:** Active working plan
+**Status:** Frozen by [ADR 0075](../decisions/0075-phase-4-frozen.md)
 **Scope:** Tacit-Lite language-surface expansion
 
 ## Context
@@ -41,9 +41,9 @@ Locked decisions:
   does not set a numeric Rust-relative gate; measurable movement is expected,
   and failure to move is recorded as a strategic finding in the freeze ADR.
 
-Stage 1 through Stage 7 are complete; Stage 8 may begin with open-corpus
-re-evaluation. No agent may read, list, search, or otherwise access
-`corpus/sealed/`.
+Phase 4 is frozen by [ADR 0075](../decisions/0075-phase-4-frozen.md).
+Stages 1 through 9 are complete. Stage 8 used open-corpus re-evaluation only;
+no agent may read, list, search, or otherwise access `corpus/sealed/`.
 
 ## Goal
 
@@ -100,9 +100,13 @@ gaps, but not as a Phase 4 density play.
    [ADR 0073](../decisions/0073-p4-function-values-and-closures.md).
 3. Closure effect handling. Done: folded into
    [ADR 0073](../decisions/0073-p4-function-values-and-closures.md).
-4. Higher-order combinator surface.
+4. Higher-order combinator surface. Done:
+   [ADR 0074](../decisions/0074-p4-higher-order-combinators.md).
 5. Phase 4 testing conventions, if existing conventions are insufficient.
-6. Phase 4 freeze.
+   Done: existing ADR 0043 conventions remained sufficient; recorded in
+   Stage 6 and [ADR 0075](../decisions/0075-phase-4-frozen.md).
+6. Phase 4 freeze. Done:
+   [ADR 0075](../decisions/0075-phase-4-frozen.md).
 
 The ADRs must land before implementation that depends on them.
 
@@ -401,8 +405,28 @@ Exit criteria:
 
 ## Stage 8: Corpus Re-Evaluation
 
+**Status:** Complete
+
 **Purpose:** Measure whether Phase 4 improves Tacit's structural position
 without reviving the retired Python-relative gate.
+
+Outcome:
+
+- Open-corpus re-evaluation is recorded under `plans/phase-4-results/` as run
+  `019e0891-4143-78f6-9146-2c701c408bbb`.
+- Anthropic `claude-sonnet-4-6` with the 22,157-token Phase 4 primer reached
+  38/47 one-shot task passes (80.9%) and 47/47 final passes after up to two
+  repair turns.
+- One-shot compile pass was 43/47 (91.5%); one-shot typecheck pass was 44/47
+  (93.6%); repair recovered all nine initially failed tasks.
+- Average model calls per task fell to 1.23, and generated output tokens fell
+  to 20,157.
+- Rust-relative density did not improve under the current end-to-end
+  primer-plus-generation accounting: the repair aggregate was 1,305,263 Tacit
+  tokens, higher than the recorded Phase 3 repair-loop comparison points.
+- The density miss is recorded as a strategic finding in
+  [ADR 0075](../decisions/0075-phase-4-frozen.md), not as a reason to reopen
+  Phase 4 scope.
 
 Work items:
 
@@ -425,7 +449,24 @@ Exit criteria:
 
 ## Stage 9: Freeze
 
+**Status:** Complete
+
 **Purpose:** Close Phase 4 with an auditable baseline.
+
+Outcome:
+
+- Phase 4 freeze is accepted as
+  [ADR 0075](../decisions/0075-phase-4-frozen.md).
+- The delivered language surface is records, first-class function values with
+  capturing closures, callback effects inside the Lite effect lattice, and
+  `@map` / `@fold` / `@for-each` over `I64Vec`.
+- Final smoke, example, and open-corpus metrics are recorded in this plan,
+  [ADR 0075](../decisions/0075-phase-4-frozen.md), and
+  `plans/phase-4-results/`.
+- The Rust-relative aspiration result is negative under the current
+  end-to-end metric; generated output shrank, but primer cost dominates.
+- Explicit deferrals to Phase 5+ and Phase 7 are recorded in
+  [ADR 0075](../decisions/0075-phase-4-frozen.md).
 
 Work items:
 
@@ -463,9 +504,11 @@ Exit criteria:
 
 ## Final Success Criteria
 
-Phase 4 succeeds when Tacit-Lite has product types, first-class closures, and
-the `map`/`fold`/`for-each` combinator family working end to end across parse,
+Phase 4 is frozen with product types, first-class closures, and the
+`map`/`fold`/`for-each` combinator family working end to end across parse,
 canonicalization, views, type/effect checking, codegen, execution, diagnostics,
-examples, and evaluation. The phase should preserve Phase 3 fluency, improve
-Rust-relative density on the open corpus, and keep the project positioned
-around reasoning support rather than Python token parity.
+examples, and evaluation. Phase 3 fluency is preserved and materially
+improved. Rust-relative density did not improve under the current end-to-end
+metric; [ADR 0075](../decisions/0075-phase-4-frozen.md) records this as a
+strategic finding while preserving the project direction around reasoning
+support rather than Python token parity.
