@@ -1,0 +1,82 @@
+{
+  "tacd_version": "1",
+  "targets_hash_blake3": "5b5922d0f3a4d9cc3549e4f729e1d607fbe8dbc6a4f5c7dcbb105fbe7ba75c73",
+  "display": {
+    "binder": "factor",
+    "children": [
+      {},
+      {
+        "binder": "ops",
+        "children": [
+          {
+            "children": [
+              null,
+              {
+                "binder": "x",
+                "children": [
+                  {
+                    "children": [
+                      {
+                        "children": [
+                          {},
+                          {}
+                        ]
+                      },
+                      {}
+                    ]
+                  }
+                ]
+              },
+              null,
+              {
+                "binder": "x",
+                "children": [
+                  {
+                    "children": [
+                      {
+                        "children": [
+                          {},
+                          {}
+                        ]
+                      },
+                      {}
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "children": [
+              {
+                "children": [
+                  {},
+                  {
+                    "children": [
+                      {
+                        "children": [
+                          {}
+                        ]
+                      },
+                      {}
+                    ]
+                  }
+                ]
+              },
+              {
+                "children": [
+                  {
+                    "children": [
+                      {}
+                    ]
+                  },
+                  {}
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

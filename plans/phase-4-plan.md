@@ -41,8 +41,9 @@ Locked decisions:
   does not set a numeric Rust-relative gate; measurable movement is expected,
   and failure to move is recorded as a strategic finding in the freeze ADR.
 
-Stage 1 through Stage 6 are complete; Stage 7 may begin with primer and
-durable Phase 4 examples.
+Stage 1 through Stage 7 are complete; Stage 8 may begin with open-corpus
+re-evaluation. No agent may read, list, search, or otherwise access
+`corpus/sealed/`.
 
 ## Goal
 
@@ -363,7 +364,23 @@ Exit criteria:
 
 ## Stage 7: Primer And Examples
 
+**Status:** Complete
+
 **Purpose:** Teach the new language surface and create durable examples.
+
+Outcome:
+
+- `plans/primer/tacit-lite-primer.md` now teaches Phase 4 records, capturing
+  closures, first-class function values, callback effects, and `@map` /
+  `@fold` / `@for-each` over `I64Vec`.
+- Durable Phase 4 examples live under `examples/phase-4/` as canonical `.tac`
+  files with `.tacd` display sidecars:
+  `record-accumulator`, `closure-pipeline`, `stored-callback-record`, and
+  `vector-combinators`.
+- Typecheck, codegen, and dedicated round-trip smoke coverage now includes the
+  Phase 4 examples.
+- Primer token count is re-baselined at 22,174 `o200k_base` tokens, measured
+  with `tiktoken` via `uv run` from `corpus/harness` on 2026-05-08.
 
 Work items:
 

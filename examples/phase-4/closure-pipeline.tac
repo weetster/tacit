@@ -1,0 +1,1 @@
+(let (lam (lam (app (app (sym add) (var 0)) (var 1)))) (let (app (var 0) (int 10)) (app (var 0) (int 32))))

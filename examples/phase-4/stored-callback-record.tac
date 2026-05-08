@@ -1,0 +1,1 @@
+(let (int 3) (let (record bump (lam (app (app (sym add) (var 0)) (int 1))) scale (lam (app (app (sym mul) (var 0)) (var 1)))) (app (app (sym add) (app (proj (var 0) bump) (int 10))) (app (proj (var 0) scale) (int 10)))))

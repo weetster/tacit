@@ -67,9 +67,10 @@ prefer direct output over building a large abstract result.
 ## 1. Semantic Summary
 
 Tacit-Lite is a small expression language. Authors write source using `let`,
-`lambda`, `rec`, `if`, `match`, records, and `@name` primitive calls. The
-compiler parses that source, typechecks it, emits native code, and can render
-it back while preserving author-facing names.
+`lambda`, `rec`, `if`, `match`, records, first-class function values, and
+`@name` primitive calls. The compiler parses that source, typechecks it,
+emits native code, and can render it back while preserving author-facing
+names.
 
 A Tacit program is usually one expression. A binding extends only the body
 after `in`. A lambda has exactly one parameter, so multi-argument functions
@@ -87,17 +88,21 @@ helper should either return an `Int`/`Bool`-shaped value or perform direct
 buffer/IO work and return an `Int` status.
 
 Type inference is local. Standalone examples in this primer rely on
-inference. The base runtime values are `Int`, `Bool`, `Str`, `Buf`, records,
-constructors, lambdas, and holes. The effect lattice has four atoms: `Alloc`,
-`Mut`, `IO`, and `Div`. Pure code has `{}`.
+inference. The base runtime values are `Int`, `Bool`, `Str`, `Buf`, `I64Vec`,
+records, constructors, and lambdas. Lambdas are function values: they can be
+passed, returned, stored in records, and called through variables. The effect
+lattice has four atoms: `Alloc`, `Mut`, `IO`, and `Div`. Pure code has `{}`.
 Allocation of stack buffers adds `Alloc`; buffer writes and integer
 formatting add `Mut`; `@read`, `@write`, and `@exit` add `IO`; recursive
 calls and division-like primitives can add `Div`.
 
-There is no implicit mutable state. Mutation is explicit through `Buf`
-primitives. A `Buf` is a byte buffer: each `@buf-get` reads one byte-sized
-integer. Keep counters, offsets, indexes, and other large `Int` values in
-lambda parameters or `let` bindings, not in buffer cells. There is no general
+There is no implicit mutable state. Mutation is explicit through `Buf` and
+`I64Vec` primitives. A `Buf` is a byte buffer: each `@buf-get` reads one
+byte-sized integer. Keep counters, offsets, indexes, and other large `Int`
+values in lambda parameters or `let` bindings, not in buffer cells. Closures
+capture ordinary first-class values by value, but `Buf` and `I64Vec` handles
+are region-limited: direct `rec` helpers may use them from the surrounding
+scope, while first-class closures may not capture them. There is no general
 heap buffer, hash map, object system, type class, effect handler, or
 user-defined effect in Tacit-Lite. If a program needs those, write the direct
 Tacit-Lite shape with the available primitives.
@@ -463,11 +468,14 @@ in this order:
    keyword.
 4. Replace Python lists, bytearrays, and Rust arrays with `Buf` only when the
    stored values are bytes or small flags. Use explicit offsets. Keep full
-   `Int` values in recursive state or local bindings.
+   `Int` values in recursive state, records, `I64Vec`, or local bindings.
 5. Replace standard-library parsing and formatting with `@parse-i64` and
    `@fmt-i64`. Do not hand-roll those unless the program is specifically about
    parsing or formatting internals.
-6. Check the effect story last. If the program reads or writes, it has `IO`.
+6. Use records for small named bundles and `@map`, `@fold`, or `@for-each`
+   for straight-line `I64Vec` traversal before writing a custom recursive
+   loop.
+7. Check the effect story last. If the program reads or writes, it has `IO`.
    If it allocates a buffer, it has `Alloc`. If it writes to a buffer, it has
    `Mut`. If it recurses or divides, it may have `Div`.
 
@@ -510,46 +518,63 @@ Primitive names should remain primitive names. A wrapper like `let plus =
 lambda x. lambda y. @add x y in ...` is useful only when it participates in a
 larger abstraction. It is not useful as a synonym for `@add`.
 
-### Executable Helper Shapes
+### Helper, Closure, And Callback Shapes
 
-Executable programs support direct helper calls, not general function values.
-This distinction matters most in larger programs.
+Use the helper shape that matches the value being carried. Direct `let`
+helpers are ordinary function values. `rec` helpers are for self-recursion or
+mutual recursion. First-class closures may capture ordinary values such as
+integers, booleans, records, and functions.
 
-Safe shapes:
-
-```text
-let pure = lambda x. lambda y. @add x y in pure 1 2
-
-let buf = @buf-alloc 64 in
-let n = @read 0 buf 64 in
-rec {scan = lambda i. if @ge i n then 0 else scan (@add i 1)} in scan 0
+```tacit
+let base = 40 in
+let add_base = lambda x. @add x base in
+add_base 2
 ```
 
-The first helper is closed: it uses only its parameters and primitives. The
-second helper is a `rec` member, so it may use runtime values bound before the
-`rec`, such as `buf` and `n`.
+Closures can be returned and then called through a local function value:
 
-Unsafe shapes:
+```tacit
+let make_adder = lambda base. lambda x. @add x base in
+let add_ten = make_adder 10 in
+add_ten 32
+```
+
+Function values can also be stored in records and projected before calling:
+
+```tacit
+let ops = {bump: lambda x. @add x 1, double: lambda x. @mul x 2} in
+ops.bump 41
+```
+
+`Buf` and `I64Vec` handles are the important exception. They are
+region-limited handles and cannot be captured by first-class closures:
+
+```tacit fail=invalid-capture
+let buf = @buf-alloc 1 in
+let get = lambda i. @buf-get buf i in
+get 0
+```
+
+When a helper needs a buffer or vector from the surrounding expression, make
+it a direct `rec` member instead:
+
+```tacit
+let buf = @buf-alloc 1 in
+rec {get = lambda i. @buf-get buf i} in get 0
+```
+
+This direct `rec` shape may use earlier runtime values such as `buf`, `xs`,
+or `n` through the compiler-managed direct-call path. A first-class closure
+must not capture those handles or store them for later.
+
+Do not bind a whole `rec` group as if it were an ordinary expression:
 
 ```text
 let skip = rec {skip = lambda i. ...} in skip in ...
 ```
 
-Do not bind a recursive function itself as a value. Put `skip` in the same
-`rec` group as the helpers that call it.
-
-```text
-let write_partition = lambda parity.
-  rec {loop = lambda i. ... parity ... loop next_i} in loop 0
-in write_partition 0
-```
-
-Do not create a helper factory. There are no closures that remember `parity`.
-Make `parity` an ordinary parameter of the recursive helper:
-
-```text
-rec {loop = lambda parity. lambda i. ... loop parity next_i} in
-```
+Put `skip` in the same `rec` group as the helpers that call it, or write a
+non-recursive closure if the helper does not need recursion.
 
 Sibling helpers in the same `rec` group do not share parameter scopes. If
 `bubble = lambda pass. ... inner ...` and `inner = lambda i. ...`, the name
@@ -561,45 +586,25 @@ rec {
   bubble = lambda pass. lambda i. ... inner pass i ...;
   inner = lambda pass. lambda i. ... pass ...
 } in bubble initial_pass 0
-let _ = loop 0 0 in
-loop 1 0
 ```
 
-The same rule applies to ordinary local lambdas inside recursive helpers. A
-shape like this is closure-like even when it typechecks:
+Closures are useful when the captured value is stable for the lifetime of the
+function value. For changing loop state, pass the state explicitly so the
+recursive call site remains inspectable:
 
 ```text
 rec {outer = lambda i.
-  let emit = lambda j. ... i ... in
-  emit 0
+  ... outer next_i ...
 } in outer 0
 ```
 
-Lift `emit` into the same `rec` group and pass `i` explicitly. This avoids
-free-variable lowering failures and makes every changing value visible at the
-call site:
+If a nested helper also recurses, lift it into the same `rec` group and pass
+the changing outer state explicitly:
 
 ```text
 rec {
   emit = lambda i. lambda j. ... emit i next_j;
   outer = lambda i. let _ = emit i 0 in outer next_i
-} in outer 0
-```
-
-```text
-rec {outer = lambda i.
-  rec {inner = lambda j. ... i ... inner next_j} in inner 0
-} in outer 0
-```
-
-Do not put a fresh `rec` inside a helper when the inner helper uses the outer
-helper's parameters. Lift the inner helper into the same group and pass the
-outer state explicitly:
-
-```text
-rec {
-  inner = lambda i. lambda j. ... inner i next_j;
-  outer = lambda i. let _ = inner i 0 in outer next_i
 } in outer 0
 ```
 
@@ -609,11 +614,20 @@ For token parsers, this usually means one `rec` group containing `skip`,
 that reads the earlier binding directly, or add the value as an explicit
 parameter. Do not hide that value inside a returned lambda.
 
-Use only helper-to-helper calls in executable recursive code. Avoid binding a
-partially applied helper, returning a helper, storing a helper in a record, or
-selecting a helper with `if`. If a branch chooses behavior, pass a mode flag
-such as `want_even`, `ascending`, or `emit_separator`, then branch inside the
-helper body.
+Partial application is now a real function value. It is safe when the captured
+values are first-class and escapable:
+
+```tacit
+let add = lambda x. lambda y. @add x y in
+let add_five = add 5 in
+add_five 37
+```
+
+Avoid partially applying a `rec` member whose hidden context includes `Buf` or
+`I64Vec`; call it directly with all arguments instead. If a branch chooses
+behavior, either select between same-typed function values that capture only
+first-class data, or pass a mode flag such as `want_even`, `ascending`, or
+`emit_separator` and branch inside the helper body.
 
 ### Branch Syntax Traps
 
@@ -857,7 +871,7 @@ Put sibling recursive helpers in one `rec` group instead of creating a fresh
 `rec` inside a recursive helper body. A nested helper that needs `i`, `end`,
 `cnt`, `parity`, or another changing value must become a sibling and receive
 that value as a parameter. This keeps parsing simple, keeps every changing
-part visible at the call site, and avoids unsupported closure-like shapes.
+part visible at the call site, and keeps recursive control flow inspectable.
 
 Use `if` for two branches selected by a comparison or truthy integer.
 
@@ -958,11 +972,39 @@ This is `text` because `done`, `next_i`, and `next_acc` are placeholders.
 
 ### Records And Projection
 
-Records are useful for pure grouping, but executable programs are
-not designed around a large record-heavy style. Use records when a function
-naturally returns a small bundle that is consumed immediately. Field order is
-not semantic. If you project a field, make sure the inferred record type
-actually contains that field.
+Records are named-field product values. Use them when a function naturally
+returns a small bundle or when a short sequence is clearer with named state
+than with positional integer parameters.
+
+```tacit
+let state = {sum: 6, count: 3} in
+@add state.sum state.count
+```
+
+Field order is not semantic. `{sum: 6, count: 3}` and `{count: 3, sum: 6}`
+have the same structural type. Projection is exact: `state.sum` typechecks
+only when the inferred record type contains a `sum` field. There is no record
+width subtyping, no row polymorphism, and no record pattern syntax in
+Tacit-Lite Phase 4. Destructure with projection:
+
+```tacit
+let result = {value: 40, next: 2} in
+let value = result.value in
+let next = result.next in
+@add value next
+```
+
+Record fields can hold ordinary first-class values, including function values,
+when those values are themselves escapable:
+
+```tacit
+let ops = {inc: lambda x. @add x 1, dec: lambda x. @sub x 1} in
+ops.inc 41
+```
+
+Do not store `Buf` or `I64Vec` handles in records or capture them in closures.
+Keep those handles in direct `let` or `rec` scope and pass ordinary integers
+or records of integers across function-value boundaries.
 
 ### Constructors And Patterns
 
@@ -991,6 +1033,8 @@ unequal_branch`. Do not invert the return value with `if @eq (@buf-eq ...) 0
 then ...`, as this inverts the meaning.
 
 Integer vector storage: `@i64-get`, `@i64-set`, `@i64-swap`, `@i64-copy`.
+
+Higher-order integer-vector traversal: `@map`, `@fold`, `@for-each`.
 
 Text range indexing: `@line-index`, `@token-index`, `@token-index-any`,
 `@range-start`, `@range-len`.
@@ -1022,6 +1066,50 @@ does the same with a delimiter set.
 `@count-equal-ranges text table count out` and
 `@dedup-adjacent-ranges text table count out` scan adjacent equal byte ranges
 and write grouped rows to `out`.
+
+### Higher-Order Combinators
+
+`@map`, `@fold`, and `@for-each` traverse an `I64Vec` prefix. They do not
+work on `Buf`, strings, records, or general lists. The count is separate from
+the handle, and the visited range is `0 .. count - 1`.
+
+```tacit
+let xs = @i64-alloc 3 in
+let _ = @i64-set xs 0 1 in
+let _ = @i64-set xs 1 2 in
+let _ = @i64-set xs 2 3 in
+let ys = @i64-alloc 3 in
+let offset = 10 in
+let _ = @map xs 3 (lambda x. @add x offset) ys in
+@fold ys 3 0 (lambda acc. lambda x. @add acc x)
+```
+
+`@map xs count f out` calls `f` for each integer element and writes the
+integer result into `out` at the same index. `@map` has `Mut` because it
+writes `out`; it returns `0`.
+
+`@fold xs count init f` calls `f acc elem` for each element and returns the
+final accumulator. The callback is accumulator-first:
+
+```text
+@fold xs count 0 (lambda acc. lambda x. @add acc x)
+```
+
+`@for-each xs count f` calls `f elem`, ignores the callback result, and
+returns `0`. Use it when the callback is effectful:
+
+```text
+@for-each xs count (lambda x.
+  let out = @buf-alloc 2 in
+  let _ = @buf-set out 0 x in
+  let _ = @buf-set out 1 10 in
+  @write 1 out 2)
+```
+
+Combinator callbacks may capture first-class values such as `offset` above.
+They must not capture the `I64Vec` or `Buf` handles themselves. If a callback
+needs indexed storage beyond the current element, use a direct recursive
+helper instead of a combinator.
 
 ### Program Boundary
 
@@ -1103,17 +1191,22 @@ Effects join by union. If one part of a program is `{Alloc}` and a later part
 is `{Mut}`, the whole expression has `{Alloc, Mut}`. When effects are written
 in declarations, use the stable alphabetic order: `Alloc`, `Div`, `IO`, `Mut`.
 
-Partial application matters. `@write 1` is just a pure function value waiting
-for the buffer and length. The `IO` effect appears only at the fully applied
-call. In executable programs, do not bind or return that partial value; call
-the primitive with all of its arguments at the point where the work should
-happen.
+Partial application matters. `@write 1` is a pure function value waiting for
+the buffer and length. The `IO` effect appears only at the fully applied call.
+Binding or passing a partial value is valid when the resulting closure captures
+only first-class data, but for effectful primitives it is usually clearer to
+call the primitive with all of its arguments at the point where the work
+should happen.
 
 `let` joins the effect of its right-hand side with the effect of its body.
 `if` joins the condition, then branch, and else branch. `match` joins the
 scrutinee and every arm body. A lambda expression itself is pure to create;
 the effect is attached to the function call. A recursive function's call
 effect includes `Div` because Tacit-Lite does not prove recursion terminates.
+Callbacks contribute the effects of their bodies when a combinator calls
+them. `@map` also contributes `Mut` because it writes the output vector.
+`@for-each` is the usual shape for effectful callbacks whose integer result is
+not important.
 
 ### Common Effect Predictions
 
@@ -1130,6 +1223,12 @@ effect includes `Div` because Tacit-Lite does not prove recursion terminates.
 `let b = @buf-alloc 32 in @fmt-i64 b 0 42`: `{Alloc, Mut}`.
 
 `let xs = @i64-alloc 2 in @i64-set xs 0 7`: `{Alloc, Mut}`.
+
+`let xs = @i64-alloc 1 in @fold xs 1 0 (lambda acc. lambda x. @add acc x)`:
+`{Alloc}`.
+
+`let xs = @i64-alloc 1 in let ys = @i64-alloc 1 in @map xs 1 (lambda x. x) ys`:
+`{Alloc, Mut}`.
 
 `let b = @buf-alloc 32 in let w = @fmt-i64 b 0 42 in @write 1 b w`:
 `{Alloc, IO, Mut}`.
@@ -1148,9 +1247,10 @@ When an effect appears surprising, find the innermost primitive that creates
 it. `Mut` usually comes from `@buf-set`, `@buf-copy`, `@fmt-i64`, `@read`,
 `@i64-set`, `@i64-copy`, `@line-index`, `@token-index`,
 `@token-index-any`, `@sort-i64`, `@sort-ranges-by-bytes`, or
-`@stable-sort-pairs-i64`. `IO` comes from `@read`, `@write`, or `@exit`.
-`Alloc` comes from allocation primitives. `Div` comes from recursion,
-division, or modulo.
+`@stable-sort-pairs-i64`, and from `@map` writing its output vector. `IO`
+comes from `@read`, `@write`, `@exit`, or an effectful callback called by a
+combinator. `Alloc` comes from allocation primitives. `Div` comes from
+recursion, division, or modulo.
 
 ## 5. Negative Examples And Diagnostics
 
@@ -1283,6 +1383,22 @@ primitive surface, or bind a lowercase helper name before using it.
 @add 1 0
 ```
 
+Capturing a region-limited buffer in a first-class closure:
+
+```tacit fail=invalid-capture
+let buf = @buf-alloc 1 in
+let get = lambda i. @buf-get buf i in
+get 0
+```
+
+Diagnostic kind: `invalid-capture`. Fix: keep buffer access in a direct
+helper.
+
+```tacit
+let buf = @buf-alloc 1 in
+rec {get = lambda i. @buf-get buf i} in get 0
+```
+
 ### Diagnostic Reading Pattern
 
 The important repair signals are `kind`, `message`, `expected`, and `actual`.
@@ -1324,6 +1440,12 @@ integers.
 primitive-like symbol is not known to the typechecker. Use a known base type,
 field, constructor, or primitive.
 
+`invalid-projection`: a projected field is not present on the inferred record
+type. Check the record construction and field spelling.
+
+`apply-non-function`: an application tried to call a value whose type is not a
+function. Add the missing function expression or remove the extra argument.
+
 `unbound-type-variable`: a `ty-var` appears without an enclosing `forall`.
 In authoring-view examples, avoid raw type variables unless the surrounding
 type expression binds them.
@@ -1346,6 +1468,22 @@ effect sets instead.
 `buf-escape`: a buffer handle is used outside the scope where the checker can
 prove it is valid. Keep buffer use inside the `let` body that owns it.
 
+`invalid-capture`: a first-class closure captures a non-escapable value such
+as `Buf` or `I64Vec`. Use a direct `rec` helper or pass ordinary integer
+state instead.
+
+`callback-type-mismatch`: a combinator callback does not have the required
+integer function shape. `@map` and `@for-each` expect `lambda x. ...`;
+`@fold` expects `lambda acc. lambda x. ...`.
+
+`callback-effect-mismatch`: a `@fold` callback performs effects during the
+first curried application. Put effects in the final element-consuming body.
+
+`invalid-accumulator-shape`: a `@fold` accumulator is not an `Int`.
+
+`unsupported-collection-shape`: a combinator collection argument is not an
+`I64Vec`.
+
 `parse-error`, `unexpected-token`, `expected-expr`, `unclosed-paren`,
 `expected-pattern`, `unbound-name`, and `arity-mismatch` come from parser
 recovery holes. Fix the local syntax first; later diagnostics may be
@@ -1361,12 +1499,49 @@ When a program fails, use this sequence:
 3. Type mismatch at a primitive: check argument order. Buffer primitives are
    strict about `buf`, `offset`, `length`, and `value` positions.
 4. Branch mismatch: make both branches return the same type.
-5. Effect violation: update the boundary effect set to match source behavior.
-6. Unsupported executable shape: rewrite toward the executable subset:
-   integer result, direct helper calls, `rec`, `if`, `match`, `let`, and
-   supported primitives.
-7. Wrong output after compile success: keep the type/effect shape and debug
+5. Closure capture failure: move `Buf` or `I64Vec` work into a direct `rec`
+   helper, or pass only ordinary first-class state into the closure.
+6. Combinator callback failure: check the callback arity and accumulator
+   order.
+7. Effect violation: update the boundary effect set to match source behavior.
+8. Unsupported executable shape: rewrite toward the executable subset:
+   integer result, direct helper calls, `rec`, `if`, `match`, `let`, records,
+   closures over first-class values, combinators, and supported primitives.
+9. Wrong output after compile success: keep the type/effect shape and debug
    the algorithm with smaller input.
+
+### Phase 4 Worked Examples
+
+Record state can make an accumulator's meaning visible without positional
+conventions:
+
+```tacit
+let start = {sum: 0, count: 0} in
+let one = {sum: @add start.sum 1, count: @add start.count 1} in
+let two = {sum: @add one.sum 2, count: @add one.count 1} in
+@add two.sum two.count
+```
+
+Returned closures are useful when one value configures later calls:
+
+```tacit
+let make_adder = lambda base. lambda x. @add x base in
+let add_ten = make_adder 10 in
+add_ten 32
+```
+
+Combinators remove boilerplate when the traversal is exactly over an
+`I64Vec` prefix:
+
+```tacit
+let xs = @i64-alloc 3 in
+let _ = @i64-set xs 0 1 in
+let _ = @i64-set xs 1 2 in
+let _ = @i64-set xs 2 3 in
+let ys = @i64-alloc 3 in
+let _ = @map xs 3 (lambda x. @add x 1) ys in
+@fold ys 3 0 (lambda acc. lambda x. @add acc x)
+```
 
 ### Common Programming Recipes
 
@@ -1607,15 +1782,15 @@ unknown primitive. Bind the name with `let`, move it into lambda scope, or use
 one of the allowed primitive names.
 
 If a program uses an unsupported executable shape, simplify toward the
-executable subset. Records and projections can typecheck but are not the best
-shape for portable executable programs. Prefer integer state, buffers, `let`,
-`if`, `match`, `lambda`, `rec`, and primitive calls.
+Phase 4 executable subset. Prefer integer results at the program boundary,
+buffers or `I64Vec` for explicit storage, records for small named bundles,
+closures over first-class values, `let`, `if`, `match`, `lambda`, `rec`,
+combinators, and primitive calls.
 
-If an executable rejects a function value, look for one of these shapes:
-binding `rec {f = ...} in f` as a value, returning a lambda from another
-lambda, partially applying a helper, or putting a nested `rec` inside a
-helper while using the outer helper's parameters. Lift helpers into one
-`rec` group and pass all changing state explicitly.
+If an executable rejects a function value, inspect its capture set and call
+shape. A closure that captures `Buf` or `I64Vec` should become a direct `rec`
+helper. A recursive helper whose changing state is hidden in nested closures
+is usually clearer when lifted into one `rec` group with explicit parameters.
 
 If output differs from the expected bytes only in whitespace — repeated
 missing or extra spaces, missing colons, or missing or extra trailing
@@ -1846,10 +2021,12 @@ needed around compound arguments, especially recursive calls and nested
 makes the parser recover far away from the actual mistake.
 
 If a program typechecks but cannot run as an executable, remove surface
-features that are type-level only or not in the executable subset. Favor
-`Int` results, buffers, primitive calls, and direct helper calls. Avoid
-returning records, functions, or constructors from the final expression in
-executable programs.
+features that are type-level only or outside the current executable subset.
+Favor an `Int` final result, explicit storage, records for small bundles,
+closures over first-class values, combinators, primitive calls, and direct
+helpers for region-limited handles. Do not return records, functions, or
+constructors as the final executable result; compute or print the desired
+integer/byte result before the final expression.
 
 If a program passes simple cases and fails larger cases, inspect buffer
 capacity and output length. `@buf-alloc 32` is enough for one formatted i64,
@@ -1862,7 +2039,9 @@ transformation is in-place and safe.
 Do not infer features that are intentionally absent. No list syntax, no
 implicit string iteration, no Python-style slicing, no automatic stdout
 printing, no mutable locals except through explicit storage primitives, no
-heap allocation, and no hidden operations beyond the primitives listed here.
+general source-visible heap allocation, and no hidden operations beyond the
+primitives listed here. Compiler-managed closure storage is not a value you
+can allocate, inspect, or free.
 If the program needs a table, encode the needed state directly with byte
 buffers, `I64Vec`, or recursive integer state. If the program needs a string
 operation, use byte buffers, range tables, and the primitives listed in this
@@ -1899,6 +2078,12 @@ rec {fill = lambda i.
     fill (@add i 1)
 } in fill 0
 ```
+
+First-class closures and records must not capture or store the `I64Vec`
+handle. When traversal is just element-wise, prefer the Phase 4 combinators:
+`@map` writes to an explicit output vector, `@fold` returns an integer
+accumulator, and `@for-each` is for effectful callbacks whose result is
+ignored.
 
 To store paired ranges or other two-column data, use two consecutive slots per
 row. For row `i`, the first slot is `2*i` and the second slot is `2*i+1`.

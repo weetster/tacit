@@ -1,0 +1,47 @@
+{
+  "tacd_version": "1",
+  "targets_hash_blake3": "82f424fd47701440d352be6e1859452a1874b7dd8df82ec2ff28b9acd5250281",
+  "display": {
+    "binder": "make_adder",
+    "children": [
+      {
+        "binder": "base",
+        "children": [
+          {
+            "binder": "x",
+            "children": [
+              {
+                "children": [
+                  {
+                    "children": [
+                      {},
+                      {}
+                    ]
+                  },
+                  {}
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "binder": "add_ten",
+        "children": [
+          {
+            "children": [
+              {},
+              {}
+            ]
+          },
+          {
+            "children": [
+              {},
+              {}
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

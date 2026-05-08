@@ -1,0 +1,175 @@
+{
+  "tacd_version": "1",
+  "targets_hash_blake3": "4b1138156358a36206915d7357c31a9e5c15f382cb69054183aecffba8cbc58b",
+  "display": {
+    "binder": "start",
+    "children": [
+      {
+        "field_order": [
+          1,
+          0
+        ],
+        "children": [
+          null,
+          {},
+          null,
+          {}
+        ]
+      },
+      {
+        "binder": "one",
+        "children": [
+          {
+            "field_order": [
+              1,
+              0
+            ],
+            "children": [
+              null,
+              {
+                "children": [
+                  {
+                    "children": [
+                      {},
+                      {
+                        "children": [
+                          {}
+                        ]
+                      }
+                    ]
+                  },
+                  {}
+                ]
+              },
+              null,
+              {
+                "children": [
+                  {
+                    "children": [
+                      {},
+                      {
+                        "children": [
+                          {}
+                        ]
+                      }
+                    ]
+                  },
+                  {}
+                ]
+              }
+            ]
+          },
+          {
+            "binder": "two",
+            "children": [
+              {
+                "field_order": [
+                  1,
+                  0
+                ],
+                "children": [
+                  null,
+                  {
+                    "children": [
+                      {
+                        "children": [
+                          {},
+                          {
+                            "children": [
+                              {}
+                            ]
+                          }
+                        ]
+                      },
+                      {}
+                    ]
+                  },
+                  null,
+                  {
+                    "children": [
+                      {
+                        "children": [
+                          {},
+                          {
+                            "children": [
+                              {}
+                            ]
+                          }
+                        ]
+                      },
+                      {}
+                    ]
+                  }
+                ]
+              },
+              {
+                "binder": "three",
+                "children": [
+                  {
+                    "field_order": [
+                      1,
+                      0
+                    ],
+                    "children": [
+                      null,
+                      {
+                        "children": [
+                          {
+                            "children": [
+                              {},
+                              {
+                                "children": [
+                                  {}
+                                ]
+                              }
+                            ]
+                          },
+                          {}
+                        ]
+                      },
+                      null,
+                      {
+                        "children": [
+                          {
+                            "children": [
+                              {},
+                              {
+                                "children": [
+                                  {}
+                                ]
+                              }
+                            ]
+                          },
+                          {}
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "children": [
+                      {
+                        "children": [
+                          {},
+                          {
+                            "children": [
+                              {}
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "children": [
+                          {}
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
