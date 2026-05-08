@@ -72,6 +72,11 @@ Real `corpus-eval` runs need an API key:
 The evaluator loads a `.env` file from the current working directory. This is
 another reason to run from `corpus/harness`.
 
+In practice, that means `corpus/harness/.env` is loaded automatically when you
+run the harness from `corpus/harness` with `uv run`. If you run the command from
+another directory, the harness will look for `.env` in that directory instead,
+so prefer `cd corpus/harness` first or export the key explicitly.
+
 ## Setup
 
 ```bash
