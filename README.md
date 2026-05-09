@@ -71,10 +71,11 @@ primer-plus-generation density did not improve because the Phase 4 primer
 dominates the aggregate token count. That mixed result is part of the research
 record, not a reason to add more Phase 4 language surface.
 
-The next planned work is **Phase 5A**, a narrow validation phase for larger
-maintenance/debugging tasks. Phase 5A should decide whether full inspection and
-debugging tooling is worth building before committing to the broader Phase 5
-debugger/diff/blame roadmap.
+The next planned work is **Phase 5**, a narrow validation phase for larger
+maintenance/debugging tasks. Phase 6 then adds module/package support and a
+constrained C/Rust host-interface ABI so Tacit can act as a logic kernel inside
+non-Tacit host programs. Full debugger/diff/blame/IDE work follows after those
+boundaries exist.
 
 Start with:
 

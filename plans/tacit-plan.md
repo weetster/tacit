@@ -12,7 +12,9 @@ Tacit is a programming language designed for AI models to read and write, not hu
 
 The CPU constraint remains. Tacit compiles to LLVM IR, then to native code, so we inherit decades of codegen work and can run anywhere LLVM runs.
 
-The tension we accept: Tacit code is nearly unreadable to humans by design. Mitigation is two-way transpilation to Python (deferred stretch goal) and good inspection tooling.
+The tension we accept: Tacit code is nearly unreadable to humans by design.
+Mitigation is good inspection tooling, explicit module/package metadata, and
+eventual C/Rust/binary-IR interop.
 
 ---
 
@@ -54,8 +56,8 @@ These decisions define the shape of Tacit-Lite. They are deliberately chosen to 
 - **Effect signatures are explicit at module boundaries; inferred locally.** Every exported definition carries an explicit effect signature. Internal helpers and local `let`-bindings infer. This keeps effect checking decidable by construction and means the effects of an imported function are legible from its signature alone, without whole-program reasoning.
 - **Numeric types have explicit widths.** `i8`/`i16`/`i32`/`i64`/`u8`/... etc. No default integer type; declarations must specify a width. Overflow traps by default; wrapping and saturating are explicit operators. No implicit coercion between numeric types.
 - **Strings are UTF-8 byte sequences.** Indexing returns bytes. Grapheme, code-point, and locale-aware operations live in explicit stdlib modules, not on the base string type.
-- **Concurrency: none in Lite.** Single-threaded, deterministic execution. Structured concurrency via effect handlers is a Tacit-Full feature (Phase 7). Explicitly deferred, not undefined.
-- **Pure computational kernel; ecosystem-library impurity lives in the host.** Tacit has in-language IO, filesystem, network, and (eventually) threading via a curated effect-annotated stdlib — Phase 1 backs the stdlib with libc, Phase 10 replaces libc with direct syscalls. libc is a lowering detail for the stdlib, not FFI and not a host. What Tacit does *not* have is a way to reach outside that curated stdlib: no user-visible FFI, no curated-FFI mechanism, no way to bind arbitrary ecosystem libraries (SDL, OpenGL, SQLite, etc.) from within Tacit code. Programs that need such libraries use the host model — the Tacit module declares imports and exports, a non-Tacit host satisfies imports and calls into the module, and ecosystem-library impurity is quarantined in the host. Structurally the same shape as WebAssembly or embedded scripting languages. The host-interface surface for non-degenerate embedders is deferred to a future ADR when module composition is concretized. See [ADR 0022](../decisions/0022-pure-kernel-host-model.md).
+- **Concurrency: none in Lite.** Single-threaded, deterministic execution. Structured concurrency via effect handlers is a Tacit-Full feature (Phase 9). Explicitly deferred, not undefined.
+- **Pure computational kernel; ecosystem-library impurity lives in the host.** Tacit has in-language IO, filesystem, network, and (eventually) threading via a curated effect-annotated stdlib — Phase 1 backs the stdlib with libc, Phase 12 replaces libc with direct syscalls. libc is a lowering detail for the stdlib, not FFI and not a host. What Tacit does *not* have is a way to reach outside that curated stdlib: no user-visible general FFI, no way to bind arbitrary ecosystem libraries (SDL, OpenGL, SQLite, etc.) directly from Tacit source. Programs that need such libraries use the host model — the Tacit module declares imports and exports, a non-Tacit host satisfies imports and calls into the module, and ecosystem-library impurity is quarantined in the host. Structurally the same shape as WebAssembly or embedded scripting languages. Phase 6 concretizes this as a constrained host-interface / embedding ABI, not arbitrary FFI. See [ADR 0022](../decisions/0022-pure-kernel-host-model.md).
 
 ### Two variants
 
@@ -66,11 +68,19 @@ These decisions define the shape of Tacit-Lite. They are deliberately chosen to 
 
 ### Explicitly deferred features
 
-- Two-way transpilation with Python (interesting use case, but adds metadata/merge complexity we don't need at v0)
+- C/Rust/binary-IR interop (interesting use case, but adds metadata/merge
+  complexity we do not need before modules, packages, and a host-interface ABI)
 - Self-hosting (bootstrap compiler in Tacit itself — only attempt once language is stable)
 - Multiple parallel representations of same logic (4x token multiplier not worth the consistency benefit)
 - Mandatory performance contracts (optional annotations only)
-- Synthetic training corpus / fine-tuning. Was originally planned as a conditional Phase 5 ("urgent if primer-only fluency falls short"). Phase 3 measured primer-only fluency at 97.9% Sonnet (library-mediated) and 91.5% GPT-5.4 (primer-only) per [ADR 0070](../decisions/0070-p3-frozen.md), and Phase 4 improved the open Sonnet repair-loop result to 100% final per [ADR 0075](../decisions/0075-phase-4-frozen.md), so the triggering condition cannot fire. Re-open only if later language-shape work materially degrades fluency.
+- Synthetic training corpus / fine-tuning. Was originally planned as a
+  conditional post-Phase-4 phase ("urgent if primer-only fluency falls short").
+  Phase 3 measured primer-only fluency at 97.9% Sonnet (library-mediated) and
+  91.5% GPT-5.4 (primer-only) per [ADR 0070](../decisions/0070-p3-frozen.md),
+  and Phase 4 improved the open Sonnet repair-loop result to 100% final per
+  [ADR 0075](../decisions/0075-phase-4-frozen.md), so the triggering condition
+  cannot fire. Re-open only if later language-shape work materially degrades
+  fluency.
 
 ---
 
@@ -128,7 +138,7 @@ Not needed for v0's single-project, no-external-deps compiler. An in-memory hash
 ### Standard library approach
 
 - **v0 links against libc** (and macOS equivalents). Pragmatic compromise: Phase 1's goal is a working end-to-end pipeline, not philosophical purity. Every libc wrapper gets a hand-written effect signature.
-- **Scratch stdlib** (direct syscalls, no libc) is a late stretch goal — see Phase 10. Honors the AI-first premise (no ecosystem dependencies shaped for humans, no C-era assumptions) and gives full control over primitive effect signatures. Deferrable until the language proves itself.
+- **Scratch stdlib** (direct syscalls, no libc) is a late stretch goal — see Phase 12. Honors the AI-first premise (no ecosystem dependencies shaped for humans, no C-era assumptions) and gives full control over primitive effect signatures. Deferrable until the language proves itself.
 
 ### Training corpus for AI fluency
 
@@ -238,26 +248,27 @@ Deliverables:
 - **Records first.** Value-level product types with structural typing, addressing the pattern-5 multi-return failure mode from [ADR 0070](../decisions/0070-p3-frozen.md). [ADR 0072](../decisions/0072-p4-record-products.md) resolves the tuples-vs-records-vs-both choice: records are the Phase 4 product type, tuple syntax is deferred.
 - **Closures / first-class function values.** Generalizes the closed-lambda surface of [ADR 0026](../decisions/0026-closed-lambda-surface.md) so functions can be passed, returned, and stored. Free-variable capture, escape analysis, and codegen-time closure conversion.
 - **Higher-order combinators.** `map`, `fold`, `for-each` and similar shapes over collections — not expressible without the value-of-function story above.
-- **Effect-system extension for closures.** Function values carry an effect signature; capture sites reconcile effect rows. A modest extension to the Lite effect lattice ([ADR 0035](../decisions/0035-p2-effect-set-canonical.md)), not a move to row polymorphism (which remains Phase 7).
+- **Effect-system extension for closures.** Function values carry an effect signature; capture sites reconcile effect rows. A modest extension to the Lite effect lattice ([ADR 0035](../decisions/0035-p2-effect-set-canonical.md)), not a move to row polymorphism (which remains Phase 9).
 - **Primer revision.** Extend the Phase 3 primer with the new constructs, idioms, and worked examples; re-baseline the primer token budget against the expanded surface.
 - **Corpus re-evaluation.** Re-run the Phase 3 open corpus against models with the new primer. Report per-task density delta vs the Phase 3 baseline and per-model fluency delta. Held-out/sealed runs require an explicit sealed-grading request and must not be used for development feedback.
 - **Density baseline switch.** `corpus-tokens` reporting promotes the Rust ratio to primary and demotes the Python ratio to descriptive (per [ADR 0070](../decisions/0070-p3-frozen.md) § item 4). Phase 4 *may* set a Rust-relative aspiration (e.g., ≤ 1.5× Rust on the corpus); it *may not* set a Python-relative gate.
 
-Deliberately out of scope: refinement types, effect handlers, user-defined effects, row polymorphism, capabilities — all Phase 7. Concurrency remains absent.
+Deliberately out of scope: refinement types, effect handlers, user-defined effects, row polymorphism, capabilities — all Phase 9. Concurrency remains absent.
 
 Outcome: records, closures, and the `map`/`fold`/`for-each` family compile, typecheck, inspect, round-trip, and execute correctly on the Phase 4 smoke corpus and examples. Open-corpus re-evaluation shows material fluency improvement (38/47 one-shot, 47/47 final after repair) and generated authoring-output improvement when primer is excluded (2.85× Rust after repair), but no measurable Rust-density improvement under the current end-to-end primer-plus-generation metric. `plans/phase-4-plan.md` is the frozen scope artifact; [ADR 0075](../decisions/0075-phase-4-frozen.md) records the mixed density finding.
 
-### Phase 5A: Maintenance and debugging validation
+### Phase 5: Maintenance and debugging validation
 
-**Goal:** Decide whether full inspection and debugging tooling is the highest
-value next investment. Phase 4 already has structured diagnostics,
-`tacit view --types --effects`, and a successful repair-loop harness. Phase 5A
+**Goal:** Validate the maintenance/debugging claim before building a large
+tool surface. Phase 4 already has structured diagnostics,
+`tacit view --types --effects`, and a successful repair-loop harness. Phase 5
 therefore starts with a maintenance/debugging benchmark and only the smallest
 tooling spike needed to test whether AST-first inspection materially improves
-larger-program repair.
+larger-program repair. The Phase 4 Tacit-Lite primer remains language-facing
+and authoring-view-focused; workflow/tool instruction is measured separately.
 
-This is a gate before the broader Phase 5 tooling roadmap, not a commitment to
-build every debugger/diff/blame feature immediately.
+This is a gate before broader tooling work, not a commitment to build every
+debugger/diff/blame feature immediately.
 
 Deliverables:
 - **Maintenance/debug task spec.** Define a small open benchmark of edit,
@@ -267,53 +278,170 @@ Deliverables:
   explains failures using only the Phase 4 surface: structured diagnostics,
   `tacit view --as inspection --types --effects`, tests, and the existing
   repair-loop conventions.
+- **Workflow primer/runbook.** Define a modular tool-facing prompt artifact for
+  maintenance/debugging tasks. It should explain when to use authoring,
+  inspection, canonical, and future analysis views; how to interpret structured
+  diagnostics; how `.tac`, `.tacd`, and transient `.taca` relate; and how to
+  avoid treating display names as semantic identity. Do not fold this into the
+  core Tacit-Lite authoring primer.
 - **Minimal tool-assisted run.** Add at most one narrow prototype, such as
   structured execution-state output or a structural diff report, then rerun the
-  same benchmark.
+  same benchmark with the workflow primer included only when relevant.
 - **Metric ADR.** Before interpreting results, separate repair turns, model
-  calls, recurring primer/tool context, generated output, compile/typecheck
-  recovery, behavioral recovery, and human review cost. Do not collapse these
-  into one density number.
-- **Decision record.** Close Phase 5A with an ADR choosing one of: proceed to
-  full Phase 5B, build only one proven tool, revise the benchmark, or pause
-  engineering and publish the Phase 0-4 research artifact.
+  calls, language-primer context, workflow-primer context, tool/schema context,
+  generated output, compile/typecheck recovery, behavioral recovery, and human
+  review cost. Do not collapse these into one density number.
+- **Decision record.** Close Phase 5 with an ADR choosing one of: proceed to
+  Phase 6 modules/packages, build one proven tool before Phase 6, revise the
+  benchmark, or pause engineering and publish the Phase 0-4 research artifact.
 
 Exit criteria: the project has evidence that AST-first tooling either improves
-larger-program maintenance/debugging enough to justify Phase 5B, or does not.
-The output is a decision and a benchmark record, not necessarily a large new
-tool surface.
+larger-program maintenance/debugging enough to shape later tooling, or does
+not. The output is a decision and a benchmark record, not necessarily a large
+new tool surface.
 
-### Phase 5B: Inspection and debugging tooling
+### Phase 6: Modules, packages, systems primitives, and host-interface ABI
 
-**Goal:** Make Tacit debuggable by AI and inspectable by humans, if Phase 5A
-shows that dedicated tooling is warranted. Sequenced after Phase 4 because the
-existing inspection surface — structured error output ([ADR 0041](../decisions/0041-p2-structured-error-format.md)), `tacit view --types --effects`, and the `corpus-eval` repair loop — already covers the load-bearing inspection needs for advancing the language. Tooling becomes load-bearing once programs grow past the Phase 4 surface and exceed what the existing views and error format make legible.
+**Goal:** Make Tacit code composable across definitions, projects, packages,
+low-level systems components, and non-Tacit host programs without abandoning
+the content-addressed model. This is the bridge between the current
+single-program research artifact and a real ecosystem. It should land before
+full debugger/IDE/package ecosystem work, because larger tools need real module
+boundaries and systems primitives to inspect.
+
+The host-interface work is an embedding ABI, not general FFI: Tacit modules
+declare typed imports and exports; a C/Rust host satisfies imports and calls
+exported Tacit logic. Tacit source does not get arbitrary `extern "C"` escape
+hatches or direct bindings to random ecosystem libraries.
 
 Deliverables:
-- `tacit view` extensions — registered-view system supporting authoring, inspection, and future views (data-flow, dependency). Phase 1–2 already shipped the renderer; Phase 5 generalizes it.
+- **Module semantics.** Define exports, imports, explicit type/effect
+  signatures at module boundaries, content-hash identity for definitions,
+  local display aliases in sidecar metadata, mutual-recursion group boundaries,
+  and how imported hashes participate in type/effect checking.
+- **Multi-file project layout.** Support multiple `.tac`/`.tacd` units in one
+  project while preserving the rule that file layout has no semantic weight.
+  Add deterministic derived layout, a local hash index, and project-level
+  commands that compile/check the whole graph.
+- **Local package model.** Add a package manifest and lockfile that refer to
+  dependency hashes, not semantic-version ranges. A registry is only an
+  optional name-to-hash lookup service; hashes remain authoritative.
+- **Dependency cache.** Add a local hash-indexed object store for fetched
+  definitions/packages so historical references remain buildable after names
+  move or registry aliases change.
+- **Unit testing.** Add test modules or a test harness that can call exported
+  definitions, run package-level tests, and emit structured test results for AI
+  and human tooling.
+- **Systems-programming primitive surface.** Implement the low-level Tacit-Lite
+  surface needed for emulator-class projects and host-facing libraries:
+  fixed-width signed/unsigned integers (`i8`/`u8` through `i64`/`u64`),
+  explicit casts, truncation, sign extension, zero extension, wrapping,
+  checked, and saturating arithmetic, bitwise `and`/`or`/`xor`/`not`, shifts,
+  rotates, masks, and byte-order helpers. These are ordinary typed operations,
+  not untyped pointer escape hatches.
+- **Typed mutable memory.** Add a clearer mutable-memory story beyond today's
+  `Buf` and `I64Vec`: byte-addressable arrays/slices, typed arrays where needed,
+  explicit bounds behavior, slice/view operations, and effect signatures for
+  reads and writes. Unsafe unchecked access, if ever allowed, must be an
+  explicit later decision rather than the default.
+- **Data layout and decode support.** Resolve whether existing records,
+  constructors, and `match` are sufficient for CPU/device state and instruction
+  decoding. If not, add the minimal typed surface for ABI-stable records,
+  packed layout where the host boundary requires it, and enum/tagged-union-like
+  decode shapes without pulling in Tacit-Full refinements.
+- **Source-level stdlib path.** Start moving library logic out of
+  compiler-recognized primitives where possible. Initial targets are strings,
+  collections, typed arrays, byte-order helpers, file I/O helpers, and
+  source-defined wrappers around existing primitives. HTTP/networking is
+  important but should begin as a host-provided capability with a curated Tacit
+  wrapper, not as arbitrary networking FFI.
+- **Host-interface / embedding ABI.** Specify a stable C ABI for exported Tacit
+  functions, generated C headers, generated Rust host bindings, host-provided
+  imports with explicit type/effect signatures, ownership/lifetime rules for
+  values crossing the boundary, result/error ABI, allocator-boundary rules, and
+  capability/effect declarations for host-backed operations.
+- **Embedding demo.** Ship a small C or Rust host that calls Tacit logic and
+  provides host-backed imports for IO, file, or network-like operations. The
+  demo proves the "Tacit logic kernel inside a C/Rust host" model without
+  exposing arbitrary C libraries to Tacit source.
+
+Deliberately out of scope: arbitrary `extern "C"` from Tacit source, untyped
+pointer escape hatches, dynamic plugin loading, direct SDL/OpenGL/SQLite-style
+bindings from Tacit, semantic-version dependency solving, public package
+registry operation, HTTP as a built-in language primitive, and a full video
+game emulator as a Phase 6 deliverable. Windowing, audio, input, and ROM/file
+selection stay host-owned capabilities at this stage.
+
+Exit criteria: a multi-module Tacit package can be checked, compiled, tested,
+and consumed by a C or Rust host through the constrained embedding ABI. Imports
+and dependencies resolve by hash, unit tests emit structured results, and
+host-provided capabilities are visible through explicit type/effect signatures.
+The systems primitive surface is sufficient to express an emulator-style CPU
+core, memory bus, and instruction decoder in Tacit, even if performance work is
+deferred to Phase 8.
+
+### Phase 7: Inspection and debugging tooling
+
+**Goal:** Make Tacit debuggable by AI and inspectable by humans, with Phase 5's
+maintenance evidence and Phase 6's module/package boundaries as input.
+Sequenced here because the existing inspection surface — structured error
+output ([ADR 0041](../decisions/0041-p2-structured-error-format.md)),
+`tacit view --types --effects`, and the `corpus-eval` repair loop — already
+covers the load-bearing inspection needs for single-program work. Tooling
+becomes load-bearing once programs grow into multi-module packages and exceed
+what the existing views and error format make legible.
+
+Deliverables:
+- `tacit view` extensions — registered-view system supporting authoring, inspection, and future views (data-flow, dependency). Phase 1–2 already shipped the renderer; Phase 7 generalizes it.
 - `tacit-debug` — **AI-first CLI debugger**: step through execution, inspect values and types at any AST node, emit structured JSON output designed for AI consumption rather than human terminal readability.
 - `tacit-diff` — structural diff over AST (ignores cosmetic renames and sidecar shuffles).
 - `tacit-blame` — AST history traversal.
 - Git integration: `.gitattributes` config so standard git operations fall back gracefully on canonical text.
 
-Deferred to stretch: `tacit-merge` (semantic three-way AST merge). Collaborative development isn't a v0 concern, and multiple AI agents concurrently editing the same file isn't a current use case.
+Deferred to stretch:
+- `tacit-merge` — semantic three-way AST merge. Collaborative development
+  isn't a v0 concern, and multiple AI agents concurrently editing the same file
+  isn't a current use case.
+- **IDE and language-server support.** Human-comprehension tooling for
+  LLM-generated Tacit: syntax highlighting for authoring/canonical/inspection
+  views, parser/type/effect diagnostics, hover cards for inferred types,
+  effects, canonical hashes, binding depth, sidecar display metadata, and
+  closure captures, structural go-to-definition/reference lookup, commands to
+  render alternate views for a selected node, integration with `tacit-diff` and
+  `tacit-debug`, and a VS Code extension as the first packaging target. The IDE
+  should consume the same structured APIs as the CLI tools rather than creating
+  a second semantic model.
 
-Exit criteria: An AI agent can diagnose a failing Tacit program end-to-end using only `tacit-debug` output; a human can read diffs and inspect state through `tacit view`.
+Exit criteria: An AI agent can diagnose a failing multi-module Tacit program
+end-to-end using only structured Tacit tool output; a human can read diffs and
+inspect state through `tacit view`.
 
-### Phase 6: Optimization and hardening
+### Phase 8: Optimization and hardening
 
 **Goal:** Make Tacit competitive on performance and robustness.
 
 Deliverables:
 - Tacit-specific optimization passes (dead code elimination over AST before LLVM, constant folding with refinement awareness)
+- Systems-performance lowering for Phase 6 primitives: efficient fixed-width
+  integer operations, bit operations, typed-array access, packed/ABI-stable
+  record layout where specified, dense `match` lowering or jump-table-like
+  dispatch for instruction decoders, inlining for tiny helpers, and a clear
+  bounds-check strategy for performance-critical memory access.
 - Fuzzing infrastructure for the compiler
-- Performance benchmarks against equivalent Rust, C, Python code
+- Performance benchmarks against equivalent Rust and C code; Python may remain
+  descriptive but is not the primary apples-to-apples baseline.
+- Emulator-shaped benchmark suite: instruction-decode loops, memory-bus reads
+  and writes, register/flag updates, golden-state CPU tests, and host-boundary
+  call overhead. A full emulator is a stretch benchmark, not a prerequisite for
+  Phase 8 exit.
 - Known-bug tracker with regression tests
 - Documentation for contributors
 
-Exit criteria: Tacit-Lite performs within 20% of hand-written Rust on standard benchmarks and passes a 72-hour fuzz campaign without compiler crashes.
+Exit criteria: Tacit-Lite performs within 20% of hand-written Rust on standard
+benchmarks, is plausibly competitive on emulator-shaped systems benchmarks, and
+passes a 72-hour fuzz campaign without compiler crashes.
 
-### Phase 7 (stretch): Tacit-Full features
+### Phase 9 (stretch): Tacit-Full features
 
 **Goal:** The research-grade correctness stack.
 
@@ -328,7 +456,7 @@ Deliverables (incremental, each a sub-phase):
 
 No fixed timeline. Each feature is independently valuable and can be deferred indefinitely.
 
-### Phase 8 (stretch): Self-hosting
+### Phase 10 (stretch): Self-hosting
 
 **Goal:** Tacit compiler written in Tacit.
 
@@ -341,15 +469,28 @@ Sequence:
 4. Verify fixed point: output of step 3 is functionally equivalent to output of step 2
 5. Archive the Rust v0 compiler
 
-### Phase 9 (stretch): Two-way transpilation with Python
+### Phase 11 (stretch): C/Rust/binary IR interop
 
 Deliverables:
-- Tacit → Python transpiler (easy direction)
-- Python → Tacit-Lite transpiler with metadata preservation
-- Merge algorithm for round-trips through AI edits
-- Use case validation: measurable token savings on real coding workflows
+- **Tacit <-> Rust interop.** Source-level translation for apples-to-apples
+  comparison against a compiled, explicit-memory, performance-sensitive
+  language. This is the preferred round-trip target over Python.
+- **C -> Tacit normalization.** Translate C into a Tacit representation that
+  preserves low-level semantics while normalizing style, names, and incidental
+  source layout.
+- **Ghidra p-code -> Tacit-IR.** Import p-code or equivalent decompiler IR into
+  a Tacit security-analysis dialect that keeps integer widths, memory spaces,
+  stack layout, calling-convention facts, aliasing, and explicit reads/writes
+  visible.
+- **Structural analysis surface.** Support queries and views for pointer escape,
+  write reachability, guard conditions, buffer access patterns, and structural
+  diffs between source/binary versions.
+- **Use case validation.** Measure whether LLMs find, explain, and repair bugs
+  more reliably on Tacit-normalized C or Tacit-IR than on raw C, decompiled C,
+  or raw p-code. Token savings are secondary to analysis accuracy and semantic
+  faithfulness.
 
-### Phase 10 (stretch): Scratch standard library
+### Phase 12 (stretch): Scratch standard library
 
 **Goal:** Remove libc dependency; call OS syscalls directly.
 
@@ -363,12 +504,12 @@ Deliverables:
 
 No fixed timeline. Deferrable indefinitely.
 
-### Phase 11 (stretch): Collaborative development
+### Phase 13 (stretch): Collaborative development
 
 **Goal:** Support multiple agents (AI or human) working on the same codebase.
 
 Deliverables:
-- `tacit-merge` — semantic three-way AST merge (pulled forward from Phase 5's deferred list)
+- `tacit-merge` — semantic three-way AST merge (pulled forward from Phase 7's deferred list)
 - Conflict resolution heuristics at the AST node level
 - Integration with review tooling (GitHub-like interfaces that render views of diffs)
 
@@ -397,7 +538,7 @@ Phase 0–4 questions are all resolved (Phase 0–2 in their respective freeze A
 ## Risk Register
 
 **Risk: Nobody can write Tacit without AI assistance.**
-Mitigation: This is by design for the long term, but early development needs human contributors. `tacit view` shipped in Phase 1 with type/effect annotations added in Phase 2; Phase 5 extends it. Keep Tacit-Lite semantics close enough to Rust that a human can reason about it with effort.
+Mitigation: This is by design for the long term, but early development needs human contributors. `tacit view` shipped in Phase 1 with type/effect annotations added in Phase 2; Phase 7 extends it. Keep Tacit-Lite semantics close enough to Rust that a human can reason about it with effort.
 
 **Risk: AI models don't learn Tacit well from primers alone.** *Resolved by Phase 3 and not regressed by Phase 4.* Sonnet hit 97.9% library-mediated and GPT-5.4 91.5% primer-only on the open corpus per [ADR 0070](../decisions/0070-p3-frozen.md). Phase 4's expanded surface reached 47/47 final after repair on the open corpus per [ADR 0075](../decisions/0075-phase-4-frozen.md). Re-open only if later language work materially degrades fluency.
 
@@ -405,16 +546,16 @@ Mitigation: This is by design for the long term, but early development needs hum
 Mitigation: Pin LLVM version (LLVM 19 via `inkwell` 0.9 per [ADR 0032](../decisions/0032-stage-4-frozen.md)). Bumps are deliberate release-engineering tasks.
 
 **Risk: Scope creep toward Tacit-Full before Tacit-Lite is solid.**
-Mitigation: Discipline. Phase 7 is explicitly stretch. Do not start refinement types before Phase 6 is complete.
+Mitigation: Discipline. Phase 9 is explicitly stretch. Do not start refinement types before Phase 8 is complete.
 
 **Risk: Effect system creep in Phase 4.** *Resolved by Phase 4.*
-Mitigation: [ADR 0073](../decisions/0073-p4-function-values-and-closures.md) kept closure call effects inside `fn-ty` and the existing fixed lattice ([ADR 0035](../decisions/0035-p2-effect-set-canonical.md)). Row polymorphism, handlers, and user-defined effects remain Phase 7.
+Mitigation: [ADR 0073](../decisions/0073-p4-function-values-and-closures.md) kept closure call effects inside `fn-ty` and the existing fixed lattice ([ADR 0035](../decisions/0035-p2-effect-set-canonical.md)). Row polymorphism, handlers, and user-defined effects remain Phase 9.
 
 **Risk: Record-first products do not address the Phase 3 structural gap.** *Partly materialized in Phase 4.*
 Mitigation: [ADR 0072](../decisions/0072-p4-record-products.md) defers tuple syntax rather than rejecting it permanently. [ADR 0075](../decisions/0075-phase-4-frozen.md) records that records plus closures and combinators improved fluency but did not improve Rust-relative density under the current metric; re-open tuple syntax only with specific corpus evidence and a metric ADR.
 
 **Risk: View system treated as UI instead of core infrastructure.**
-Mitigation: Two views from Phase 1, both real. Phase 5's tooling work generalizes the existing view system; it does not retrofit one.
+Mitigation: Two views from Phase 1, both real. Phase 7's tooling work generalizes the existing view system; it does not retrofit one.
 
 **Risk: Phase 3's structural findings don't translate into Phase 4 wins.** *Partly materialized in Phase 4.*
 Mitigation: [ADR 0075](../decisions/0075-phase-4-frozen.md) records the result: records + closures + combinators improved open-corpus fluency and repair efficiency, and reduced generated authoring output to 2.85× Rust after repair when primer is excluded. They did not reduce Rust-relative density under the current end-to-end metric. Future density work must start with a metric ADR separating primer cost, generated authoring output, canonical storage size, and reference size rather than adding more Phase 4 surface.
@@ -430,6 +571,6 @@ Mitigation: Accept this. The stated worst case is "waste tokens and have fun." P
 
 **Reasoning-support success:** *Partly achieved.* Phase 4 is complete, with records, closures, and higher-order combinators landed, and Phase 3 fluency materially improved under the expanded surface. Rust-relative density did not measurably narrow from the Phase 3 baseline under the current end-to-end metric; [ADR 0075](../decisions/0075-phase-4-frozen.md) records that as a strategic finding rather than a reason to resume Python-relative density chase.
 
-**Strong success:** Phase 6 complete, with Tacit-Lite within 20% of hand-written Rust on standard benchmarks and a Phase 4-era Rust-density aspiration met (e.g., ≤ 1.5× Rust on the corpus). Publishable with comparative benchmarks.
+**Strong success:** Phase 8 complete, with Tacit-Lite within 20% of hand-written Rust on standard benchmarks and a Phase 4-era Rust-density aspiration met (e.g., ≤ 1.5× Rust on the corpus). Publishable with comparative benchmarks.
 
-**Ambitious success:** Phase 7 or 8 complete, demonstrating that AI-first languages can offer genuinely new capabilities (proof-carrying code at scale, or self-hosting without human maintainers).
+**Ambitious success:** Phase 9 or 10 complete, demonstrating that AI-first languages can offer genuinely new capabilities (proof-carrying code at scale, or self-hosting without human maintainers).

@@ -133,6 +133,8 @@ by [ADR 0072](decisions/0072-p4-record-products.md),
 - Phase 4 is frozen by [ADR 0075](decisions/0075-phase-4-frozen.md). Do not
   reopen Phase 4 density by adding primitives or primer prose; the freeze
   records strong fluency and a negative Rust-relative density finding under
-  current end-to-end accounting. Phase 5 work should focus on inspection and
-  debugging tooling unless a new ADR changes the direction.
+  current end-to-end accounting. Phase 5 work should validate
+  maintenance/debugging workflows; Phase 6 should focus on modules, packages,
+  and the constrained host-interface ABI unless a new ADR changes the
+  direction.
 - When updating the Tacit-Lite primer, keep it prompt-facing and language-facing: do not include repository paths, phase/stage process notes, ADR references, CI/test instructions, corpus/evaluation logistics, or recipes tailored to known corpus tasks. Primer examples should teach general Tacit-Lite constructs and idioms, be compilable or clearly marked as explanatory snippets, and remain independent of repository layout and evaluation harness details. Re-baseline the `o200k_base` token count after primer edits and record the new count in the active phase plan when the plan tracks it.
