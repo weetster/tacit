@@ -247,9 +247,47 @@ Deliberately out of scope: refinement types, effect handlers, user-defined effec
 
 Outcome: records, closures, and the `map`/`fold`/`for-each` family compile, typecheck, inspect, round-trip, and execute correctly on the Phase 4 smoke corpus and examples. Open-corpus re-evaluation shows material fluency improvement (38/47 one-shot, 47/47 final after repair) and generated authoring-output improvement when primer is excluded (2.85× Rust after repair), but no measurable Rust-density improvement under the current end-to-end primer-plus-generation metric. `plans/phase-4-plan.md` is the frozen scope artifact; [ADR 0075](../decisions/0075-phase-4-frozen.md) records the mixed density finding.
 
-### Phase 5: Inspection and debugging tooling
+### Phase 5A: Maintenance and debugging validation
 
-**Goal:** Make Tacit debuggable by AI and inspectable by humans. Sequenced after Phase 4 because the existing inspection surface — structured error output ([ADR 0041](../decisions/0041-p2-structured-error-format.md)), `tacit view --types --effects`, and the `corpus-eval` repair loop — already covers the load-bearing inspection needs for advancing the language. Tooling becomes load-bearing once programs grow past the Phase 4 surface and exceed what the existing views and error format make legible.
+**Goal:** Decide whether full inspection and debugging tooling is the highest
+value next investment. Phase 4 already has structured diagnostics,
+`tacit view --types --effects`, and a successful repair-loop harness. Phase 5A
+therefore starts with a maintenance/debugging benchmark and only the smallest
+tooling spike needed to test whether AST-first inspection materially improves
+larger-program repair.
+
+This is a gate before the broader Phase 5 tooling roadmap, not a commitment to
+build every debugger/diff/blame feature immediately.
+
+Deliverables:
+- **Maintenance/debug task spec.** Define a small open benchmark of edit,
+  repair, and explanation tasks on larger Tacit programs. The benchmark must
+  not use or expose `corpus/sealed/` contents, paths, or metadata.
+- **Baseline run with current tools.** Measure how well an AI agent repairs and
+  explains failures using only the Phase 4 surface: structured diagnostics,
+  `tacit view --as inspection --types --effects`, tests, and the existing
+  repair-loop conventions.
+- **Minimal tool-assisted run.** Add at most one narrow prototype, such as
+  structured execution-state output or a structural diff report, then rerun the
+  same benchmark.
+- **Metric ADR.** Before interpreting results, separate repair turns, model
+  calls, recurring primer/tool context, generated output, compile/typecheck
+  recovery, behavioral recovery, and human review cost. Do not collapse these
+  into one density number.
+- **Decision record.** Close Phase 5A with an ADR choosing one of: proceed to
+  full Phase 5B, build only one proven tool, revise the benchmark, or pause
+  engineering and publish the Phase 0-4 research artifact.
+
+Exit criteria: the project has evidence that AST-first tooling either improves
+larger-program maintenance/debugging enough to justify Phase 5B, or does not.
+The output is a decision and a benchmark record, not necessarily a large new
+tool surface.
+
+### Phase 5B: Inspection and debugging tooling
+
+**Goal:** Make Tacit debuggable by AI and inspectable by humans, if Phase 5A
+shows that dedicated tooling is warranted. Sequenced after Phase 4 because the
+existing inspection surface — structured error output ([ADR 0041](../decisions/0041-p2-structured-error-format.md)), `tacit view --types --effects`, and the `corpus-eval` repair loop — already covers the load-bearing inspection needs for advancing the language. Tooling becomes load-bearing once programs grow past the Phase 4 surface and exceed what the existing views and error format make legible.
 
 Deliverables:
 - `tacit view` extensions — registered-view system supporting authoring, inspection, and future views (data-flow, dependency). Phase 1–2 already shipped the renderer; Phase 5 generalizes it.

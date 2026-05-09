@@ -8,7 +8,9 @@ The project starts from a different assumption than mainstream languages. If hum
 - runtime performance via strong compile-time guarantees
 - safety and security through explicit, structural semantics
 
-Tacit is intended to compile to LLVM IR and then native code.
+Tacit compiles to LLVM IR and then native code. The current Tacit-Lite
+compiler can parse, typecheck, inspect, compile, and execute the frozen Phase 4
+language surface.
 
 ## What Makes Tacit Novel
 
@@ -45,17 +47,38 @@ The default target is **Tacit-Lite**, a smaller practical variant with structura
 - `plans/` - project vision, phase plans, and frozen specs (canonical text format, inspection view, sidecar)
 - `docs/` - supporting design notes (compiler architecture, effect system)
 - `decisions/` - ADR-style design decisions (0001 onward)
-- `crates/` - Cargo workspace: `tacit-canonical`, `tacit-views`, `tacit-codegen`
-- `examples/` - Phase 1 smoke corpus (`smoke/`)
+- `crates/` - Cargo workspace: `tacit-canonical`, `tacit-views`, `tacit-typecheck`, `tacit-codegen`, `tacit-cli`
+- `examples/` - smoke programs plus Phase 3 and Phase 4 examples
 - `corpus/` - Phase 3 evaluation corpus, with sealed held-out subset
-- `stdlib/` - libc effect signatures (dormant Phase 1 table)
+- `stdlib/` - libc effect signatures consumed by the typechecker
 
 ## Current status
 
-Phase 0 (specification + scaffolding) is frozen. Phase 1 (minimum viable compiler) Stages 1–4 are frozen — the LLVM IR emitter is wired up against LLVM 19 and seven smoke programs run end-to-end. Stage 5 (CLI + architecture doc) is the only Phase 1 stage remaining.
+Phase 4 is frozen by [ADR 0075](decisions/0075-phase-4-frozen.md). The
+delivered Tacit-Lite surface includes:
+
+- record product values with structural typing
+- first-class function values and capturing closures
+- closure effects inside the Lite effect lattice
+- compiler-recognized `@map`, `@fold`, and `@for-each` over `I64Vec` prefixes
+- inspection support for record types, closure captures, and combinator blocks
+- structured diagnostics for the new Phase 4 failure modes
+
+The Phase 4 open-corpus re-evaluation reached `38/47` one-shot task passes and
+`47/47` final passes after repair. Generated authoring output improved to
+`2.85x` Rust after repair when primer cost is excluded, but end-to-end
+primer-plus-generation density did not improve because the Phase 4 primer
+dominates the aggregate token count. That mixed result is part of the research
+record, not a reason to add more Phase 4 language surface.
+
+The next planned work is **Phase 5A**, a narrow validation phase for larger
+maintenance/debugging tasks. Phase 5A should decide whether full inspection and
+debugging tooling is worth building before committing to the broader Phase 5
+debugger/diff/blame roadmap.
 
 Start with:
 
 - `plans/tacit-plan.md` for the full project vision
-- `plans/phase-1-plan.md` for current work
+- `plans/phase-4-plan.md` and `decisions/0075-phase-4-frozen.md` for the frozen Phase 4 baseline
+- `plans/phase-4-results/` for the latest open-corpus evaluation record
 - `CLAUDE.md` for the working rules used in this repo
