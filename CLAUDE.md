@@ -1,8 +1,13 @@
 # Tacit — Development Guide
 
-Tacit is an AI-first programming language. See [plans/tacit-plan.md](plans/tacit-plan.md) for the full vision and [plans/phase-4-plan.md](plans/phase-4-plan.md) for the just-frozen phase.
+Tacit is an AI-first programming language. See [plans/tacit-plan.md](plans/tacit-plan.md) for the full vision and [plans/phase-5-plan.md](plans/phase-5-plan.md) for the active phase gate.
 
-**Current phase: Phase 4 frozen; Phase 5 is next.** Phase 4 is frozen
+**Current phase: Phase 5 short gate active.** Phase 5 is scoped by
+[ADR 0076](decisions/0076-phase-5-short-gate.md): define an open
+maintenance/debugging benchmark, run the Phase 4-era current-tool baseline,
+write the metric ADR, then write the decision ADR that either proceeds to Phase
+6, selects one narrow pre-Phase-6 tool, revises the benchmark, or pauses after
+the Phase 0-4 artifact. Phase 4 is frozen
 ([ADR 0075](decisions/0075-phase-4-frozen.md)) with records, first-class
 closures, and `@map` / `@fold` / `@for-each` delivered. Phase 3 is frozen
 ([ADR 0070](decisions/0070-p3-frozen.md)); the Python-relative density gate
@@ -94,7 +99,7 @@ Per [ADR 0075](decisions/0075-phase-4-frozen.md):
 ```
 plans/        — phase plans, specs (canonical-text-format.md, inspection-view.md, sidecar-format.md), primer, test vectors, phase results
 docs/         — design docs (compiler-architecture.md, effect-system.md, phase-3-metrics.schema.json)
-decisions/    — ADR-style decision log (0001–0075)
+decisions/    — ADR-style decision log (0001–0076)
 crates/       — Cargo workspace: tacit-canonical, tacit-views, tacit-typecheck, tacit-codegen, tacit-cli
 examples/     — Phase 1 smoke corpus under smoke/; Phase 3 carry-over programs under phase-3/; Phase 4 examples under phase-4/
 corpus/       — Phase 3 evaluation corpus (60 tasks, sealed held-out subset, Tacit references for the open 47)
@@ -133,8 +138,8 @@ by [ADR 0072](decisions/0072-p4-record-products.md),
 - Phase 4 is frozen by [ADR 0075](decisions/0075-phase-4-frozen.md). Do not
   reopen Phase 4 density by adding primitives or primer prose; the freeze
   records strong fluency and a negative Rust-relative density finding under
-  current end-to-end accounting. Phase 5 work should validate
-  maintenance/debugging workflows; Phase 6 should focus on modules, packages,
-  and the constrained host-interface ABI unless a new ADR changes the
-  direction.
+  current end-to-end accounting. Phase 5 work is the short evidence gate in
+  [plans/phase-5-plan.md](plans/phase-5-plan.md); Phase 6 should focus on
+  modules, packages, and the constrained host-interface ABI after the Phase 5
+  decision ADR chooses that direction.
 - When updating the Tacit-Lite primer, keep it prompt-facing and language-facing: do not include repository paths, phase/stage process notes, ADR references, CI/test instructions, corpus/evaluation logistics, or recipes tailored to known corpus tasks. Primer examples should teach general Tacit-Lite constructs and idioms, be compilable or clearly marked as explanatory snippets, and remain independent of repository layout and evaluation harness details. Re-baseline the `o200k_base` token count after primer edits and record the new count in the active phase plan when the plan tracks it.

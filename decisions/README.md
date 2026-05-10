@@ -91,3 +91,4 @@ Keep ADRs short. They record the decision, not the full analysis that led to it.
 - [0073 — Phase 4 function values and closures](0073-p4-function-values-and-closures.md)
 - [0074 — Phase 4 higher-order combinators](0074-p4-higher-order-combinators.md)
 - [0075 — Phase 4 frozen](0075-phase-4-frozen.md)
+- [0076 — Phase 5 short gate before Phase 6](0076-phase-5-short-gate.md)

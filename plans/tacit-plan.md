@@ -259,16 +259,24 @@ Outcome: records, closures, and the `map`/`fold`/`for-each` family compile, type
 
 ### Phase 5: Maintenance and debugging validation
 
+**Status:** Active short gate per
+[ADR 0076](../decisions/0076-phase-5-short-gate.md) and
+[plans/phase-5-plan.md](phase-5-plan.md).
+
 **Goal:** Validate the maintenance/debugging claim before building a large
 tool surface. Phase 4 already has structured diagnostics,
 `tacit view --types --effects`, and a successful repair-loop harness. Phase 5
-therefore starts with a maintenance/debugging benchmark and only the smallest
-tooling spike needed to test whether AST-first inspection materially improves
-larger-program repair. The Phase 4 Tacit-Lite primer remains language-facing
-and authoring-view-focused; workflow/tool instruction is measured separately.
+therefore runs as a bounded evidence gate: define an open maintenance/debugging
+benchmark, run a current-tool baseline, write the metric ADR, and make an
+explicit sequencing decision. The Phase 4 Tacit-Lite primer remains
+language-facing and authoring-view-focused; workflow/tool instruction is
+measured separately.
 
-This is a gate before broader tooling work, not a commitment to build every
-debugger/diff/blame feature immediately.
+This is a gate before Phase 6 and broader tooling work, not a commitment to
+build every debugger/diff/blame feature immediately. Phase 6 may begin after
+the Phase 5 decision ADR chooses "proceed to Phase 6"; full
+inspection/debugging tooling remains Phase 7 unless the decision ADR selects
+one narrow pre-Phase-6 blocker.
 
 Deliverables:
 - **Maintenance/debug task spec.** Define a small open benchmark of edit,
@@ -278,15 +286,17 @@ Deliverables:
   explains failures using only the Phase 4 surface: structured diagnostics,
   `tacit view --as inspection --types --effects`, tests, and the existing
   repair-loop conventions.
-- **Workflow primer/runbook.** Define a modular tool-facing prompt artifact for
-  maintenance/debugging tasks. It should explain when to use authoring,
-  inspection, canonical, and future analysis views; how to interpret structured
-  diagnostics; how `.tac`, `.tacd`, and transient `.taca` relate; and how to
-  avoid treating display names as semantic identity. Do not fold this into the
-  core Tacit-Lite authoring primer.
-- **Minimal tool-assisted run.** Add at most one narrow prototype, such as
-  structured execution-state output or a structural diff report, then rerun the
-  same benchmark with the workflow primer included only when relevant.
+- **Workflow prompt boundary.** If a tool-facing maintenance/debugging runbook
+  is used, measure it separately from the language primer. It should explain
+  when to use authoring, inspection, canonical, and future analysis views; how
+  to interpret structured diagnostics; how `.tac`, `.tacd`, and transient
+  `.taca` relate; and how to avoid treating display names as semantic identity.
+  Do not fold this into the core Tacit-Lite authoring primer.
+- **Optional minimal tool-assisted run.** Do not build a prototype by default.
+  If the baseline exposes a specific tool-shaped blocker, add at most one
+  narrow prototype, such as structured execution-state output or a structural
+  diff report, then rerun the same benchmark with the workflow runbook included
+  only when relevant. Otherwise defer this work to Phase 7.
 - **Metric ADR.** Before interpreting results, separate repair turns, model
   calls, language-primer context, workflow-primer context, tool/schema context,
   generated output, compile/typecheck recovery, behavioral recovery, and human
@@ -297,8 +307,8 @@ Deliverables:
 
 Exit criteria: the project has evidence that AST-first tooling either improves
 larger-program maintenance/debugging enough to shape later tooling, or does
-not. The output is a decision and a benchmark record, not necessarily a large
-new tool surface.
+not. The required output is a benchmark record, a metric ADR, and a decision
+ADR; a large new tool surface is explicitly not required.
 
 ### Phase 6: Modules, packages, systems primitives, and host-interface ABI
 
@@ -307,7 +317,8 @@ low-level systems components, and non-Tacit host programs without abandoning
 the content-addressed model. This is the bridge between the current
 single-program research artifact and a real ecosystem. It should land before
 full debugger/IDE/package ecosystem work, because larger tools need real module
-boundaries and systems primitives to inspect.
+boundaries and systems primitives to inspect. Phase 6 begins only after the
+Phase 5 decision ADR chooses to proceed.
 
 The host-interface work is an embedding ABI, not general FFI: Tacit modules
 declare typed imports and exports; a C/Rust host satisfies imports and calls
