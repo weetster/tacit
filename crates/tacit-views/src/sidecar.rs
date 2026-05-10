@@ -2,6 +2,7 @@
 //!
 //! Reference: plans/sidecar-format.md, decisions/0014-sidecar-format.md.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
@@ -40,6 +41,22 @@ pub struct SidecarNode {
     /// Internal entries may be None (≡ {} with implicit all-null subtree).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub children: Option<Vec<Option<SidecarNode>>>,
+
+    /// Phase 6 logical module display alias.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub module_alias: Option<String>,
+
+    /// Phase 6 definition hash → display alias map.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub definition_aliases: Option<BTreeMap<String, String>>,
+
+    /// Phase 6 import hash → display alias map.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub import_aliases: Option<BTreeMap<String, String>>,
+
+    /// Phase 6 exported definition hash → display alias map.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub export_aliases: Option<BTreeMap<String, String>>,
 }
 
 impl SidecarNode {
@@ -59,6 +76,10 @@ impl SidecarNode {
             && self.field_order.is_none()
             && self.type_hint.is_none()
             && self.effect_hint.is_none()
+            && self.module_alias.is_none()
+            && self.definition_aliases.is_none()
+            && self.import_aliases.is_none()
+            && self.export_aliases.is_none()
             && self.children.as_ref().is_none_or(|c| {
                 c.iter()
                     .all(|opt| opt.as_ref().is_none_or(|n| n.is_empty()))
@@ -70,16 +91,32 @@ impl SidecarNode {
 pub struct Sidecar {
     pub tacd_version: String,
     pub targets_hash_blake3: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub module_alias: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub definition_aliases: Option<BTreeMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub import_aliases: Option<BTreeMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub export_aliases: Option<BTreeMap<String, String>>,
     pub display: SidecarNode,
 }
 
 impl Sidecar {
-    pub fn new(canonical_bytes: &[u8], display: SidecarNode) -> Self {
+    pub fn new(canonical_bytes: &[u8], mut display: SidecarNode) -> Self {
         let hash = hash_bytes(canonical_bytes);
         let hex = hash.iter().map(|b| format!("{:02x}", b)).collect();
+        let module_alias = display.module_alias.take();
+        let definition_aliases = display.definition_aliases.take();
+        let import_aliases = display.import_aliases.take();
+        let export_aliases = display.export_aliases.take();
         Sidecar {
             tacd_version: "1".to_string(),
             targets_hash_blake3: hex,
+            module_alias,
+            definition_aliases,
+            import_aliases,
+            export_aliases,
             display,
         }
     }
@@ -93,10 +130,11 @@ impl Sidecar {
 
     pub fn read(path: &Path) -> Result<Sidecar, SidecarError> {
         let data = std::fs::read(path).map_err(SidecarError::Io)?;
-        let sidecar: Sidecar = serde_json::from_slice(&data).map_err(SidecarError::Json)?;
+        let mut sidecar: Sidecar = serde_json::from_slice(&data).map_err(SidecarError::Json)?;
         if sidecar.tacd_version != "1" {
             return Err(SidecarError::UnknownVersion(sidecar.tacd_version));
         }
+        sidecar.merge_module_metadata_into_display();
         Ok(sidecar)
     }
 
@@ -104,6 +142,21 @@ impl Sidecar {
         let json = serde_json::to_string_pretty(self).map_err(SidecarError::Json)?;
         std::fs::write(path, json.as_bytes()).map_err(SidecarError::Io)?;
         Ok(())
+    }
+
+    fn merge_module_metadata_into_display(&mut self) {
+        if self.display.module_alias.is_none() {
+            self.display.module_alias = self.module_alias.clone();
+        }
+        if self.display.definition_aliases.is_none() {
+            self.display.definition_aliases = self.definition_aliases.clone();
+        }
+        if self.display.import_aliases.is_none() {
+            self.display.import_aliases = self.import_aliases.clone();
+        }
+        if self.display.export_aliases.is_none() {
+            self.display.export_aliases = self.export_aliases.clone();
+        }
     }
 }
 

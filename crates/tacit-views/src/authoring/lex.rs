@@ -43,6 +43,7 @@ pub enum Token {
     Ident(String),
     Int(String),
     Str(String),
+    Hash(String),
     // Punctuation
     LParen,
     RParen,
@@ -53,8 +54,10 @@ pub enum Token {
     Colon,
     Semicolon,
     Eq,
+    Arrow,
     FatArrow,
     Pipe,
+    Slash,
     At,
     Underscore,
 }
@@ -105,6 +108,10 @@ pub fn lex(input: &[u8]) -> Result<Vec<Token>, LexError> {
                 tokens.push(Token::Pipe);
                 i += 1;
             }
+            b'/' => {
+                tokens.push(Token::Slash);
+                i += 1;
+            }
             b'@' => {
                 tokens.push(Token::At);
                 i += 1;
@@ -124,6 +131,10 @@ pub fn lex(input: &[u8]) -> Result<Vec<Token>, LexError> {
                     tokens.push(Token::Eq);
                     i += 1;
                 }
+            }
+            b'-' if i + 1 < n && input[i + 1] == b'>' => {
+                tokens.push(Token::Arrow);
+                i += 2;
             }
             // String literal
             b'"' => {
@@ -157,8 +168,27 @@ pub fn lex(input: &[u8]) -> Result<Vec<Token>, LexError> {
             }
             b if is_ident_start(b) => {
                 let (name, ni) = lex_ident(input, i);
-                tokens.push(keyword_or_ident(name));
-                i = ni;
+                if name == "blake3" && ni < n && input[ni] == b':' {
+                    let hash_start = ni + 1;
+                    let hash_end = hash_start + 64;
+                    if hash_end <= n
+                        && input[hash_start..hash_end]
+                            .iter()
+                            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(b))
+                    {
+                        tokens.push(Token::Hash(
+                            String::from_utf8_lossy(&input[hash_start..hash_end]).into_owned(),
+                        ));
+                        i = hash_end;
+                    } else {
+                        return Err(LexError::BadEscape(
+                            "expected blake3:<64 lowercase hex characters>".to_string(),
+                        ));
+                    }
+                } else {
+                    tokens.push(keyword_or_ident(name));
+                    i = ni;
+                }
             }
             _ => return Err(LexError::UnexpectedByte(b, i)),
         }

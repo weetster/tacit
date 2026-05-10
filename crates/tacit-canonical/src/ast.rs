@@ -28,6 +28,39 @@ pub enum Node {
     Module {
         bindings: Vec<Node>,
     },
+    Unit {
+        imports: Vec<Node>,
+        exports: Vec<Node>,
+        defs: Vec<Node>,
+    },
+    Imports {
+        entries: Vec<Node>,
+    },
+    Import {
+        hash: String,
+        sig: Box<Node>,
+    },
+    Exports {
+        entries: Vec<Node>,
+    },
+    Export {
+        visibility: String,
+        hash: String,
+    },
+    Defs {
+        defs: Vec<Node>,
+    },
+    Def {
+        sig: Box<Node>,
+        body: Box<Node>,
+    },
+    Sig {
+        type_: Box<Node>,
+        eval_eff: Box<Node>,
+    },
+    Ref {
+        hash: String,
+    },
     If {
         cond: Box<Node>,
         then: Box<Node>,

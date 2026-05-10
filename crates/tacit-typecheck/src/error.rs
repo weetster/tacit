@@ -163,6 +163,110 @@ impl Diagnostic {
         )
     }
 
+    pub fn missing_import(path: &[usize], hash: &str, alias: Option<&str>) -> Self {
+        let display = alias
+            .map(|a| format!("{} ({})", a, blake3_display(hash)))
+            .unwrap_or_else(|| blake3_display(hash));
+        let mut d = Self::new(
+            "missing-import",
+            "error",
+            path,
+            format!("imported definition {} cannot be resolved", display),
+        );
+        d.expected = Some(serde_json::json!({"hash": hash}));
+        d
+    }
+
+    pub fn hash_mismatch(path: &[usize], expected: &str, actual: &str) -> Self {
+        let mut d = Self::new(
+            "hash-mismatch",
+            "error",
+            path,
+            format!(
+                "artifact hash mismatch: expected {}, got {}",
+                blake3_display(expected),
+                blake3_display(actual)
+            ),
+        );
+        d.expected = Some(serde_json::json!({"hash": expected}));
+        d.actual = Some(serde_json::json!({"hash": actual}));
+        d
+    }
+
+    pub fn signature_mismatch(path: &[usize], subject: &str, expected: &str, actual: &str) -> Self {
+        let mut d = Self::new(
+            "signature-mismatch",
+            "error",
+            path,
+            format!(
+                "{} signature mismatch: expected {}, got {}",
+                subject, expected, actual
+            ),
+        );
+        d.expected = Some(serde_json::json!({"signature": expected}));
+        d.actual = Some(serde_json::json!({"signature": actual}));
+        d
+    }
+
+    pub fn visibility_violation(path: &[usize], hash: &str, visibility: &str) -> Self {
+        let mut d = Self::new(
+            "visibility-violation",
+            "error",
+            path,
+            format!(
+                "definition {} is not importable with {} visibility",
+                blake3_display(hash),
+                visibility
+            ),
+        );
+        d.actual = Some(serde_json::json!({
+            "hash": hash,
+            "visibility": visibility,
+        }));
+        d
+    }
+
+    pub fn cyclic_dependency(path: &[usize], cycle: &[String]) -> Self {
+        let mut d = Self::new(
+            "cyclic-dependency",
+            "error",
+            path,
+            format!("definition dependency cycle: {}", cycle.join(" -> ")),
+        );
+        d.actual = Some(serde_json::json!({"cycle": cycle}));
+        d
+    }
+
+    pub fn duplicate_import(path: &[usize], hash: &str) -> Self {
+        Self::new(
+            "duplicate-import",
+            "error",
+            path,
+            format!("unit imports {} more than once", blake3_display(hash)),
+        )
+    }
+
+    pub fn duplicate_export(path: &[usize], hash: &str) -> Self {
+        Self::new(
+            "duplicate-export",
+            "error",
+            path,
+            format!("unit exports {} more than once", blake3_display(hash)),
+        )
+    }
+
+    pub fn dangling_export(path: &[usize], hash: &str) -> Self {
+        Self::new(
+            "dangling-export",
+            "error",
+            path,
+            format!(
+                "unit exports {} but no local def has that hash",
+                blake3_display(hash)
+            ),
+        )
+    }
+
     pub fn operator_overload_failure(path: &[usize], op: &str, left: &Ty, right: &Ty) -> Self {
         let mut d = Self::new(
             "operator-overload-failure",
@@ -335,6 +439,10 @@ impl Diagnostic {
         d.actual = Some(eff_set_to_json(actual));
         d
     }
+}
+
+fn blake3_display(hash: &str) -> String {
+    format!("blake3:{}", hash)
 }
 
 /// Reserved type names that Phase 3+ will implement (ADR 0042).

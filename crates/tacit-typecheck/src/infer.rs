@@ -288,7 +288,16 @@ pub fn infer(
         | Node::TyVar { .. }
         | Node::Forall { .. }
         | Node::EffSet { .. }
-        | Node::EffVar { .. } => (Ty::Unknown, FnEff::pure_()),
+        | Node::EffVar { .. }
+        | Node::Unit { .. }
+        | Node::Imports { .. }
+        | Node::Import { .. }
+        | Node::Exports { .. }
+        | Node::Export { .. }
+        | Node::Defs { .. }
+        | Node::Def { .. }
+        | Node::Sig { .. }
+        | Node::Ref { .. } => (Ty::Unknown, FnEff::pure_()),
     }
 }
 
@@ -411,6 +420,12 @@ fn collect_free_outer_indices(node: &Node, depth: u64, out: &mut BTreeSet<usize>
                 collect_free_outer_indices(binding, inner, out);
             }
         }
+        Node::Unit { defs, .. } | Node::Defs { defs } => {
+            for def in defs {
+                collect_free_outer_indices(def, depth, out);
+            }
+        }
+        Node::Def { body, .. } => collect_free_outer_indices(body, depth, out),
         Node::App { fn_, arg } => {
             collect_free_outer_indices(fn_, depth, out);
             collect_free_outer_indices(arg, depth, out);
@@ -450,6 +465,12 @@ fn collect_free_outer_indices(node: &Node, depth: u64, out: &mut BTreeSet<usize>
         | Node::Str { .. }
         | Node::Sym { .. }
         | Node::Hole { .. }
+        | Node::Imports { .. }
+        | Node::Import { .. }
+        | Node::Exports { .. }
+        | Node::Export { .. }
+        | Node::Sig { .. }
+        | Node::Ref { .. }
         | Node::PatWild
         | Node::PatVar
         | Node::PatInt { .. }

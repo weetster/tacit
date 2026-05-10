@@ -58,6 +58,37 @@ fn emit_into(node: &Node, out: &mut String) {
             }
             out.push(')');
         }
+        Node::Unit {
+            imports,
+            exports,
+            defs,
+        } => {
+            out.push_str("(unit ");
+            emit_imports(imports, out);
+            out.push(' ');
+            emit_exports(exports, out);
+            out.push(' ');
+            emit_defs(defs, out);
+            out.push(')');
+        }
+        Node::Imports { entries } => emit_imports(entries, out),
+        Node::Import { hash, sig } => emit_import(hash, sig, out),
+        Node::Exports { entries } => emit_exports(entries, out),
+        Node::Export { visibility, hash } => emit_export(visibility, hash, out),
+        Node::Defs { defs } => emit_defs(defs, out),
+        Node::Def { sig, body } => emit_def(sig, body, out),
+        Node::Sig { type_, eval_eff } => {
+            out.push_str("(sig ");
+            emit_into(type_, out);
+            out.push(' ');
+            emit_into(eval_eff, out);
+            out.push(')');
+        }
+        Node::Ref { hash } => {
+            out.push_str("(ref ");
+            emit_string(hash, out);
+            out.push(')');
+        }
         Node::If { cond, then, else_ } => {
             out.push_str("(if ");
             emit_into(cond, out);
@@ -211,6 +242,90 @@ fn emit_into(node: &Node, out: &mut String) {
             out.push(')');
         }
     }
+}
+
+fn emit_imports(entries: &[Node], out: &mut String) {
+    if entries.is_empty() {
+        out.push_str("(imports)");
+        return;
+    }
+    let mut ordered: Vec<&Node> = entries.iter().collect();
+    ordered.sort_by(|a, b| import_hash(a).cmp(import_hash(b)));
+    out.push_str("(imports");
+    for entry in ordered {
+        out.push(' ');
+        emit_into(entry, out);
+    }
+    out.push(')');
+}
+
+fn emit_import(hash: &str, sig: &Node, out: &mut String) {
+    out.push_str("(imp ");
+    emit_string(hash, out);
+    out.push(' ');
+    emit_into(sig, out);
+    out.push(')');
+}
+
+fn emit_exports(entries: &[Node], out: &mut String) {
+    if entries.is_empty() {
+        out.push_str("(exports)");
+        return;
+    }
+    let mut ordered: Vec<&Node> = entries.iter().collect();
+    ordered.sort_by(|a, b| export_hash(a).cmp(export_hash(b)));
+    out.push_str("(exports");
+    for entry in ordered {
+        out.push(' ');
+        emit_into(entry, out);
+    }
+    out.push(')');
+}
+
+fn emit_export(visibility: &str, hash: &str, out: &mut String) {
+    out.push_str("(exp ");
+    out.push_str(visibility);
+    out.push(' ');
+    emit_string(hash, out);
+    out.push(')');
+}
+
+fn emit_defs(defs: &[Node], out: &mut String) {
+    let mut ordered: Vec<&Node> = defs.iter().collect();
+    ordered.sort_by_key(|def| definition_hash_key(def));
+    out.push_str("(defs");
+    for def in ordered {
+        out.push(' ');
+        emit_into(def, out);
+    }
+    out.push(')');
+}
+
+fn emit_def(sig: &Node, body: &Node, out: &mut String) {
+    out.push_str("(def ");
+    emit_into(sig, out);
+    out.push(' ');
+    emit_into(body, out);
+    out.push(')');
+}
+
+fn import_hash(node: &Node) -> &str {
+    match node {
+        Node::Import { hash, .. } => hash.as_str(),
+        _ => "",
+    }
+}
+
+fn export_hash(node: &Node) -> &str {
+    match node {
+        Node::Export { hash, .. } => hash.as_str(),
+        _ => "",
+    }
+}
+
+fn definition_hash_key(node: &Node) -> [u8; 32] {
+    let bytes = emit(node);
+    *blake3::hash(&bytes).as_bytes()
 }
 
 /// Emit a canonical string literal (including surrounding quotes).

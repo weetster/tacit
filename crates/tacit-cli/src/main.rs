@@ -379,6 +379,23 @@ fn contains_hole(node: &tacit_canonical::ast::Node) -> bool {
         }
         Node::Rec { bindings, body } => bindings.iter().any(contains_hole) || contains_hole(body),
         Node::Module { bindings } => bindings.iter().any(contains_hole),
+        Node::Unit {
+            imports,
+            exports,
+            defs,
+        } => {
+            imports.iter().any(contains_hole)
+                || exports.iter().any(contains_hole)
+                || defs.iter().any(contains_hole)
+        }
+        Node::Imports { entries } => entries.iter().any(contains_hole),
+        Node::Import { sig, .. } => contains_hole(sig),
+        Node::Exports { entries } => entries.iter().any(contains_hole),
+        Node::Export { .. } => false,
+        Node::Defs { defs } => defs.iter().any(contains_hole),
+        Node::Def { sig, body } => contains_hole(sig) || contains_hole(body),
+        Node::Sig { type_, eval_eff } => contains_hole(type_) || contains_hole(eval_eff),
+        Node::Ref { .. } => false,
         Node::Record { fields } => fields.iter().any(|(_, v)| contains_hole(v)),
         Node::Proj { record, .. } => contains_hole(record),
         Node::Match { scrutinee, arms } => {

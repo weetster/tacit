@@ -4,7 +4,7 @@
 //! with optional L1 (--debruijn) and L2 (--hashes) annotation overlays.
 //! Reference: decisions/0015-inspection-view-scope.md.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use tacit_canonical::ast::Node;
 use tacit_canonical::hash_node;
@@ -27,6 +27,9 @@ pub fn emit_inspection(node: &Node, sidecar: Option<&SidecarNode>, flags: &Inspe
         stack: Vec::new(),
         lam_let_depth: 0,
         pat_var_counter: 0,
+        definition_aliases: sidecar.and_then(|s| s.definition_aliases.clone()),
+        import_aliases: sidecar.and_then(|s| s.import_aliases.clone()),
+        export_aliases: sidecar.and_then(|s| s.export_aliases.clone()),
         flags,
     };
     let r = ctx.render(node, sidecar, 0);
@@ -73,6 +76,9 @@ struct Ctx<'f> {
     lam_let_depth: usize,
     /// Resets to 0 at each arm; used for synthetic p{n} pat-var names.
     pat_var_counter: usize,
+    definition_aliases: Option<BTreeMap<String, String>>,
+    import_aliases: Option<BTreeMap<String, String>>,
+    export_aliases: Option<BTreeMap<String, String>>,
     flags: &'f InspectFlags,
 }
 
@@ -136,6 +142,45 @@ impl<'f> Ctx<'f> {
             Node::Let { rhs, body } => self.render_let(node, rhs, body, sc, indent),
             Node::Rec { bindings, body } => self.render_rec(node, bindings, body, sc, indent),
             Node::Module { bindings } => self.render_module(node, bindings, sc, indent),
+            Node::Unit {
+                imports,
+                exports,
+                defs,
+            } => self.render_unit(node, imports, exports, defs, sc, indent),
+            Node::Imports { entries } => self.render_imports(entries, sc, indent),
+            Node::Import { hash, sig } => {
+                let alias = alias_from_map(sc.and_then(|s| s.import_aliases.as_ref()), hash)
+                    .unwrap_or_else(|| synthetic_hash_name("import", hash));
+                Rendered::leaf(format!(
+                    "{} : {} = {}",
+                    alias,
+                    format_signature(sig),
+                    hash_text(hash, self.flags.hashes)
+                ))
+            }
+            Node::Exports { entries } => self.render_exports(entries, sc, indent),
+            Node::Export { visibility, hash } => {
+                let alias = alias_from_map(sc.and_then(|s| s.export_aliases.as_ref()), hash)
+                    .or_else(|| {
+                        alias_from_map(sc.and_then(|s| s.definition_aliases.as_ref()), hash)
+                    })
+                    .unwrap_or_else(|| synthetic_hash_name("export", hash));
+                Rendered::leaf(format!(
+                    "{} {} = {}",
+                    visibility,
+                    alias,
+                    hash_text(hash, self.flags.hashes)
+                ))
+            }
+            Node::Defs { defs } => self.render_defs(defs, sc, indent),
+            Node::Def { sig, body } => self.render_def(sig, body, sc, indent),
+            Node::Sig { type_, eval_eff } => {
+                Rendered::leaf(format_signature_parts(type_, eval_eff))
+            }
+            Node::Ref { hash } => {
+                let alias = self.alias_for_ref(hash);
+                Rendered::leaf(alias)
+            }
             Node::If { cond, then, else_ } => self.render_if(node, cond, then, else_, sc, indent),
             Node::Match { scrutinee, arms } => self.render_match(node, scrutinee, arms, sc, indent),
             Node::Arm { pattern, body } => self.render_arm(node, pattern, body, sc, indent),
@@ -232,6 +277,16 @@ impl<'f> Ctx<'f> {
     fn render_compact(&self, node: &Node) -> String {
         use tacit_canonical::emit::emit;
         String::from_utf8_lossy(&emit(node)).into_owned()
+    }
+
+    fn alias_for_ref(&self, hash: &str) -> String {
+        self.import_aliases
+            .as_ref()
+            .and_then(|m| m.get(hash))
+            .or_else(|| self.definition_aliases.as_ref().and_then(|m| m.get(hash)))
+            .or_else(|| self.export_aliases.as_ref().and_then(|m| m.get(hash)))
+            .cloned()
+            .unwrap_or_else(|| hash_text(hash, self.flags.hashes))
     }
 
     // -----------------------------------------------------------------------
@@ -769,6 +824,221 @@ impl<'f> Ctx<'f> {
     }
 
     // -----------------------------------------------------------------------
+    // Phase 6 logical unit — always-break.
+    // -----------------------------------------------------------------------
+
+    fn render_unit(
+        &mut self,
+        node: &Node,
+        imports: &[Node],
+        exports: &[Node],
+        defs: &[Node],
+        sc: Option<&SidecarNode>,
+        indent: usize,
+    ) -> Rendered {
+        let module_name = sc.and_then(|s| s.module_alias.as_deref()).unwrap_or("Unit");
+        let def_map = def_map_by_hash(defs);
+        let export_hashes: BTreeSet<String> = exports
+            .iter()
+            .filter_map(|entry| match entry {
+                Node::Export { hash, .. } => Some(hash.clone()),
+                _ => None,
+            })
+            .collect();
+
+        let mut text = format!("module {}", module_name);
+
+        text.push('\n');
+        text.push_str(&Self::pad(indent));
+        text.push_str("imports");
+        if imports.is_empty() {
+            text.push_str("\n");
+            text.push_str(&Self::pad(indent + 2));
+            text.push_str("<none>");
+        } else {
+            let mut ordered: Vec<&Node> = imports.iter().collect();
+            ordered.sort_by(|a, b| unit_entry_hash(a).cmp(unit_entry_hash(b)));
+            for entry in ordered {
+                if let Node::Import { hash, sig } = entry {
+                    let alias = alias_from_map(sc.and_then(|s| s.import_aliases.as_ref()), hash)
+                        .unwrap_or_else(|| synthetic_hash_name("import", hash));
+                    text.push('\n');
+                    text.push_str(&Self::pad(indent + 2));
+                    text.push_str(&format!(
+                        "{} : {} = {}",
+                        alias,
+                        format_signature(sig),
+                        hash_text(hash, self.flags.hashes)
+                    ));
+                }
+            }
+        }
+
+        text.push('\n');
+        text.push_str(&Self::pad(indent));
+        text.push_str("exports");
+        if exports.is_empty() {
+            text.push_str("\n");
+            text.push_str(&Self::pad(indent + 2));
+            text.push_str("<none>");
+        } else {
+            let mut ordered: Vec<&Node> = exports.iter().collect();
+            ordered.sort_by(|a, b| unit_entry_hash(a).cmp(unit_entry_hash(b)));
+            for entry in ordered {
+                if let Node::Export { visibility, hash } = entry {
+                    let alias = alias_from_map(sc.and_then(|s| s.export_aliases.as_ref()), hash)
+                        .or_else(|| {
+                            alias_from_map(sc.and_then(|s| s.definition_aliases.as_ref()), hash)
+                        })
+                        .unwrap_or_else(|| synthetic_hash_name("export", hash));
+                    let sig = def_map
+                        .get(hash)
+                        .map(|def| format_signature(def_sig(def)))
+                        .unwrap_or_else(|| "<dangling>".to_string());
+                    text.push('\n');
+                    text.push_str(&Self::pad(indent + 2));
+                    text.push_str(&format!(
+                        "{} {} : {} = {}",
+                        visibility,
+                        alias,
+                        sig,
+                        hash_text(hash, self.flags.hashes)
+                    ));
+                }
+            }
+        }
+
+        let private_defs: Vec<(&String, &Node)> = def_map
+            .iter()
+            .filter(|(hash, _)| !export_hashes.contains(*hash))
+            .map(|(hash, def)| (hash, *def))
+            .collect();
+        text.push('\n');
+        text.push_str(&Self::pad(indent));
+        text.push_str("private");
+        if private_defs.is_empty() {
+            text.push_str("\n");
+            text.push_str(&Self::pad(indent + 2));
+            text.push_str("<none>");
+        } else {
+            for (hash, def) in private_defs {
+                let alias = alias_from_map(sc.and_then(|s| s.definition_aliases.as_ref()), hash)
+                    .unwrap_or_else(|| synthetic_hash_name("def", hash));
+                text.push('\n');
+                text.push_str(&Self::pad(indent + 2));
+                text.push_str(&format!(
+                    "{} : {} = {}",
+                    alias,
+                    format_signature(def_sig(def)),
+                    hash_text(hash, self.flags.hashes)
+                ));
+            }
+        }
+
+        text.push('\n');
+        text.push_str(&Self::pad(indent));
+        text.push_str("definitions");
+        let mut ordered_defs: Vec<(&String, &Node)> =
+            def_map.iter().map(|(hash, def)| (hash, *def)).collect();
+        ordered_defs.sort_by(|a, b| a.0.cmp(b.0));
+        for (hash, def) in ordered_defs {
+            let alias = alias_from_map(sc.and_then(|s| s.definition_aliases.as_ref()), hash)
+                .or_else(|| alias_from_map(sc.and_then(|s| s.export_aliases.as_ref()), hash))
+                .unwrap_or_else(|| synthetic_hash_name("def", hash));
+            if let Node::Def { body, .. } = def {
+                let body_r = self.render(body, sc, indent + 4);
+                text.push('\n');
+                text.push_str(&Self::pad(indent + 2));
+                if body_r.inline {
+                    text.push_str(&format!("{} = {}", alias, body_r.text));
+                } else {
+                    text.push_str(&format!(
+                        "{} =\n{}{}",
+                        alias,
+                        Self::pad(indent + 4),
+                        body_r.text
+                    ));
+                }
+            }
+        }
+
+        let result = Rendered::always_break(text);
+        if self.flags.hashes {
+            self.badge(node, result)
+        } else {
+            result
+        }
+    }
+
+    fn render_imports(
+        &mut self,
+        entries: &[Node],
+        sc: Option<&SidecarNode>,
+        indent: usize,
+    ) -> Rendered {
+        let mut text = String::from("imports");
+        let mut ordered: Vec<&Node> = entries.iter().collect();
+        ordered.sort_by(|a, b| unit_entry_hash(a).cmp(unit_entry_hash(b)));
+        for entry in ordered {
+            let r = self.render(entry, sc, indent + 2);
+            text.push('\n');
+            text.push_str(&Self::pad(indent + 2));
+            text.push_str(&r.text);
+        }
+        Rendered::always_break(text)
+    }
+
+    fn render_exports(
+        &mut self,
+        entries: &[Node],
+        sc: Option<&SidecarNode>,
+        indent: usize,
+    ) -> Rendered {
+        let mut text = String::from("exports");
+        let mut ordered: Vec<&Node> = entries.iter().collect();
+        ordered.sort_by(|a, b| unit_entry_hash(a).cmp(unit_entry_hash(b)));
+        for entry in ordered {
+            let r = self.render(entry, sc, indent + 2);
+            text.push('\n');
+            text.push_str(&Self::pad(indent + 2));
+            text.push_str(&r.text);
+        }
+        Rendered::always_break(text)
+    }
+
+    fn render_defs(&mut self, defs: &[Node], sc: Option<&SidecarNode>, indent: usize) -> Rendered {
+        let def_map = def_map_by_hash(defs);
+        let mut text = String::from("defs");
+        for (_, def) in def_map {
+            let r = self.render(def, sc, indent + 2);
+            text.push('\n');
+            text.push_str(&Self::pad(indent + 2));
+            text.push_str(&r.text);
+        }
+        Rendered::always_break(text)
+    }
+
+    fn render_def(
+        &mut self,
+        sig: &Node,
+        body: &Node,
+        sc: Option<&SidecarNode>,
+        indent: usize,
+    ) -> Rendered {
+        let body_r = self.render(body, sc, indent + 2);
+        if body_r.inline {
+            Rendered::leaf(format!("def : {} = {}", format_signature(sig), body_r.text))
+        } else {
+            Rendered::always_break(format!(
+                "def : {} =\n{}{}",
+                format_signature(sig),
+                Self::pad(indent + 2),
+                body_r.text
+            ))
+        }
+    }
+
+    // -----------------------------------------------------------------------
     // If — always-break; handles chained else-if.
     // -----------------------------------------------------------------------
 
@@ -1197,6 +1467,70 @@ impl<'f> Ctx<'f> {
     }
 }
 
+fn alias_from_map(map: Option<&BTreeMap<String, String>>, hash: &str) -> Option<String> {
+    map.and_then(|m| m.get(hash)).cloned()
+}
+
+fn hash_text(hash: &str, full: bool) -> String {
+    if full || hash.len() <= 8 {
+        format!("blake3:{}", hash)
+    } else {
+        format!("blake3:{}...", &hash[..8])
+    }
+}
+
+fn synthetic_hash_name(prefix: &str, hash: &str) -> String {
+    let short = if hash.len() >= 8 { &hash[..8] } else { hash };
+    format!("{}_{}", prefix, short)
+}
+
+fn unit_entry_hash(node: &Node) -> &str {
+    match node {
+        Node::Import { hash, .. } | Node::Export { hash, .. } | Node::Ref { hash } => hash,
+        _ => "",
+    }
+}
+
+fn def_map_by_hash(defs: &[Node]) -> BTreeMap<String, &Node> {
+    defs.iter()
+        .filter_map(|def| match def {
+            Node::Def { .. } => {
+                let hash = hash_node(def);
+                let hex: String = hash.iter().map(|b| format!("{:02x}", b)).collect();
+                Some((hex, def))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+fn def_sig(def: &Node) -> &Node {
+    match def {
+        Node::Def { sig, .. } => sig,
+        _ => def,
+    }
+}
+
+fn format_signature(sig: &Node) -> String {
+    match sig {
+        Node::Sig { type_, eval_eff } => format_signature_parts(type_, eval_eff),
+        other => String::from_utf8_lossy(&tacit_canonical::emit(other)).into_owned(),
+    }
+}
+
+fn format_signature_parts(type_: &Node, eval_eff: &Node) -> String {
+    let type_text = format_type_node_nice(type_);
+    match eval_eff {
+        Node::EffSet { atoms } if atoms.is_empty() => type_text,
+        Node::EffSet { atoms } => format!("{} eval {{{}}}", type_text, atoms.join(", ")),
+        other => format!(
+            "{} eval {}",
+            type_text,
+            String::from_utf8_lossy(&tacit_canonical::emit(other))
+        ),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Phase 2 type/effect verbose rendering helpers (--types / --effects).
 // ---------------------------------------------------------------------------
@@ -1311,6 +1645,21 @@ fn collect_free_outer_indices(node: &Node, depth: u64, out: &mut BTreeSet<usize>
                 collect_free_outer_indices(binding, inner, out);
             }
         }
+        Node::Unit {
+            imports: _,
+            exports: _,
+            defs,
+        } => {
+            for def in defs {
+                collect_free_outer_indices(def, depth, out);
+            }
+        }
+        Node::Defs { defs } => {
+            for def in defs {
+                collect_free_outer_indices(def, depth, out);
+            }
+        }
+        Node::Def { body, .. } => collect_free_outer_indices(body, depth, out),
         Node::App { fn_, arg } => {
             collect_free_outer_indices(fn_, depth, out);
             collect_free_outer_indices(arg, depth, out);
@@ -1350,6 +1699,12 @@ fn collect_free_outer_indices(node: &Node, depth: u64, out: &mut BTreeSet<usize>
         | Node::Str { .. }
         | Node::Sym { .. }
         | Node::Hole { .. }
+        | Node::Imports { .. }
+        | Node::Import { .. }
+        | Node::Exports { .. }
+        | Node::Export { .. }
+        | Node::Sig { .. }
+        | Node::Ref { .. }
         | Node::PatWild
         | Node::PatVar
         | Node::PatInt { .. }

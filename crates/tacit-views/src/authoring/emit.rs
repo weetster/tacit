@@ -14,6 +14,9 @@ pub fn emit_authoring(node: &Node, sidecar: Option<&SidecarNode>) -> String {
     let mut ctx = EmitCtx {
         stack: Vec::new(),
         lam_let_depth: 0,
+        definition_aliases: sidecar.and_then(|s| s.definition_aliases.clone()),
+        import_aliases: sidecar.and_then(|s| s.import_aliases.clone()),
+        export_aliases: sidecar.and_then(|s| s.export_aliases.clone()),
     };
     ctx.emit_expr(node, sidecar, &mut out);
     out
@@ -24,6 +27,9 @@ struct EmitCtx {
     stack: Vec<String>,
     /// Count of lam/let binders currently in scope (for v{n} synthetic names).
     lam_let_depth: usize,
+    definition_aliases: Option<std::collections::BTreeMap<String, String>>,
+    import_aliases: Option<std::collections::BTreeMap<String, String>>,
+    export_aliases: Option<std::collections::BTreeMap<String, String>>,
 }
 
 impl EmitCtx {
@@ -33,6 +39,11 @@ impl EmitCtx {
             Node::Let { rhs, body } => self.emit_let(rhs, body, sc, out),
             Node::Rec { bindings, body } => self.emit_rec(bindings, body, sc, out),
             Node::Module { bindings } => self.emit_module(bindings, sc, out),
+            Node::Unit {
+                imports,
+                exports,
+                defs,
+            } => self.emit_unit(imports, exports, defs, sc, out),
             Node::If { cond, then, else_ } => self.emit_if(cond, then, else_, sc, out),
             Node::Match { scrutinee, arms } => self.emit_match(scrutinee, arms, sc, out),
             _ => self.emit_app_expr(node, sc, out),
@@ -163,6 +174,78 @@ impl EmitCtx {
         for _ in 0..n {
             self.stack.pop();
         }
+    }
+
+    fn emit_unit(
+        &mut self,
+        imports: &[Node],
+        exports: &[Node],
+        defs: &[Node],
+        sc: Option<&SidecarNode>,
+        out: &mut String,
+    ) {
+        let module_alias = sc.and_then(|s| s.module_alias.as_deref()).unwrap_or("Unit");
+        out.push_str("module ");
+        out.push_str(module_alias);
+        out.push_str(" {");
+
+        let mut first = true;
+        let mut ordered_imports: Vec<&Node> = imports.iter().collect();
+        ordered_imports.sort_by(|a, b| unit_entry_hash(a).cmp(unit_entry_hash(b)));
+        for import in ordered_imports {
+            if let Node::Import { hash, sig } = import {
+                if !first {
+                    out.push_str("; ");
+                }
+                first = false;
+                let alias = sc
+                    .and_then(|s| s.import_aliases.as_ref())
+                    .and_then(|m| m.get(hash))
+                    .cloned()
+                    .unwrap_or_else(|| synthetic_hash_name("import", hash));
+                out.push_str("import ");
+                out.push_str(&alias);
+                out.push_str(" : ");
+                emit_sig_type(sig, out);
+                out.push_str(" from blake3:");
+                out.push_str(hash);
+            }
+        }
+
+        let export_vis = export_visibility_map(exports);
+        let mut ordered_defs: Vec<(String, &Node)> = def_map_by_hash(defs).into_iter().collect();
+        ordered_defs.sort_by(|a, b| a.0.cmp(&b.0));
+        for (hash, def) in ordered_defs {
+            if let Node::Def { sig, body } = def {
+                if !first {
+                    out.push_str("; ");
+                }
+                first = false;
+                if let Some(visibility) = export_vis.get(hash.as_str()) {
+                    out.push_str("export ");
+                    out.push_str(visibility);
+                    out.push(' ');
+                } else {
+                    out.push_str("private ");
+                }
+                let alias = sc
+                    .and_then(|s| s.definition_aliases.as_ref())
+                    .and_then(|m| m.get(hash.as_str()))
+                    .or_else(|| {
+                        sc.and_then(|s| s.export_aliases.as_ref())
+                            .and_then(|m| m.get(hash.as_str()))
+                    })
+                    .cloned()
+                    .unwrap_or_else(|| synthetic_hash_name("def", &hash));
+                out.push_str(&alias);
+                out.push_str(" : ");
+                emit_sig_type(sig, out);
+                out.push_str(" = ");
+                self.emit_expr(body, sc, out);
+            }
+        }
+
+        out.push('}');
     }
 
     fn emit_if(
@@ -318,6 +401,14 @@ impl EmitCtx {
                 out.push('@');
                 out.push_str(name);
             }
+            Node::Ref { hash } => {
+                if let Some(alias) = self.ref_alias(hash) {
+                    out.push_str(&alias);
+                } else {
+                    out.push_str("blake3:");
+                    out.push_str(hash);
+                }
+            }
             Node::Hole { .. } | Node::PatWild | Node::PatVar => out.push('_'),
             Node::Record { fields } => {
                 out.push('{');
@@ -361,7 +452,14 @@ impl EmitCtx {
             | Node::TyVar { .. }
             | Node::Forall { .. }
             | Node::EffSet { .. }
-            | Node::EffVar { .. } => {
+            | Node::EffVar { .. }
+            | Node::Imports { .. }
+            | Node::Import { .. }
+            | Node::Exports { .. }
+            | Node::Export { .. }
+            | Node::Defs { .. }
+            | Node::Def { .. }
+            | Node::Sig { .. } => {
                 let canonical = tacit_canonical::emit::emit(node);
                 out.push_str(&String::from_utf8_lossy(&canonical));
             }
@@ -383,6 +481,15 @@ impl EmitCtx {
         } else {
             self.emit_proj_atom(node, sc, out);
         }
+    }
+
+    fn ref_alias(&self, hash: &str) -> Option<String> {
+        self.import_aliases
+            .as_ref()
+            .and_then(|m| m.get(hash))
+            .or_else(|| self.definition_aliases.as_ref().and_then(|m| m.get(hash)))
+            .or_else(|| self.export_aliases.as_ref().and_then(|m| m.get(hash)))
+            .cloned()
     }
 }
 
@@ -441,6 +548,7 @@ fn needs_parens_as_fn(node: &Node) -> bool {
         Node::Lam { .. }
             | Node::Let { .. }
             | Node::Rec { .. }
+            | Node::Unit { .. }
             | Node::If { .. }
             | Node::Match { .. }
             | Node::Ann { .. }
@@ -453,10 +561,94 @@ fn needs_parens_as_arg(node: &Node) -> bool {
         | Node::Lam { .. }
         | Node::Let { .. }
         | Node::Rec { .. }
+        | Node::Unit { .. }
         | Node::If { .. }
         | Node::Match { .. }
         | Node::Ann { .. } => true,
         Node::Ctor { args, .. } => !args.is_empty(),
         _ => false,
+    }
+}
+
+fn unit_entry_hash(node: &Node) -> &str {
+    match node {
+        Node::Import { hash, .. } | Node::Export { hash, .. } | Node::Ref { hash } => hash,
+        _ => "",
+    }
+}
+
+fn def_map_by_hash(defs: &[Node]) -> std::collections::BTreeMap<String, &Node> {
+    defs.iter()
+        .filter_map(|def| match def {
+            Node::Def { .. } => {
+                let hash = tacit_canonical::hash_node(def);
+                let hex = hash.iter().map(|b| format!("{:02x}", b)).collect();
+                Some((hex, def))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+fn export_visibility_map(exports: &[Node]) -> std::collections::BTreeMap<String, String> {
+    exports
+        .iter()
+        .filter_map(|export| match export {
+            Node::Export { visibility, hash } => Some((hash.clone(), visibility.clone())),
+            _ => None,
+        })
+        .collect()
+}
+
+fn synthetic_hash_name(prefix: &str, hash: &str) -> String {
+    let short = if hash.len() >= 8 { &hash[..8] } else { hash };
+    format!("{}_{}", prefix, short)
+}
+
+fn emit_sig_type(sig: &Node, out: &mut String) {
+    match sig {
+        Node::Sig { type_, .. } => emit_type(type_, out),
+        other => emit_type(other, out),
+    }
+}
+
+fn emit_type(node: &Node, out: &mut String) {
+    match node {
+        Node::Sym { name } => out.push_str(name),
+        Node::FnTy { arg, ret, eff } => {
+            let parens = matches!(arg.as_ref(), Node::FnTy { .. });
+            if parens {
+                out.push('(');
+            }
+            emit_type(arg, out);
+            if parens {
+                out.push(')');
+            }
+            out.push_str(" -> ");
+            emit_type(ret, out);
+            if let Node::EffSet { atoms } = eff.as_ref() {
+                if !atoms.is_empty() {
+                    out.push_str(" / {");
+                    out.push_str(&atoms.join(", "));
+                    out.push('}');
+                }
+            }
+        }
+        Node::Record { fields } => {
+            out.push('{');
+            for (i, (name, ty)) in fields.iter().enumerate() {
+                if i > 0 {
+                    out.push_str(", ");
+                }
+                out.push_str(name);
+                out.push_str(": ");
+                emit_type(ty, out);
+            }
+            out.push('}');
+        }
+        other => {
+            let canonical = tacit_canonical::emit::emit(other);
+            out.push_str(&String::from_utf8_lossy(&canonical));
+        }
     }
 }

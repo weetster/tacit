@@ -70,6 +70,13 @@ pub fn check_no_holes(node: &Node) -> Result<(), CodegenError> {
             }
             Ok(())
         }
+        Node::Unit { defs, .. } | Node::Defs { defs } => {
+            for def in defs {
+                check_no_holes(def)?;
+            }
+            Ok(())
+        }
+        Node::Def { body, .. } => check_no_holes(body),
         Node::If { cond, then, else_ } => {
             check_no_holes(cond)?;
             check_no_holes(then)?;
@@ -109,6 +116,12 @@ pub fn check_no_holes(node: &Node) -> Result<(), CodegenError> {
         | Node::Int { .. }
         | Node::Str { .. }
         | Node::Sym { .. }
+        | Node::Imports { .. }
+        | Node::Import { .. }
+        | Node::Exports { .. }
+        | Node::Export { .. }
+        | Node::Sig { .. }
+        | Node::Ref { .. }
         | Node::PatWild
         | Node::PatVar
         | Node::PatInt { .. }
@@ -152,6 +165,13 @@ pub fn check_closed(body: &Node, n: u64) -> Result<(), CodegenError> {
                 }
                 Ok(())
             }
+            Node::Unit { defs, .. } | Node::Defs { defs } => {
+                for def in defs {
+                    go(def, depth)?;
+                }
+                Ok(())
+            }
+            Node::Def { body, .. } => go(body, depth),
             Node::App { fn_, arg } => {
                 go(fn_, depth)?;
                 go(arg, depth)
@@ -190,6 +210,12 @@ pub fn check_closed(body: &Node, n: u64) -> Result<(), CodegenError> {
             | Node::Int { .. }
             | Node::Str { .. }
             | Node::Sym { .. }
+            | Node::Imports { .. }
+            | Node::Import { .. }
+            | Node::Exports { .. }
+            | Node::Export { .. }
+            | Node::Sig { .. }
+            | Node::Ref { .. }
             | Node::PatWild
             | Node::PatVar
             | Node::PatCtor { .. }

@@ -3,9 +3,11 @@
 //! Tracks a binding stack for DeBruijn index computation.
 //! Projection rules: plans/candidates/authoring-bpe-compact.md § "Direction 1".
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use tacit_canonical::ast::Node;
+use tacit_canonical::hash_node;
 
 use crate::authoring::lex::{lex, LexError, Token};
 
@@ -51,6 +53,8 @@ pub fn parse_authoring(input: &[u8]) -> Result<(Node, SidecarNode), ParseError> 
         tokens,
         pos: 0,
         stack: Vec::new(),
+        top_aliases: BTreeSet::new(),
+        import_aliases: BTreeMap::new(),
         holes: Vec::new(),
     };
     let (node, sidecar) = if matches!(p.peek(), Some(Token::Module)) {
@@ -69,8 +73,37 @@ struct Parser {
     pos: usize,
     /// Binding stack: names in scope, innermost last.
     stack: Vec<String>,
+    /// Phase 6 unit-local aliases that should lower to hash refs after parsing.
+    top_aliases: BTreeSet<String>,
+    /// Phase 6 import aliases already bound to external definition hashes.
+    import_aliases: BTreeMap<String, String>,
     /// Holes emitted during recovery; callers may inspect these.
     pub holes: Vec<HoleDiag>,
+}
+
+#[derive(Clone)]
+struct Phase6DefDraft {
+    alias: String,
+    visibility: Option<String>,
+    sig: Node,
+    body: Node,
+}
+
+struct Phase6ResolvedDef {
+    alias: String,
+    visibility: Option<String>,
+    hash: String,
+    def: Node,
+}
+
+const PHASE6_PLACEHOLDER_PREFIX: &str = "__tacit_phase6_ref__";
+
+fn phase6_placeholder(alias: &str) -> String {
+    format!("{}{}", PHASE6_PLACEHOLDER_PREFIX, alias)
+}
+
+fn phase6_placeholder_alias(name: &str) -> Option<&str> {
+    name.strip_prefix(PHASE6_PLACEHOLDER_PREFIX)
 }
 
 impl Parser {
@@ -195,6 +228,113 @@ impl Parser {
         }
     }
 
+    fn consume_ident_keyword(&mut self, keyword: &str) -> bool {
+        match self.peek() {
+            Some(Token::Ident(name)) if name == keyword => {
+                self.advance();
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn consume_ident_exact(&mut self, keyword: &str) -> Result<(), ParseError> {
+        if self.consume_ident_keyword(keyword) {
+            Ok(())
+        } else {
+            err(format!("expected '{}'", keyword))
+        }
+    }
+
+    fn consume_hash(&mut self, what: &str) -> Result<String, ParseError> {
+        match self.peek().cloned() {
+            Some(Token::Hash(hash)) => {
+                self.advance();
+                Ok(hash)
+            }
+            Some(t) => err(format!("expected {} but got {:?}", what, t)),
+            None => err(format!("expected {} but got end of input", what)),
+        }
+    }
+
+    fn scan_phase6_unit_decls(
+        &mut self,
+    ) -> Result<(BTreeSet<String>, BTreeMap<String, String>), ParseError> {
+        let mut def_aliases = BTreeSet::new();
+        let mut import_aliases = BTreeMap::new();
+        let mut seen_value_aliases = BTreeSet::new();
+
+        while !matches!(self.peek(), Some(Token::RBrace) | None) {
+            if self.consume_ident_keyword("import") {
+                let alias = self.consume_ident("import alias")?;
+                if !seen_value_aliases.insert(alias.clone()) {
+                    return err(format!("duplicate module alias '{}'", alias));
+                }
+                while !matches!(self.peek(), Some(Token::Hash(_))) {
+                    if matches!(self.peek(), Some(Token::Semicolon | Token::RBrace) | None) {
+                        return err("import declaration is missing blake3 hash");
+                    }
+                    self.advance();
+                }
+                let hash = self.consume_hash("definition hash")?;
+                import_aliases.insert(alias, hash);
+                self.skip_to_decl_end()?;
+            } else if self.consume_ident_keyword("private") {
+                let alias = self.consume_ident("definition alias")?;
+                if !seen_value_aliases.insert(alias.clone()) {
+                    return err(format!("duplicate module alias '{}'", alias));
+                }
+                def_aliases.insert(alias);
+                self.skip_to_decl_end()?;
+            } else if self.consume_ident_keyword("export") {
+                let visibility = self.consume_ident("export visibility")?;
+                if visibility != "public" && visibility != "package" {
+                    return err("export visibility must be public or package");
+                }
+                let alias = self.consume_ident("definition alias")?;
+                if !seen_value_aliases.insert(alias.clone()) {
+                    return err(format!("duplicate module alias '{}'", alias));
+                }
+                def_aliases.insert(alias);
+                self.skip_to_decl_end()?;
+            } else {
+                return err(format!(
+                    "expected import, export, private, or '}}' in module but got {:?}",
+                    self.peek()
+                ));
+            }
+
+            if matches!(self.peek(), Some(Token::Semicolon)) {
+                self.advance();
+            }
+        }
+
+        Ok((def_aliases, import_aliases))
+    }
+
+    fn skip_to_decl_end(&mut self) -> Result<(), ParseError> {
+        let mut depth = 0i32;
+        loop {
+            match self.peek() {
+                Some(Token::LBrace) | Some(Token::LParen) => {
+                    depth += 1;
+                    self.advance();
+                }
+                Some(Token::RParen) if depth > 0 => {
+                    depth -= 1;
+                    self.advance();
+                }
+                Some(Token::RBrace) if depth > 0 => {
+                    depth -= 1;
+                    self.advance();
+                }
+                Some(Token::RBrace) | Some(Token::Semicolon) if depth == 0 => return Ok(()),
+                None => return err("unexpected end of input in module declaration"),
+                _ => self.advance(),
+            }
+        }
+    }
+
     /// Look up a name in the binding stack. Returns DeBruijn index (0 = innermost).
     fn lookup(&self, name: &str) -> Option<u64> {
         self.stack
@@ -212,6 +352,7 @@ impl Parser {
                 Token::Ident(_)
                     | Token::Int(_)
                     | Token::Str(_)
+                    | Token::Hash(_)
                     | Token::At
                     | Token::Underscore
                     | Token::LParen
@@ -243,6 +384,9 @@ impl Parser {
 
     fn parse_module(&mut self) -> Result<(Node, SidecarNode), ParseError> {
         self.consume(&Token::Module, "'module'")?;
+        if matches!(self.peek(), Some(Token::Ident(_))) {
+            return self.parse_phase6_unit_after_module();
+        }
         self.consume(&Token::LBrace, "'{'")?;
 
         // Empty module.
@@ -355,6 +499,202 @@ impl Parser {
             },
             sc,
         ))
+    }
+
+    fn parse_phase6_unit_after_module(&mut self) -> Result<(Node, SidecarNode), ParseError> {
+        let module_alias = self.consume_ident("module alias")?;
+        self.consume(&Token::LBrace, "'{'")?;
+        let body_start = self.pos;
+
+        let (all_def_aliases, import_aliases) = self.scan_phase6_unit_decls()?;
+        self.pos = body_start;
+        let old_top_aliases = std::mem::replace(&mut self.top_aliases, all_def_aliases);
+        let old_import_aliases = std::mem::replace(&mut self.import_aliases, import_aliases);
+
+        let mut imports = Vec::new();
+        let mut import_alias_map = BTreeMap::new();
+        let mut drafts = Vec::new();
+
+        while !matches!(self.peek(), Some(Token::RBrace) | None) {
+            if self.consume_ident_keyword("import") {
+                let alias = self.consume_ident("import alias")?;
+                self.consume(&Token::Colon, "':'")?;
+                let sig_type = self.parse_type_expr()?;
+                self.consume_ident_exact("from")?;
+                let hash = self.consume_hash("definition hash")?;
+                let sig = Node::Sig {
+                    type_: Box::new(sig_type),
+                    eval_eff: Box::new(Node::EffSet { atoms: vec![] }),
+                };
+                imports.push(Node::Import {
+                    hash: hash.clone(),
+                    sig: Box::new(sig),
+                });
+                import_alias_map.insert(hash, alias);
+            } else if self.consume_ident_keyword("private") {
+                let draft = self.parse_phase6_def_decl(None)?;
+                drafts.push(draft);
+            } else if self.consume_ident_keyword("export") {
+                let visibility = self.consume_ident("export visibility")?;
+                if visibility != "public" && visibility != "package" {
+                    return err("export visibility must be public or package");
+                }
+                let draft = self.parse_phase6_def_decl(Some(visibility))?;
+                drafts.push(draft);
+            } else {
+                return err(format!(
+                    "expected import, export, private, or '}}' in module but got {:?}",
+                    self.peek()
+                ));
+            }
+
+            if matches!(self.peek(), Some(Token::Semicolon)) {
+                self.advance();
+            } else if !matches!(self.peek(), Some(Token::RBrace)) {
+                return err("expected ';' or '}' after module declaration");
+            }
+        }
+        self.consume(&Token::RBrace, "'}'")?;
+
+        self.top_aliases = old_top_aliases;
+        self.import_aliases = old_import_aliases;
+
+        let resolved = resolve_phase6_defs(drafts)?;
+        let mut defs = Vec::new();
+        let mut exports = Vec::new();
+        let mut definition_aliases = BTreeMap::new();
+        let mut export_aliases = BTreeMap::new();
+
+        for resolved_def in resolved {
+            definition_aliases.insert(resolved_def.hash.clone(), resolved_def.alias.clone());
+            if let Some(visibility) = resolved_def.visibility {
+                exports.push(Node::Export {
+                    visibility,
+                    hash: resolved_def.hash.clone(),
+                });
+                export_aliases.insert(resolved_def.hash.clone(), resolved_def.alias.clone());
+            }
+            defs.push(resolved_def.def);
+        }
+
+        let sc = SidecarNode {
+            module_alias: Some(module_alias),
+            definition_aliases: Some(definition_aliases),
+            import_aliases: Some(import_alias_map),
+            export_aliases: Some(export_aliases),
+            ..Default::default()
+        };
+
+        Ok((
+            Node::Unit {
+                imports,
+                exports,
+                defs,
+            },
+            sc,
+        ))
+    }
+
+    fn parse_phase6_def_decl(
+        &mut self,
+        visibility: Option<String>,
+    ) -> Result<Phase6DefDraft, ParseError> {
+        let alias = self.consume_ident("definition alias")?;
+        self.consume(&Token::Colon, "':'")?;
+        let sig_type = self.parse_type_expr()?;
+        self.consume(&Token::Eq, "'='")?;
+        let (body, _body_sc) = self.parse_expr()?;
+        Ok(Phase6DefDraft {
+            alias,
+            visibility,
+            sig: Node::Sig {
+                type_: Box::new(sig_type),
+                eval_eff: Box::new(Node::EffSet { atoms: vec![] }),
+            },
+            body,
+        })
+    }
+
+    fn parse_type_expr(&mut self) -> Result<Node, ParseError> {
+        self.parse_fn_type()
+    }
+
+    fn parse_fn_type(&mut self) -> Result<Node, ParseError> {
+        let left = self.parse_type_atom()?;
+        if matches!(self.peek(), Some(Token::Arrow)) {
+            self.advance();
+            let ret = self.parse_fn_type()?;
+            let eff = if matches!(self.peek(), Some(Token::Slash)) {
+                self.advance();
+                self.parse_effect_set()?
+            } else {
+                Node::EffSet { atoms: vec![] }
+            };
+            Ok(Node::FnTy {
+                arg: Box::new(left),
+                ret: Box::new(ret),
+                eff: Box::new(eff),
+            })
+        } else {
+            Ok(left)
+        }
+    }
+
+    fn parse_effect_set(&mut self) -> Result<Node, ParseError> {
+        self.consume(&Token::LBrace, "'{'")?;
+        let mut atoms = Vec::new();
+        if !matches!(self.peek(), Some(Token::RBrace)) {
+            loop {
+                atoms.push(self.consume_ident("effect atom")?);
+                if matches!(self.peek(), Some(Token::Comma)) {
+                    self.advance();
+                } else {
+                    break;
+                }
+            }
+        }
+        self.consume(&Token::RBrace, "'}'")?;
+        atoms.sort();
+        Ok(Node::EffSet { atoms })
+    }
+
+    fn parse_type_atom(&mut self) -> Result<Node, ParseError> {
+        match self.peek().cloned() {
+            Some(Token::Ident(name)) => {
+                self.advance();
+                Ok(Node::Sym { name })
+            }
+            Some(Token::LParen) => {
+                self.advance();
+                let ty = self.parse_type_expr()?;
+                self.consume(&Token::RParen, "')'")?;
+                Ok(ty)
+            }
+            Some(Token::LBrace) => self.parse_record_type(),
+            Some(t) => err(format!("expected type expression but got {:?}", t)),
+            None => err("expected type expression but got end of input"),
+        }
+    }
+
+    fn parse_record_type(&mut self) -> Result<Node, ParseError> {
+        self.consume(&Token::LBrace, "'{'")?;
+        let mut fields = Vec::new();
+        if !matches!(self.peek(), Some(Token::RBrace)) {
+            loop {
+                let name = self.consume_ident("record type field")?;
+                self.consume(&Token::Colon, "':'")?;
+                let ty = self.parse_type_expr()?;
+                fields.push((name, ty));
+                if matches!(self.peek(), Some(Token::Comma)) {
+                    self.advance();
+                } else {
+                    break;
+                }
+            }
+        }
+        self.consume(&Token::RBrace, "'}'")?;
+        fields.sort_by(|a, b| a.0.as_bytes().cmp(b.0.as_bytes()));
+        Ok(Node::Record { fields })
     }
 
     fn parse_lambda(&mut self) -> Result<(Node, SidecarNode), ParseError> {
@@ -701,6 +1041,20 @@ impl Parser {
                 self.advance();
                 if let Some(idx) = self.lookup(&name) {
                     Ok((Node::Var { index: idx }, SidecarNode::default(), false))
+                } else if let Some(hash) = self.import_aliases.get(&name) {
+                    Ok((
+                        Node::Ref { hash: hash.clone() },
+                        SidecarNode::default(),
+                        false,
+                    ))
+                } else if self.top_aliases.contains(&name) {
+                    Ok((
+                        Node::Sym {
+                            name: phase6_placeholder(&name),
+                        },
+                        SidecarNode::default(),
+                        false,
+                    ))
                 } else if name.chars().next().is_some_and(|c| c.is_uppercase()) {
                     // Unbound capitalized ident → ctor head; args collected by caller.
                     Ok((
@@ -726,6 +1080,10 @@ impl Parser {
             Some(Token::Str(s)) => {
                 self.advance();
                 Ok((Node::Str { value: s }, SidecarNode::default(), false))
+            }
+            Some(Token::Hash(hash)) => {
+                self.advance();
+                Ok((Node::Ref { hash }, SidecarNode::default(), false))
             }
             Some(Token::At) => {
                 self.advance();
@@ -987,5 +1345,226 @@ impl Parser {
                 Ok((n, s, vec![]))
             }
         }
+    }
+}
+
+fn resolve_phase6_defs(drafts: Vec<Phase6DefDraft>) -> Result<Vec<Phase6ResolvedDef>, ParseError> {
+    let draft_map: BTreeMap<String, Phase6DefDraft> = drafts
+        .into_iter()
+        .map(|draft| (draft.alias.clone(), draft))
+        .collect();
+    let mut marks = BTreeMap::new();
+    let mut resolved = BTreeMap::new();
+    let mut order = Vec::new();
+
+    for alias in draft_map.keys() {
+        resolve_phase6_def(alias, &draft_map, &mut marks, &mut resolved, &mut order)?;
+    }
+
+    Ok(order
+        .into_iter()
+        .map(|alias| resolved.remove(&alias).expect("resolved in order"))
+        .collect())
+}
+
+fn resolve_phase6_def(
+    alias: &str,
+    drafts: &BTreeMap<String, Phase6DefDraft>,
+    marks: &mut BTreeMap<String, bool>,
+    resolved: &mut BTreeMap<String, Phase6ResolvedDef>,
+    order: &mut Vec<String>,
+) -> Result<String, ParseError> {
+    if let Some(done) = marks.get(alias).copied() {
+        if done {
+            return Ok(resolved
+                .get(alias)
+                .map(|def| def.hash.clone())
+                .unwrap_or_default());
+        }
+        return err(format!("cyclic module dependency involving '{}'", alias));
+    }
+
+    let draft = drafts
+        .get(alias)
+        .ok_or_else(|| ParseError::Structural(format!("unknown module alias '{}'", alias)))?
+        .clone();
+    marks.insert(alias.to_string(), false);
+
+    let deps = phase6_local_deps(&draft.body, drafts);
+    let mut dep_hashes = BTreeMap::new();
+    for dep in deps {
+        let dep_hash = resolve_phase6_def(&dep, drafts, marks, resolved, order)?;
+        dep_hashes.insert(dep, dep_hash);
+    }
+
+    let body = replace_phase6_placeholders(&draft.body, &dep_hashes)?;
+    let def = Node::Def {
+        sig: Box::new(draft.sig),
+        body: Box::new(body),
+    };
+    let hash = hash_node(&def)
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect::<String>();
+    let resolved_def = Phase6ResolvedDef {
+        alias: draft.alias.clone(),
+        visibility: draft.visibility,
+        hash: hash.clone(),
+        def,
+    };
+    resolved.insert(alias.to_string(), resolved_def);
+    order.push(alias.to_string());
+    marks.insert(alias.to_string(), true);
+    Ok(hash)
+}
+
+fn phase6_local_deps(node: &Node, drafts: &BTreeMap<String, Phase6DefDraft>) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    collect_phase6_local_deps(node, drafts, &mut out);
+    out
+}
+
+fn collect_phase6_local_deps(
+    node: &Node,
+    drafts: &BTreeMap<String, Phase6DefDraft>,
+    out: &mut BTreeSet<String>,
+) {
+    match node {
+        Node::Sym { name } => {
+            if let Some(alias) = phase6_placeholder_alias(name) {
+                if drafts.contains_key(alias) {
+                    out.insert(alias.to_string());
+                }
+            }
+        }
+        _ => for_each_phase6_child(node, |child| collect_phase6_local_deps(child, drafts, out)),
+    }
+}
+
+fn replace_phase6_placeholders(
+    node: &Node,
+    dep_hashes: &BTreeMap<String, String>,
+) -> Result<Node, ParseError> {
+    match node {
+        Node::Sym { name } => {
+            if let Some(alias) = phase6_placeholder_alias(name) {
+                let Some(hash) = dep_hashes.get(alias) else {
+                    return err(format!("unresolved module alias '{}'", alias));
+                };
+                Ok(Node::Ref { hash: hash.clone() })
+            } else {
+                Ok(node.clone())
+            }
+        }
+        Node::Lam { body } => Ok(Node::Lam {
+            body: Box::new(replace_phase6_placeholders(body, dep_hashes)?),
+        }),
+        Node::App { fn_, arg } => Ok(Node::App {
+            fn_: Box::new(replace_phase6_placeholders(fn_, dep_hashes)?),
+            arg: Box::new(replace_phase6_placeholders(arg, dep_hashes)?),
+        }),
+        Node::Let { rhs, body } => Ok(Node::Let {
+            rhs: Box::new(replace_phase6_placeholders(rhs, dep_hashes)?),
+            body: Box::new(replace_phase6_placeholders(body, dep_hashes)?),
+        }),
+        Node::Rec { bindings, body } => Ok(Node::Rec {
+            bindings: bindings
+                .iter()
+                .map(|binding| replace_phase6_placeholders(binding, dep_hashes))
+                .collect::<Result<Vec<_>, _>>()?,
+            body: Box::new(replace_phase6_placeholders(body, dep_hashes)?),
+        }),
+        Node::If { cond, then, else_ } => Ok(Node::If {
+            cond: Box::new(replace_phase6_placeholders(cond, dep_hashes)?),
+            then: Box::new(replace_phase6_placeholders(then, dep_hashes)?),
+            else_: Box::new(replace_phase6_placeholders(else_, dep_hashes)?),
+        }),
+        Node::Match { scrutinee, arms } => Ok(Node::Match {
+            scrutinee: Box::new(replace_phase6_placeholders(scrutinee, dep_hashes)?),
+            arms: arms
+                .iter()
+                .map(|arm| replace_phase6_placeholders(arm, dep_hashes))
+                .collect::<Result<Vec<_>, _>>()?,
+        }),
+        Node::Arm { pattern, body } => Ok(Node::Arm {
+            pattern: pattern.clone(),
+            body: Box::new(replace_phase6_placeholders(body, dep_hashes)?),
+        }),
+        Node::Record { fields } => Ok(Node::Record {
+            fields: fields
+                .iter()
+                .map(|(name, value)| {
+                    Ok((
+                        name.clone(),
+                        replace_phase6_placeholders(value, dep_hashes)?,
+                    ))
+                })
+                .collect::<Result<Vec<_>, ParseError>>()?,
+        }),
+        Node::Proj { record, field } => Ok(Node::Proj {
+            record: Box::new(replace_phase6_placeholders(record, dep_hashes)?),
+            field: field.clone(),
+        }),
+        Node::Ctor { name, args } => Ok(Node::Ctor {
+            name: name.clone(),
+            args: args
+                .iter()
+                .map(|arg| replace_phase6_placeholders(arg, dep_hashes))
+                .collect::<Result<Vec<_>, _>>()?,
+        }),
+        Node::Ann { expr, type_ } => Ok(Node::Ann {
+            expr: Box::new(replace_phase6_placeholders(expr, dep_hashes)?),
+            type_: type_.clone(),
+        }),
+        Node::Def { sig, body } => Ok(Node::Def {
+            sig: sig.clone(),
+            body: Box::new(replace_phase6_placeholders(body, dep_hashes)?),
+        }),
+        _ => Ok(node.clone()),
+    }
+}
+
+fn for_each_phase6_child(node: &Node, mut f: impl FnMut(&Node)) {
+    match node {
+        Node::Lam { body } => f(body),
+        Node::App { fn_, arg } => {
+            f(fn_);
+            f(arg);
+        }
+        Node::Let { rhs, body } => {
+            f(rhs);
+            f(body);
+        }
+        Node::Rec { bindings, body } => {
+            for binding in bindings {
+                f(binding);
+            }
+            f(body);
+        }
+        Node::If { cond, then, else_ } => {
+            f(cond);
+            f(then);
+            f(else_);
+        }
+        Node::Match { scrutinee, arms } => {
+            f(scrutinee);
+            for arm in arms {
+                f(arm);
+            }
+        }
+        Node::Arm { body, .. } => f(body),
+        Node::Record { fields } => {
+            for (_, value) in fields {
+                f(value);
+            }
+        }
+        Node::Proj { record, .. } => f(record),
+        Node::Ctor { args, .. } => {
+            for arg in args {
+                f(arg);
+            }
+        }
+        Node::Ann { expr, .. } => f(expr),
+        _ => {}
     }
 }

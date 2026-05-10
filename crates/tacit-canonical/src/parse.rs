@@ -137,6 +137,24 @@ fn bare_str(item: &SItem, what: &str) -> Result<String, ParseError> {
     }
 }
 
+fn hash_str(item: &SItem, what: &str) -> Result<String, ParseError> {
+    let s = bare_str(item, what)?;
+    if is_hash_str(&s) {
+        Ok(s)
+    } else {
+        err(format!(
+            "{} must be exactly 64 lowercase hexadecimal characters",
+            what
+        ))
+    }
+}
+
+fn is_hash_str(s: &str) -> bool {
+    s.len() == 64
+        && s.bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
+
 fn build_form(tag: &str, args: &[SItem]) -> Result<Node, ParseError> {
     match tag {
         "lam" => {
@@ -182,6 +200,111 @@ fn build_form(tag: &str, args: &[SItem]) -> Result<Node, ParseError> {
                 bindings.push(build(a)?);
             }
             Ok(Node::Module { bindings })
+        }
+        "unit" => {
+            check_arity(tag, args, 3)?;
+            let imports = build(&args[0])?;
+            let exports = build(&args[1])?;
+            let defs = build(&args[2])?;
+            let Node::Imports { entries: imports } = imports else {
+                return err("unit child 0 must be an imports node");
+            };
+            let Node::Exports { entries: exports } = exports else {
+                return err("unit child 1 must be an exports node");
+            };
+            let Node::Defs { defs } = defs else {
+                return err("unit child 2 must be a defs node");
+            };
+            Ok(Node::Unit {
+                imports,
+                exports,
+                defs,
+            })
+        }
+        "imports" => {
+            let mut entries = Vec::with_capacity(args.len());
+            for a in args {
+                let entry = build(a)?;
+                if !matches!(entry, Node::Import { .. }) {
+                    return err("imports children must be imp nodes");
+                }
+                entries.push(entry);
+            }
+            Ok(Node::Imports { entries })
+        }
+        "imp" => {
+            check_arity(tag, args, 2)?;
+            let hash = hash_str(&args[0], "imp hash")?;
+            let sig = build(&args[1])?;
+            if !matches!(sig, Node::Sig { .. }) {
+                return err("imp child 1 must be a sig node");
+            }
+            Ok(Node::Import {
+                hash,
+                sig: Box::new(sig),
+            })
+        }
+        "exports" => {
+            let mut entries = Vec::with_capacity(args.len());
+            for a in args {
+                let entry = build(a)?;
+                if !matches!(entry, Node::Export { .. }) {
+                    return err("exports children must be exp nodes");
+                }
+                entries.push(entry);
+            }
+            Ok(Node::Exports { entries })
+        }
+        "exp" => {
+            check_arity(tag, args, 2)?;
+            let visibility = bare_sym(&args[0], "exp visibility")?;
+            if visibility != "public" && visibility != "package" {
+                return err("exp visibility must be public or package");
+            }
+            let hash = hash_str(&args[1], "exp hash")?;
+            Ok(Node::Export { visibility, hash })
+        }
+        "defs" => {
+            if args.is_empty() {
+                return err("defs requires at least 1 def");
+            }
+            let mut defs = Vec::with_capacity(args.len());
+            for a in args {
+                let def = build(a)?;
+                if !matches!(def, Node::Def { .. }) {
+                    return err("defs children must be def nodes");
+                }
+                defs.push(def);
+            }
+            Ok(Node::Defs { defs })
+        }
+        "def" => {
+            check_arity(tag, args, 2)?;
+            let sig = build(&args[0])?;
+            if !matches!(sig, Node::Sig { .. }) {
+                return err("def child 0 must be a sig node");
+            }
+            Ok(Node::Def {
+                sig: Box::new(sig),
+                body: Box::new(build(&args[1])?),
+            })
+        }
+        "sig" => {
+            check_arity(tag, args, 2)?;
+            let eval_eff = build(&args[1])?;
+            if !matches!(eval_eff, Node::EffSet { .. }) {
+                return err("sig child 1 must be an eff-set node");
+            }
+            Ok(Node::Sig {
+                type_: Box::new(build(&args[0])?),
+                eval_eff: Box::new(eval_eff),
+            })
+        }
+        "ref" => {
+            check_arity(tag, args, 1)?;
+            Ok(Node::Ref {
+                hash: hash_str(&args[0], "ref hash")?,
+            })
         }
         "if" => {
             check_arity(tag, args, 3)?;
