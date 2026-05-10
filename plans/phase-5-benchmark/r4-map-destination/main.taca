@@ -1,0 +1,1 @@
+let v0 = @i64-alloc 3 in let v1 = @i64-set v0 0 4 in let v2 = @i64-set v0 1 5 in let v3 = @i64-set v0 2 6 in let v4 = @i64-alloc 3 in let v5 = @map v0 3 (lambda v6. @add v6 1) v4 in @add (@i64-get v1 0) (@add (@i64-get v1 1) (@i64-get v1 2))

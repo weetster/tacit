@@ -1,0 +1,1 @@
+(proj (record left (int 40) right (int 2)) total)

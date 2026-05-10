@@ -120,7 +120,8 @@ Exit criteria:
 
 ### Stage 1: Benchmark Spec
 
-**Status:** Pending
+**Status:** Complete 2026-05-09. Deliverable:
+[plans/phase-5-benchmark/README.md](phase-5-benchmark/README.md)
 
 Work items:
 
