@@ -169,3 +169,37 @@ fn package_exports_resolve_across_modules_in_memory() {
     check_modules_in_memory(&[provider_module, consumer_module])
         .expect("same-package import checks");
 }
+
+#[test]
+fn duplicate_import_diagnostic_names_unit_artifact() {
+    let import_hash = "0".repeat(64);
+    let module = Node::Unit {
+        imports: vec![
+            Node::Import {
+                hash: import_hash.clone(),
+                sig: Box::new(int_to_int_sig()),
+            },
+            Node::Import {
+                hash: import_hash,
+                sig: Box::new(int_to_int_sig()),
+            },
+        ],
+        exports: vec![],
+        defs: vec![identity_def()],
+    };
+
+    let diags = check_module(&module, &BTreeMap::new()).expect_err("duplicate import");
+    assert!(diags
+        .iter()
+        .any(|d| d.kind == "duplicate-import" && d.message.starts_with("unit imports")));
+}
+
+#[test]
+fn module_binding_group_is_not_a_unit_artifact() {
+    let node = Node::Module {
+        bindings: vec![Node::Int { value: "1".into() }],
+    };
+
+    let diags = check_module(&node, &BTreeMap::new()).expect_err("not a unit artifact");
+    assert!(diags.iter().any(|d| d.kind == "invalid-unit-artifact"));
+}

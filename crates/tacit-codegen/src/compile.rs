@@ -378,7 +378,8 @@ impl<'ctx> Compiler<'ctx> {
             Node::App { .. } => self.compile_app(node, env, cur_fn),
             Node::Lam { .. } => self.compile_closure_value(node, None, env, cur_fn),
             Node::Rec { bindings, body } => self.compile_rec(bindings, body, env, cur_fn),
-            Node::Module { .. } => Err(CodegenError::Unsupported("top-level module")),
+            Node::Module { .. } => Err(CodegenError::Unsupported("module binding group")),
+            Node::Unit { .. } => Err(CodegenError::Unsupported("logical unit artifact")),
             Node::Match { scrutinee, arms } => self.compile_match(scrutinee, arms, env, cur_fn),
             Node::Arm { .. } => Err(CodegenError::Unsupported("bare arm outside match")),
             Node::Record { fields } => self.compile_record(fields, env, cur_fn),
@@ -407,6 +408,16 @@ impl<'ctx> Compiler<'ctx> {
             | Node::EffSet { .. }
             | Node::EffVar { .. } => Err(CodegenError::Unsupported(
                 "type expression in value position",
+            )),
+            Node::Imports { .. }
+            | Node::Import { .. }
+            | Node::Exports { .. }
+            | Node::Export { .. }
+            | Node::Defs { .. }
+            | Node::Def { .. }
+            | Node::Sig { .. }
+            | Node::Ref { .. } => Err(CodegenError::Unsupported(
+                "unit artifact node in value position",
             )),
         }
     }
@@ -6371,6 +6382,12 @@ fn collect_free_outer_indices(node: &Node, depth: u64, out: &mut BTreeSet<usize>
                 collect_free_outer_indices(binding, inner, out);
             }
         }
+        Node::Unit { defs, .. } | Node::Defs { defs } => {
+            for def in defs {
+                collect_free_outer_indices(def, depth, out);
+            }
+        }
+        Node::Def { body, .. } => collect_free_outer_indices(body, depth, out),
         Node::App { fn_, arg } => {
             collect_free_outer_indices(fn_, depth, out);
             collect_free_outer_indices(arg, depth, out);
@@ -6417,7 +6434,13 @@ fn collect_free_outer_indices(node: &Node, depth: u64, out: &mut BTreeSet<usize>
         | Node::TyVar { .. }
         | Node::Forall { .. }
         | Node::EffSet { .. }
-        | Node::EffVar { .. } => {}
+        | Node::EffVar { .. }
+        | Node::Imports { .. }
+        | Node::Import { .. }
+        | Node::Exports { .. }
+        | Node::Export { .. }
+        | Node::Sig { .. }
+        | Node::Ref { .. } => {}
     }
 }
 
@@ -6577,7 +6600,8 @@ fn infer_value_ty(node: &Node, env: &[BindingTy]) -> Result<ValueTy> {
             body_env.extend_from_slice(env);
             infer_value_ty(body, &body_env)
         }
-        Node::Module { .. } => Err(CodegenError::Unsupported("top-level module")),
+        Node::Module { .. } => Err(CodegenError::Unsupported("module binding group")),
+        Node::Unit { .. } => Err(CodegenError::Unsupported("logical unit artifact")),
         Node::Match { arms, .. } => {
             let mut result_ty = None;
             for arm in arms {
@@ -6635,6 +6659,16 @@ fn infer_value_ty(node: &Node, env: &[BindingTy]) -> Result<ValueTy> {
         | Node::EffSet { .. }
         | Node::EffVar { .. } => Err(CodegenError::Unsupported(
             "type expression in value position",
+        )),
+        Node::Imports { .. }
+        | Node::Import { .. }
+        | Node::Exports { .. }
+        | Node::Export { .. }
+        | Node::Defs { .. }
+        | Node::Def { .. }
+        | Node::Sig { .. }
+        | Node::Ref { .. } => Err(CodegenError::Unsupported(
+            "unit artifact node in value position",
         )),
     }
 }

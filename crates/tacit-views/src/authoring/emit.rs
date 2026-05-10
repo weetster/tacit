@@ -43,7 +43,7 @@ impl EmitCtx {
                 imports,
                 exports,
                 defs,
-            } => self.emit_logical_module(imports, exports, defs, sc, out),
+            } => self.emit_unit(imports, exports, defs, sc, out),
             Node::If { cond, then, else_ } => self.emit_if(cond, then, else_, sc, out),
             Node::Match { scrutinee, arms } => self.emit_match(scrutinee, arms, sc, out),
             _ => self.emit_app_expr(node, sc, out),
@@ -176,7 +176,7 @@ impl EmitCtx {
         }
     }
 
-    fn emit_logical_module(
+    fn emit_unit(
         &mut self,
         imports: &[Node],
         exports: &[Node],
@@ -184,11 +184,9 @@ impl EmitCtx {
         sc: Option<&SidecarNode>,
         out: &mut String,
     ) {
-        let module_alias = sc
-            .and_then(|s| s.module_alias.as_deref())
-            .unwrap_or("Module");
-        out.push_str("module ");
-        out.push_str(module_alias);
+        let unit_alias = sc.and_then(|s| s.unit_alias.as_deref()).unwrap_or("Unit");
+        out.push_str("unit ");
+        out.push_str(unit_alias);
         out.push_str(" {");
 
         let mut first = true;

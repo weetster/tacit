@@ -13,8 +13,8 @@ extension; [ADR 0014](0014-sidecar-format.md) - additive metadata extension
 
 Phase 6 starts the move from one Tacit program at a time to packages of
 composable Tacit definitions. The first dependency is Tacit-to-Tacit module
-semantics: a definition in one logical module must be able to refer to a
-definition from another logical module by content hash, and the checker must
+semantics: a definition in one unit must be able to refer to a definition from
+another unit by content hash, and the checker must
 verify that the imported value has the declared type and effect signature.
 
 The existing canonical `module` node is a simultaneous binding group. It has
@@ -32,18 +32,19 @@ The design is also constrained by frozen commitments:
   `.tacd` sidecars.
 - Existing canonical tags are additive-only; no existing tag may be
   re-purposed.
-- Type and effect annotations at module boundaries are explicit.
+- Type and effect annotations at unit boundaries are explicit.
 - `rec` remains the unit of lexical mutual recursion and hashes as one atom.
 - General FFI is out of scope. Host imports/exports later consume these module
   boundaries but do not broaden them.
 
 ## Decision
 
-Phase 6 introduces a new canonical logical-module artifact, `unit`, plus
-definition, signature, export, import, and hash-reference nodes. A `unit`
+Phase 6 introduces a new canonical unit artifact, plus definition, signature,
+export, import, and hash-reference nodes. A `unit` is the artifact that
+represents one logical grouping of Tacit definitions. A `unit`
 contains a sorted import table, a sorted export table, and a sorted list of
 definition artifacts. Definition hashes identify definition content; visibility
-is module-interface metadata and is not part of the definition hash.
+is unit-interface metadata and is not part of the definition hash.
 
 ### Canonical node kinds
 
@@ -51,7 +52,7 @@ The following rows are appended to the canonical node table.
 
 | Tag | Arity | Children | Notes |
 | --- | --- | --- | --- |
-| `unit` | 3 | imports, exports, defs | Phase 6 logical module artifact. |
+| `unit` | 3 | imports, exports, defs | Phase 6 logical grouping artifact. |
 | `imports` | N >= 0 | imp_0, ..., imp_n | Import declarations, sorted by hash bytes. |
 | `imp` | 2 | hash-str, sig | Declares one imported definition hash and expected signature. |
 | `exports` | N >= 0 | exp_0, ..., exp_n | Export declarations, sorted by hash bytes. |
@@ -71,7 +72,7 @@ same value as `blake3:<hex>` for readability.
 evaluation effects, represented canonically as `(eff-set)`.
 
 The existing `(module ...)` node remains valid for the frozen single-file
-surface. It is not re-purposed as the Phase 6 module artifact.
+surface. It is not re-purposed as the Phase 6 unit artifact.
 
 ### Definition identity
 
@@ -153,7 +154,7 @@ Authoring order is sidecar metadata only.
 The Phase 6 authoring view uses explicit boundary declarations:
 
 ```tacit
-module Math {
+unit Math {
   import increment : Int -> Int from blake3:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef;
 
   private double : Int -> Int =
@@ -169,15 +170,15 @@ module Math {
 
 Rules:
 
-- `module Alias { ... }` gives the logical module a display alias only.
+- `unit Alias { ... }` gives the unit a display alias only.
 - `import alias : type-sig from blake3:<64-hex>;` declares an imported
   definition and its expected signature.
 - `export public alias : type-sig = expr;` exports a definition outside the
   package.
 - `export package alias : type-sig = expr;` exports a definition only to
   modules in the same package.
-- `private alias : type-sig = expr;` creates a module-private definition that
-  other definitions in the same logical module may reference.
+- `private alias : type-sig = expr;` creates a private definition that other
+  definitions in the same unit may reference.
 - Every import, public export, package export, and private top-level
   definition has an explicit type signature. Function call effects are written
   in the function type. Pure definition-evaluation effects lower to
@@ -209,7 +210,7 @@ There are three visibility levels.
 `private` definitions:
 
 - do not appear in the `exports` table,
-- may be referenced only by definitions in the same logical module,
+- may be referenced only by definitions in the same unit,
 - may still be stored and cached by hash as part of the dependency closure of a
   public or package definition.
 
@@ -247,7 +248,7 @@ Visibility is checked at resolution time:
 
 ### Mutual recursion and cycles
 
-Mutual recursion does not cross module boundaries in Phase 6. A definition may
+Mutual recursion does not cross unit boundaries in Phase 6. A definition may
 contain a lexical `rec`; that entire `rec` is part of the enclosing `def` and
 therefore part of one definition hash.
 
@@ -257,17 +258,17 @@ reported as an error. Authors who need mutually recursive functions must place
 the recursive group inside one definition artifact, usually with `rec`.
 
 This rule keeps imported hashes meaningful: every `ref` points to an already
-content-addressed definition, never to a future member of a cross-module
+content-addressed definition, never to a future member of a cross-unit
 recursive knot.
 
 ### Sidecar aliases
 
 Aliases are advisory display metadata in `.tacd`, not canonical content.
-ADR 0014 is extended with optional top-level module metadata:
+ADR 0014 is extended with optional top-level unit metadata:
 
 ```json
 {
-  "module_alias": "Math",
+  "unit_alias": "Math",
   "definition_aliases": {
     "<64-hex-definition-hash>": "add_two"
   },
@@ -281,13 +282,13 @@ ADR 0014 is extended with optional top-level module metadata:
 ```
 
 Readers ignore these keys if absent or stale. A fresh authoring sidecar must
-avoid duplicate aliases in the value namespace of one logical module. If a
+avoid duplicate aliases in the value namespace of one unit. If a
 stale or hand-written sidecar provides duplicates, renderers fall back to
 hash-based synthetic names for the ambiguous entries.
 
 ### Diagnostics
 
-Stage 1 reserves the following structured diagnostic kinds for module-boundary
+Stage 1 reserves the following structured diagnostic kinds for unit-boundary
 checking:
 
 | Kind | Severity | Meaning |
@@ -307,10 +308,10 @@ and humans use to navigate, while hashes are the stable repair target.
 
 ### Inspection view
 
-Inspection output renders module boundaries before definition bodies:
+Inspection output renders unit boundaries before definition bodies:
 
 ```text
-module Math
+unit Math
 imports
   increment : Int -> Int = blake3:01234567...
 exports
@@ -437,12 +438,12 @@ reopened by the package ADR.
   object store.
 - Unit and definition versioning is hash-exact. New code versions create new
   hashes; old dependents remain pinned to old hashes until explicitly upgraded.
-- The Stage 2 whole-project graph can load logical modules from any file
+- The Stage 2 whole-project graph can load units from any file
   layout, canonicalize them into sorted `unit` artifacts, and ignore path
   ordering.
 - The Stage 10 host-interface ABI can build on `public` exports without
   inventing a separate boundary concept.
-- Existing single-program and legacy `(module ...)` programs remain valid.
+- Existing single-program and `(module ...)` binding-group programs remain valid.
   Migration to `unit` is additive.
 - No Phase 6 work may use `corpus/sealed/` contents, paths, metadata, or
   feedback to validate this design.
@@ -458,7 +459,7 @@ reopened by the package ADR.
 - [ADR 0035](0035-p2-effect-set-canonical.md) - concrete effect sets.
 - [ADR 0036](0036-p2-effect-polymorphism-syntax.md) - effect variables in
   function types.
-- [ADR 0039](0039-p2-module-authoring-syntax.md) - legacy top-level module
+- [ADR 0039](0039-p2-module-authoring-syntax.md) - top-level module
   authoring syntax.
 - [ADR 0071](0071-storage-format-reconciliation.md) - `.tac` canonical
   storage and `.tacd` sidecar roles.

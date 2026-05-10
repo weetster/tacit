@@ -57,10 +57,10 @@ pub fn parse_authoring(input: &[u8]) -> Result<(Node, SidecarNode), ParseError> 
         import_aliases: BTreeMap::new(),
         holes: Vec::new(),
     };
-    let (node, sidecar) = if matches!(p.peek(), Some(Token::Module)) {
-        p.parse_module()?
-    } else {
-        p.parse_expr()?
+    let (node, sidecar) = match p.peek() {
+        Some(Token::Module) => p.parse_module()?,
+        Some(Token::Unit) => p.parse_unit()?,
+        _ => p.parse_expr()?,
     };
     if p.pos != p.tokens.len() {
         return err(format!("trailing tokens after position {}", p.pos));
@@ -73,37 +73,37 @@ struct Parser {
     pos: usize,
     /// Binding stack: names in scope, innermost last.
     stack: Vec<String>,
-    /// Logical-module local aliases that should lower to hash refs after parsing.
+    /// Unit-local aliases that should lower to hash refs after parsing.
     top_aliases: BTreeSet<String>,
-    /// Logical-module import aliases already bound to external definition hashes.
+    /// Unit import aliases already bound to external definition hashes.
     import_aliases: BTreeMap<String, String>,
     /// Holes emitted during recovery; callers may inspect these.
     pub holes: Vec<HoleDiag>,
 }
 
 #[derive(Clone)]
-struct ModuleDefDraft {
+struct UnitDefDraft {
     alias: String,
     visibility: Option<String>,
     sig: Node,
     body: Node,
 }
 
-struct ResolvedModuleDef {
+struct ResolvedUnitDef {
     alias: String,
     visibility: Option<String>,
     hash: String,
     def: Node,
 }
 
-const MODULE_REF_PLACEHOLDER_PREFIX: &str = "__tacit_module_ref__";
+const UNIT_REF_PLACEHOLDER_PREFIX: &str = "__tacit_unit_ref__";
 
-fn module_ref_placeholder(alias: &str) -> String {
-    format!("{}{}", MODULE_REF_PLACEHOLDER_PREFIX, alias)
+fn unit_ref_placeholder(alias: &str) -> String {
+    format!("{}{}", UNIT_REF_PLACEHOLDER_PREFIX, alias)
 }
 
-fn module_ref_placeholder_alias(name: &str) -> Option<&str> {
-    name.strip_prefix(MODULE_REF_PLACEHOLDER_PREFIX)
+fn unit_ref_placeholder_alias(name: &str) -> Option<&str> {
+    name.strip_prefix(UNIT_REF_PLACEHOLDER_PREFIX)
 }
 
 impl Parser {
@@ -257,7 +257,7 @@ impl Parser {
         }
     }
 
-    fn scan_module_decls(
+    fn scan_unit_decls(
         &mut self,
     ) -> Result<(BTreeSet<String>, BTreeMap<String, String>), ParseError> {
         let mut def_aliases = BTreeSet::new();
@@ -268,7 +268,7 @@ impl Parser {
             if self.consume_ident_keyword("import") {
                 let alias = self.consume_ident("import alias")?;
                 if !seen_value_aliases.insert(alias.clone()) {
-                    return err(format!("duplicate module alias '{}'", alias));
+                    return err(format!("duplicate unit alias '{}'", alias));
                 }
                 while !matches!(self.peek(), Some(Token::Hash(_))) {
                     if matches!(self.peek(), Some(Token::Semicolon | Token::RBrace) | None) {
@@ -282,7 +282,7 @@ impl Parser {
             } else if self.consume_ident_keyword("private") {
                 let alias = self.consume_ident("definition alias")?;
                 if !seen_value_aliases.insert(alias.clone()) {
-                    return err(format!("duplicate module alias '{}'", alias));
+                    return err(format!("duplicate unit alias '{}'", alias));
                 }
                 def_aliases.insert(alias);
                 self.skip_to_decl_end()?;
@@ -293,13 +293,13 @@ impl Parser {
                 }
                 let alias = self.consume_ident("definition alias")?;
                 if !seen_value_aliases.insert(alias.clone()) {
-                    return err(format!("duplicate module alias '{}'", alias));
+                    return err(format!("duplicate unit alias '{}'", alias));
                 }
                 def_aliases.insert(alias);
                 self.skip_to_decl_end()?;
             } else {
                 return err(format!(
-                    "expected import, export, private, or '}}' in module but got {:?}",
+                    "expected import, export, private, or '}}' in unit but got {:?}",
                     self.peek()
                 ));
             }
@@ -329,7 +329,7 @@ impl Parser {
                     self.advance();
                 }
                 Some(Token::RBrace) | Some(Token::Semicolon) if depth == 0 => return Ok(()),
-                None => return err("unexpected end of input in module declaration"),
+                None => return err("unexpected end of input in unit declaration"),
                 _ => self.advance(),
             }
         }
@@ -372,10 +372,14 @@ impl Parser {
             Some(Token::Rec) => self.parse_rec(),
             Some(Token::If) => self.parse_if(),
             Some(Token::Match) => self.parse_match(),
-            // `module` is only valid at the top level (dispatched from parse_authoring).
+            // Top-level artifact keywords are dispatched from parse_authoring.
             // Appearing in expression position is a parse error; recover with a Hole.
             Some(Token::Module) => {
                 let msg = "unexpected 'module' keyword in expression position";
+                Ok(self.recover_expr("module-binding-error", msg))
+            }
+            Some(Token::Unit) => {
+                let msg = "unexpected 'unit' keyword in expression position";
                 Ok(self.recover_expr("module-binding-error", msg))
             }
             _ => self.parse_app_expr(),
@@ -384,20 +388,10 @@ impl Parser {
 
     fn parse_module(&mut self) -> Result<(Node, SidecarNode), ParseError> {
         self.consume(&Token::Module, "'module'")?;
-        if matches!(self.peek(), Some(Token::Ident(_))) {
-            return self.parse_logical_module_after_keyword();
-        }
         self.consume(&Token::LBrace, "'{'")?;
 
-        // Empty module.
         if matches!(self.peek(), Some(Token::RBrace)) {
-            self.advance();
-            let sc = SidecarNode {
-                binders: Some(vec![]),
-                children: Some(vec![]),
-                ..Default::default()
-            };
-            return Ok((Node::Module { bindings: vec![] }, sc));
+            return err("module requires at least one binding");
         }
 
         // First pass: collect names, skip bodies (same two-pass pattern as parse_rec).
@@ -501,12 +495,13 @@ impl Parser {
         ))
     }
 
-    fn parse_logical_module_after_keyword(&mut self) -> Result<(Node, SidecarNode), ParseError> {
-        let module_alias = self.consume_ident("module alias")?;
+    fn parse_unit(&mut self) -> Result<(Node, SidecarNode), ParseError> {
+        self.consume(&Token::Unit, "'unit'")?;
+        let unit_alias = self.consume_ident("unit alias")?;
         self.consume(&Token::LBrace, "'{'")?;
         let body_start = self.pos;
 
-        let (all_def_aliases, import_aliases) = self.scan_module_decls()?;
+        let (all_def_aliases, import_aliases) = self.scan_unit_decls()?;
         self.pos = body_start;
         let old_top_aliases = std::mem::replace(&mut self.top_aliases, all_def_aliases);
         let old_import_aliases = std::mem::replace(&mut self.import_aliases, import_aliases);
@@ -532,18 +527,18 @@ impl Parser {
                 });
                 import_alias_map.insert(hash, alias);
             } else if self.consume_ident_keyword("private") {
-                let draft = self.parse_module_def_decl(None)?;
+                let draft = self.parse_unit_def_decl(None)?;
                 drafts.push(draft);
             } else if self.consume_ident_keyword("export") {
                 let visibility = self.consume_ident("export visibility")?;
                 if visibility != "public" && visibility != "package" {
                     return err("export visibility must be public or package");
                 }
-                let draft = self.parse_module_def_decl(Some(visibility))?;
+                let draft = self.parse_unit_def_decl(Some(visibility))?;
                 drafts.push(draft);
             } else {
                 return err(format!(
-                    "expected import, export, private, or '}}' in module but got {:?}",
+                    "expected import, export, private, or '}}' in unit but got {:?}",
                     self.peek()
                 ));
             }
@@ -551,7 +546,7 @@ impl Parser {
             if matches!(self.peek(), Some(Token::Semicolon)) {
                 self.advance();
             } else if !matches!(self.peek(), Some(Token::RBrace)) {
-                return err("expected ';' or '}' after module declaration");
+                return err("expected ';' or '}' after unit declaration");
             }
         }
         self.consume(&Token::RBrace, "'}'")?;
@@ -559,7 +554,11 @@ impl Parser {
         self.top_aliases = old_top_aliases;
         self.import_aliases = old_import_aliases;
 
-        let resolved = resolve_module_defs(drafts)?;
+        if drafts.is_empty() {
+            return err("unit requires at least one definition");
+        }
+
+        let resolved = resolve_unit_defs(drafts)?;
         let mut defs = Vec::new();
         let mut exports = Vec::new();
         let mut definition_aliases = BTreeMap::new();
@@ -578,7 +577,7 @@ impl Parser {
         }
 
         let sc = SidecarNode {
-            module_alias: Some(module_alias),
+            unit_alias: Some(unit_alias),
             definition_aliases: Some(definition_aliases),
             import_aliases: Some(import_alias_map),
             export_aliases: Some(export_aliases),
@@ -595,16 +594,16 @@ impl Parser {
         ))
     }
 
-    fn parse_module_def_decl(
+    fn parse_unit_def_decl(
         &mut self,
         visibility: Option<String>,
-    ) -> Result<ModuleDefDraft, ParseError> {
+    ) -> Result<UnitDefDraft, ParseError> {
         let alias = self.consume_ident("definition alias")?;
         self.consume(&Token::Colon, "':'")?;
         let sig_type = self.parse_type_expr()?;
         self.consume(&Token::Eq, "'='")?;
         let (body, _body_sc) = self.parse_expr()?;
-        Ok(ModuleDefDraft {
+        Ok(UnitDefDraft {
             alias,
             visibility,
             sig: Node::Sig {
@@ -1050,7 +1049,7 @@ impl Parser {
                 } else if self.top_aliases.contains(&name) {
                     Ok((
                         Node::Sym {
-                            name: module_ref_placeholder(&name),
+                            name: unit_ref_placeholder(&name),
                         },
                         SidecarNode::default(),
                         false,
@@ -1348,8 +1347,8 @@ impl Parser {
     }
 }
 
-fn resolve_module_defs(drafts: Vec<ModuleDefDraft>) -> Result<Vec<ResolvedModuleDef>, ParseError> {
-    let draft_map: BTreeMap<String, ModuleDefDraft> = drafts
+fn resolve_unit_defs(drafts: Vec<UnitDefDraft>) -> Result<Vec<ResolvedUnitDef>, ParseError> {
+    let draft_map: BTreeMap<String, UnitDefDraft> = drafts
         .into_iter()
         .map(|draft| (draft.alias.clone(), draft))
         .collect();
@@ -1358,7 +1357,7 @@ fn resolve_module_defs(drafts: Vec<ModuleDefDraft>) -> Result<Vec<ResolvedModule
     let mut order = Vec::new();
 
     for alias in draft_map.keys() {
-        resolve_module_def(alias, &draft_map, &mut marks, &mut resolved, &mut order)?;
+        resolve_unit_def(alias, &draft_map, &mut marks, &mut resolved, &mut order)?;
     }
 
     Ok(order
@@ -1367,11 +1366,11 @@ fn resolve_module_defs(drafts: Vec<ModuleDefDraft>) -> Result<Vec<ResolvedModule
         .collect())
 }
 
-fn resolve_module_def(
+fn resolve_unit_def(
     alias: &str,
-    drafts: &BTreeMap<String, ModuleDefDraft>,
+    drafts: &BTreeMap<String, UnitDefDraft>,
     marks: &mut BTreeMap<String, bool>,
-    resolved: &mut BTreeMap<String, ResolvedModuleDef>,
+    resolved: &mut BTreeMap<String, ResolvedUnitDef>,
     order: &mut Vec<String>,
 ) -> Result<String, ParseError> {
     if let Some(done) = marks.get(alias).copied() {
@@ -1381,23 +1380,23 @@ fn resolve_module_def(
                 .map(|def| def.hash.clone())
                 .unwrap_or_default());
         }
-        return err(format!("cyclic module dependency involving '{}'", alias));
+        return err(format!("cyclic unit dependency involving '{}'", alias));
     }
 
     let draft = drafts
         .get(alias)
-        .ok_or_else(|| ParseError::Structural(format!("unknown module alias '{}'", alias)))?
+        .ok_or_else(|| ParseError::Structural(format!("unknown unit alias '{}'", alias)))?
         .clone();
     marks.insert(alias.to_string(), false);
 
-    let deps = module_local_deps(&draft.body, drafts);
+    let deps = unit_local_deps(&draft.body, drafts);
     let mut dep_hashes = BTreeMap::new();
     for dep in deps {
-        let dep_hash = resolve_module_def(&dep, drafts, marks, resolved, order)?;
+        let dep_hash = resolve_unit_def(&dep, drafts, marks, resolved, order)?;
         dep_hashes.insert(dep, dep_hash);
     }
 
-    let body = replace_module_ref_placeholders(&draft.body, &dep_hashes)?;
+    let body = replace_unit_ref_placeholders(&draft.body, &dep_hashes)?;
     let def = Node::Def {
         sig: Box::new(draft.sig),
         body: Box::new(body),
@@ -1406,7 +1405,7 @@ fn resolve_module_def(
         .iter()
         .map(|b| format!("{:02x}", b))
         .collect::<String>();
-    let resolved_def = ResolvedModuleDef {
+    let resolved_def = ResolvedUnitDef {
         alias: draft.alias.clone(),
         visibility: draft.visibility,
         hash: hash.clone(),
@@ -1418,38 +1417,38 @@ fn resolve_module_def(
     Ok(hash)
 }
 
-fn module_local_deps(node: &Node, drafts: &BTreeMap<String, ModuleDefDraft>) -> BTreeSet<String> {
+fn unit_local_deps(node: &Node, drafts: &BTreeMap<String, UnitDefDraft>) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
-    collect_module_local_deps(node, drafts, &mut out);
+    collect_unit_local_deps(node, drafts, &mut out);
     out
 }
 
-fn collect_module_local_deps(
+fn collect_unit_local_deps(
     node: &Node,
-    drafts: &BTreeMap<String, ModuleDefDraft>,
+    drafts: &BTreeMap<String, UnitDefDraft>,
     out: &mut BTreeSet<String>,
 ) {
     match node {
         Node::Sym { name } => {
-            if let Some(alias) = module_ref_placeholder_alias(name) {
+            if let Some(alias) = unit_ref_placeholder_alias(name) {
                 if drafts.contains_key(alias) {
                     out.insert(alias.to_string());
                 }
             }
         }
-        _ => for_each_module_ref_child(node, |child| collect_module_local_deps(child, drafts, out)),
+        _ => for_each_unit_ref_child(node, |child| collect_unit_local_deps(child, drafts, out)),
     }
 }
 
-fn replace_module_ref_placeholders(
+fn replace_unit_ref_placeholders(
     node: &Node,
     dep_hashes: &BTreeMap<String, String>,
 ) -> Result<Node, ParseError> {
     match node {
         Node::Sym { name } => {
-            if let Some(alias) = module_ref_placeholder_alias(name) {
+            if let Some(alias) = unit_ref_placeholder_alias(name) {
                 let Some(hash) = dep_hashes.get(alias) else {
-                    return err(format!("unresolved module alias '{}'", alias));
+                    return err(format!("unresolved unit alias '{}'", alias));
                 };
                 Ok(Node::Ref { hash: hash.clone() })
             } else {
@@ -1457,38 +1456,38 @@ fn replace_module_ref_placeholders(
             }
         }
         Node::Lam { body } => Ok(Node::Lam {
-            body: Box::new(replace_module_ref_placeholders(body, dep_hashes)?),
+            body: Box::new(replace_unit_ref_placeholders(body, dep_hashes)?),
         }),
         Node::App { fn_, arg } => Ok(Node::App {
-            fn_: Box::new(replace_module_ref_placeholders(fn_, dep_hashes)?),
-            arg: Box::new(replace_module_ref_placeholders(arg, dep_hashes)?),
+            fn_: Box::new(replace_unit_ref_placeholders(fn_, dep_hashes)?),
+            arg: Box::new(replace_unit_ref_placeholders(arg, dep_hashes)?),
         }),
         Node::Let { rhs, body } => Ok(Node::Let {
-            rhs: Box::new(replace_module_ref_placeholders(rhs, dep_hashes)?),
-            body: Box::new(replace_module_ref_placeholders(body, dep_hashes)?),
+            rhs: Box::new(replace_unit_ref_placeholders(rhs, dep_hashes)?),
+            body: Box::new(replace_unit_ref_placeholders(body, dep_hashes)?),
         }),
         Node::Rec { bindings, body } => Ok(Node::Rec {
             bindings: bindings
                 .iter()
-                .map(|binding| replace_module_ref_placeholders(binding, dep_hashes))
+                .map(|binding| replace_unit_ref_placeholders(binding, dep_hashes))
                 .collect::<Result<Vec<_>, _>>()?,
-            body: Box::new(replace_module_ref_placeholders(body, dep_hashes)?),
+            body: Box::new(replace_unit_ref_placeholders(body, dep_hashes)?),
         }),
         Node::If { cond, then, else_ } => Ok(Node::If {
-            cond: Box::new(replace_module_ref_placeholders(cond, dep_hashes)?),
-            then: Box::new(replace_module_ref_placeholders(then, dep_hashes)?),
-            else_: Box::new(replace_module_ref_placeholders(else_, dep_hashes)?),
+            cond: Box::new(replace_unit_ref_placeholders(cond, dep_hashes)?),
+            then: Box::new(replace_unit_ref_placeholders(then, dep_hashes)?),
+            else_: Box::new(replace_unit_ref_placeholders(else_, dep_hashes)?),
         }),
         Node::Match { scrutinee, arms } => Ok(Node::Match {
-            scrutinee: Box::new(replace_module_ref_placeholders(scrutinee, dep_hashes)?),
+            scrutinee: Box::new(replace_unit_ref_placeholders(scrutinee, dep_hashes)?),
             arms: arms
                 .iter()
-                .map(|arm| replace_module_ref_placeholders(arm, dep_hashes))
+                .map(|arm| replace_unit_ref_placeholders(arm, dep_hashes))
                 .collect::<Result<Vec<_>, _>>()?,
         }),
         Node::Arm { pattern, body } => Ok(Node::Arm {
             pattern: pattern.clone(),
-            body: Box::new(replace_module_ref_placeholders(body, dep_hashes)?),
+            body: Box::new(replace_unit_ref_placeholders(body, dep_hashes)?),
         }),
         Node::Record { fields } => Ok(Node::Record {
             fields: fields
@@ -1496,35 +1495,35 @@ fn replace_module_ref_placeholders(
                 .map(|(name, value)| {
                     Ok((
                         name.clone(),
-                        replace_module_ref_placeholders(value, dep_hashes)?,
+                        replace_unit_ref_placeholders(value, dep_hashes)?,
                     ))
                 })
                 .collect::<Result<Vec<_>, ParseError>>()?,
         }),
         Node::Proj { record, field } => Ok(Node::Proj {
-            record: Box::new(replace_module_ref_placeholders(record, dep_hashes)?),
+            record: Box::new(replace_unit_ref_placeholders(record, dep_hashes)?),
             field: field.clone(),
         }),
         Node::Ctor { name, args } => Ok(Node::Ctor {
             name: name.clone(),
             args: args
                 .iter()
-                .map(|arg| replace_module_ref_placeholders(arg, dep_hashes))
+                .map(|arg| replace_unit_ref_placeholders(arg, dep_hashes))
                 .collect::<Result<Vec<_>, _>>()?,
         }),
         Node::Ann { expr, type_ } => Ok(Node::Ann {
-            expr: Box::new(replace_module_ref_placeholders(expr, dep_hashes)?),
+            expr: Box::new(replace_unit_ref_placeholders(expr, dep_hashes)?),
             type_: type_.clone(),
         }),
         Node::Def { sig, body } => Ok(Node::Def {
             sig: sig.clone(),
-            body: Box::new(replace_module_ref_placeholders(body, dep_hashes)?),
+            body: Box::new(replace_unit_ref_placeholders(body, dep_hashes)?),
         }),
         _ => Ok(node.clone()),
     }
 }
 
-fn for_each_module_ref_child(node: &Node, mut f: impl FnMut(&Node)) {
+fn for_each_unit_ref_child(node: &Node, mut f: impl FnMut(&Node)) {
     match node {
         Node::Lam { body } => f(body),
         Node::App { fn_, arg } => {

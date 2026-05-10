@@ -151,6 +151,15 @@ impl Diagnostic {
         Self::new("unresolved-type", "error", path, msg)
     }
 
+    pub fn invalid_unit_artifact(path: &[usize]) -> Self {
+        Self::new(
+            "invalid-unit-artifact",
+            "error",
+            path,
+            "expected canonical unit artifact".to_string(),
+        )
+    }
+
     pub fn module_missing_annotation(path: &[usize], binding_idx: usize) -> Self {
         Self::new(
             "module-missing-annotation",
@@ -242,7 +251,7 @@ impl Diagnostic {
             "duplicate-import",
             "error",
             path,
-            format!("module imports {} more than once", blake3_display(hash)),
+            format!("unit imports {} more than once", blake3_display(hash)),
         )
     }
 
@@ -251,7 +260,7 @@ impl Diagnostic {
             "duplicate-export",
             "error",
             path,
-            format!("module exports {} more than once", blake3_display(hash)),
+            format!("unit exports {} more than once", blake3_display(hash)),
         )
     }
 
@@ -261,7 +270,7 @@ impl Diagnostic {
             "error",
             path,
             format!(
-                "module exports {} but no local def has that hash",
+                "unit exports {} but no local def has that hash",
                 blake3_display(hash)
             ),
         )

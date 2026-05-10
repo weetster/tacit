@@ -28,14 +28,15 @@ pub use ty::{EffSet, Ty};
 use tacit_canonical::ast::Node;
 use ty::Subst;
 
-/// Result of type-checking a module or top-level expression.
+/// Result of type-checking a module binding group, logical unit, or expression.
 #[derive(Debug)]
 pub struct TypedModule {
-    /// The inferred type of the top-level expression or module.
+    /// The inferred type of the top-level expression or module binding group.
     pub ty: Ty,
     /// The eval-effect of the top-level expression (Stage 3).
     pub effects: EffSet,
-    /// Binding types in DeBruijn order for `rec`/`module` nodes.
+    /// Binding types in DeBruijn order for `rec` and `module` binding-group nodes.
+    /// Logical `unit` definition types are exposed by `check_module`.
     pub binding_types: Vec<Ty>,
 }
 
@@ -45,11 +46,11 @@ pub struct TypedModule {
 /// or `Err(Vec<Diagnostic>)` if any errors are found.
 pub fn infer_module(node: &Node) -> Result<TypedModule, Vec<Diagnostic>> {
     if matches!(node, Node::Unit { .. }) {
-        let typed = modules::check_module(node, &DefinitionEnv::new())?;
+        modules::check_module(node, &DefinitionEnv::new())?;
         return Ok(TypedModule {
             ty: Ty::Unknown,
             effects: EffSet::empty(),
-            binding_types: typed.definition_types.into_values().collect(),
+            binding_types: Vec::new(),
         });
     }
 

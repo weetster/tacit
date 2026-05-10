@@ -1,7 +1,7 @@
-//! Logical-module checking.
+//! Unit artifact checking.
 //!
-//! This layer is intentionally separate from `infer_module`: legacy single
-//! programs still infer directly, while canonical `unit` artifacts get an
+//! This layer is intentionally separate from `infer_module`: single-program
+//! inputs still infer directly, while canonical `unit` artifacts get an
 //! import/export resolution pass before ordinary expression inference.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -61,11 +61,8 @@ pub fn check_modules_in_memory(modules: &[Node]) -> Result<Vec<CheckedModule>, V
     let mut env = DefinitionEnv::new();
 
     for (module_index, module) in modules.iter().enumerate() {
-        let Some(parts) = module_artifact_parts(module) else {
-            diags.push(Diagnostic::unresolved_type(
-                &[module_index],
-                "expected logical module artifact",
-            ));
+        let Some(parts) = unit_artifact_parts(module) else {
+            diags.push(Diagnostic::invalid_unit_artifact(&[module_index]));
             continue;
         };
         let local_defs = local_def_map(parts.defs);
@@ -111,11 +108,8 @@ fn check_module_with_path(
     providers: &DefinitionEnv,
     path: &[usize],
 ) -> Result<CheckedModule, Vec<Diagnostic>> {
-    let Some(parts) = module_artifact_parts(module) else {
-        return Err(vec![Diagnostic::unresolved_type(
-            path,
-            "expected logical module artifact",
-        )]);
+    let Some(parts) = unit_artifact_parts(module) else {
+        return Err(vec![Diagnostic::invalid_unit_artifact(path)]);
     };
 
     let mut diags = Vec::new();
@@ -271,19 +265,19 @@ fn check_module_with_path(
     }
 }
 
-struct ModuleArtifactParts<'a> {
+struct UnitArtifactParts<'a> {
     imports: &'a [Node],
     exports: &'a [Node],
     defs: &'a [Node],
 }
 
-fn module_artifact_parts(node: &Node) -> Option<ModuleArtifactParts<'_>> {
+fn unit_artifact_parts(node: &Node) -> Option<UnitArtifactParts<'_>> {
     match node {
         Node::Unit {
             imports,
             exports,
             defs,
-        } => Some(ModuleArtifactParts {
+        } => Some(UnitArtifactParts {
             imports,
             exports,
             defs,

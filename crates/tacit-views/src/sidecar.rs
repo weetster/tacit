@@ -42,19 +42,23 @@ pub struct SidecarNode {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub children: Option<Vec<Option<SidecarNode>>>,
 
-    /// Logical module display alias.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub module_alias: Option<String>,
+    /// Unit display alias.
+    #[serde(
+        rename = "unit_alias",
+        alias = "module_alias",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub unit_alias: Option<String>,
 
-    /// Logical module definition hash → display alias map.
+    /// Unit definition hash → display alias map.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub definition_aliases: Option<BTreeMap<String, String>>,
 
-    /// Logical module import hash → display alias map.
+    /// Unit import hash → display alias map.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub import_aliases: Option<BTreeMap<String, String>>,
 
-    /// Logical module exported definition hash → display alias map.
+    /// Unit exported definition hash → display alias map.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub export_aliases: Option<BTreeMap<String, String>>,
 }
@@ -76,7 +80,7 @@ impl SidecarNode {
             && self.field_order.is_none()
             && self.type_hint.is_none()
             && self.effect_hint.is_none()
-            && self.module_alias.is_none()
+            && self.unit_alias.is_none()
             && self.definition_aliases.is_none()
             && self.import_aliases.is_none()
             && self.export_aliases.is_none()
@@ -91,8 +95,12 @@ impl SidecarNode {
 pub struct Sidecar {
     pub tacd_version: String,
     pub targets_hash_blake3: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub module_alias: Option<String>,
+    #[serde(
+        rename = "unit_alias",
+        alias = "module_alias",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub unit_alias: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub definition_aliases: Option<BTreeMap<String, String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -106,14 +114,14 @@ impl Sidecar {
     pub fn new(canonical_bytes: &[u8], mut display: SidecarNode) -> Self {
         let hash = hash_bytes(canonical_bytes);
         let hex = hash.iter().map(|b| format!("{:02x}", b)).collect();
-        let module_alias = display.module_alias.take();
+        let unit_alias = display.unit_alias.take();
         let definition_aliases = display.definition_aliases.take();
         let import_aliases = display.import_aliases.take();
         let export_aliases = display.export_aliases.take();
         Sidecar {
             tacd_version: "1".to_string(),
             targets_hash_blake3: hex,
-            module_alias,
+            unit_alias,
             definition_aliases,
             import_aliases,
             export_aliases,
@@ -134,7 +142,7 @@ impl Sidecar {
         if sidecar.tacd_version != "1" {
             return Err(SidecarError::UnknownVersion(sidecar.tacd_version));
         }
-        sidecar.merge_module_metadata_into_display();
+        sidecar.merge_unit_metadata_into_display();
         Ok(sidecar)
     }
 
@@ -144,9 +152,9 @@ impl Sidecar {
         Ok(())
     }
 
-    fn merge_module_metadata_into_display(&mut self) {
-        if self.display.module_alias.is_none() {
-            self.display.module_alias = self.module_alias.clone();
+    fn merge_unit_metadata_into_display(&mut self) {
+        if self.display.unit_alias.is_none() {
+            self.display.unit_alias = self.unit_alias.clone();
         }
         if self.display.definition_aliases.is_none() {
             self.display.definition_aliases = self.definition_aliases.clone();
@@ -228,5 +236,26 @@ mod tests {
             !json.contains("effect_hint"),
             "effect_hint should be absent"
         );
+    }
+
+    #[test]
+    fn unit_alias_serializes_and_accepts_old_module_alias() {
+        let node = SidecarNode {
+            unit_alias: Some("Math".to_string()),
+            ..Default::default()
+        };
+        let sidecar = Sidecar::new(b"(int 1)", node);
+        let json = serde_json::to_string(&sidecar).unwrap();
+        assert!(json.contains("unit_alias"));
+        assert!(!json.contains("module_alias"));
+
+        let old_json = r#"{
+            "tacd_version": "1",
+            "targets_hash_blake3": "abc",
+            "module_alias": "Math",
+            "display": {}
+        }"#;
+        let back: Sidecar = serde_json::from_str(old_json).unwrap();
+        assert_eq!(back.unit_alias.as_deref(), Some("Math"));
     }
 }
