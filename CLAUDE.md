@@ -1,13 +1,14 @@
 # Tacit — Development Guide
 
-Tacit is an AI-first programming language. See [plans/tacit-plan.md](plans/tacit-plan.md) for the full vision and [plans/phase-5-plan.md](plans/phase-5-plan.md) for the completed Phase 5 gate record.
+Tacit is an AI-first programming language. See [plans/tacit-plan.md](plans/tacit-plan.md) for the full vision, [plans/phase-5-plan.md](plans/phase-5-plan.md) for the completed Phase 5 gate record, and [plans/phase-6-plan.md](plans/phase-6-plan.md) for the active Phase 6 plan.
 
-**Current phase: Phase 6 enabled.** Phase 5 completed on 2026-05-09 via
+**Current phase: Phase 6 active.** Phase 5 completed on 2026-05-09 via
 [ADR 0076](decisions/0076-phase-5-short-gate.md),
 [ADR 0077](decisions/0077-phase-5-metrics.md), and
 [ADR 0078](decisions/0078-phase-5-decision.md). The accepted Phase 5 decision
 is to proceed to Phase 6 modules/packages/systems/host-interface work without a
-pre-Phase-6 tooling spike. Phase 4 is frozen
+pre-Phase-6 tooling spike. Phase 6 Stage 0 scope lock completed on 2026-05-10
+via [ADR 0079](decisions/0079-phase-6-scope.md). Phase 4 is frozen
 ([ADR 0075](decisions/0075-phase-4-frozen.md)) with records, first-class
 closures, and `@map` / `@fold` / `@for-each` delivered. Phase 3 is frozen
 ([ADR 0070](decisions/0070-p3-frozen.md)); the Python-relative density gate

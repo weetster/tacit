@@ -1,6 +1,7 @@
 # Phase 6 Plan
 
-**Status:** Active
+**Status:** Active; Stage 0 complete by
+[ADR 0079](../decisions/0079-phase-6-scope.md)
 **Scope:** Modules, packages, systems primitives, unit testing, source-library
 foundations, dependency caching, and the constrained host-interface ABI
 
@@ -27,6 +28,31 @@ or untyped pointer escape hatches.
 No Phase 6 work may read, list, search, or otherwise access
 `corpus/sealed/`. Sealed grading, if ever requested, is an operator-triggered
 evaluation action and must not provide development feedback.
+
+## Stage 0 Outcome
+
+Stage 0 scope lock is complete. Phase 6 is active under this plan.
+
+Locked decisions:
+
+- Phase 6 is modules, packages, systems primitives, unit testing,
+  source-library foundations, dependency caching, and constrained embedding
+  ABI work.
+- Phase 5 is complete and does not require a pre-Phase-6 tool spike.
+- General FFI remains out of scope: no arbitrary `extern "C"`, direct
+  ecosystem-library bindings, dynamic plugin loading, or untyped pointer
+  escape hatches.
+- Package work is local and hash-based: no semantic-version solver and no
+  public registry operation in Phase 6.
+- Full debugger, structural diff, blame, merge, Git driver, IDE, and broad
+  package tooling remain Phase 7.
+- A full video game emulator is not a Phase 6 deliverable; Phase 6 must only
+  prove emulator-style expressiveness for a CPU core, memory bus, and
+  instruction decoder skeleton.
+- Q-P6-1 through Q-P6-15 and the required ADR sequence below are the active
+  resolution map.
+- No Phase 6 development work may use sealed-corpus contents, paths, metadata,
+  or feedback.
 
 ## Goal
 
@@ -118,7 +144,8 @@ remain host-owned capabilities during Phase 6.
 
 ADRs must land before implementation that depends on them.
 
-1. Phase 6 scope and stage plan.
+1. Phase 6 scope and stage plan. Done:
+   [ADR 0079](../decisions/0079-phase-6-scope.md).
 2. Module imports, exports, visibility, and imported-hash semantics.
 3. Multi-file project graph and deterministic derived layout.
 4. Package manifest, lockfile, dependency cache, and object-store layout.
@@ -133,7 +160,8 @@ ADRs must land before implementation that depends on them.
 
 ## Stage 0: Scope Lock
 
-**Status:** Planned
+**Status:** Complete 2026-05-10. Deliverable:
+[ADR 0079](../decisions/0079-phase-6-scope.md)
 
 **Purpose:** Turn this plan into the binding Phase 6 scope artifact before
 implementation begins.
@@ -149,6 +177,17 @@ Work items:
 - List all Phase 6 open questions with resolution stages.
 - Define the required ADR sequence.
 - Preserve the sealed-corpus boundary.
+
+Outcome:
+
+- Phase 6 scope is accepted by [ADR 0079](../decisions/0079-phase-6-scope.md).
+- The Phase 5 handoff from [ADR 0078](../decisions/0078-phase-5-decision.md)
+  is preserved: no pre-Phase-6 maintenance tool spike.
+- Non-goals and Phase 7 boundaries are locked.
+- Q-P6-1 through Q-P6-15 are listed with resolution stages.
+- The required ADR sequence is listed above and blocks dependent
+  implementation.
+- The sealed-corpus boundary remains active.
 
 Exit criteria:
 
