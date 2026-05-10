@@ -42,19 +42,19 @@ pub struct SidecarNode {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub children: Option<Vec<Option<SidecarNode>>>,
 
-    /// Phase 6 logical module display alias.
+    /// Logical module display alias.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub module_alias: Option<String>,
 
-    /// Phase 6 definition hash → display alias map.
+    /// Logical module definition hash → display alias map.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub definition_aliases: Option<BTreeMap<String, String>>,
 
-    /// Phase 6 import hash → display alias map.
+    /// Logical module import hash → display alias map.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub import_aliases: Option<BTreeMap<String, String>>,
 
-    /// Phase 6 exported definition hash → display alias map.
+    /// Logical module exported definition hash → display alias map.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub export_aliases: Option<BTreeMap<String, String>>,
 }

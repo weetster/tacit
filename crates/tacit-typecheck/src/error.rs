@@ -242,7 +242,7 @@ impl Diagnostic {
             "duplicate-import",
             "error",
             path,
-            format!("unit imports {} more than once", blake3_display(hash)),
+            format!("module imports {} more than once", blake3_display(hash)),
         )
     }
 
@@ -251,7 +251,7 @@ impl Diagnostic {
             "duplicate-export",
             "error",
             path,
-            format!("unit exports {} more than once", blake3_display(hash)),
+            format!("module exports {} more than once", blake3_display(hash)),
         )
     }
 
@@ -261,7 +261,7 @@ impl Diagnostic {
             "error",
             path,
             format!(
-                "unit exports {} but no local def has that hash",
+                "module exports {} but no local def has that hash",
                 blake3_display(hash)
             ),
         )

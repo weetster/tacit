@@ -1,7 +1,7 @@
-//! Phase 6 logical-module checking.
+//! Logical-module checking.
 //!
 //! This layer is intentionally separate from `infer_module`: legacy single
-//! programs still infer directly, while Phase 6 `unit` artifacts get an
+//! programs still infer directly, while canonical `unit` artifacts get an
 //! import/export resolution pass before ordinary expression inference.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -51,20 +51,20 @@ impl ProvidedDefinition {
 pub type DefinitionEnv = BTreeMap<String, ProvidedDefinition>;
 
 #[derive(Debug)]
-pub struct TypedUnit {
+pub struct CheckedModule {
     pub definition_types: BTreeMap<String, Ty>,
     pub definition_effects: BTreeMap<String, EffSet>,
 }
 
-pub fn check_units_in_memory(units: &[Node]) -> Result<Vec<TypedUnit>, Vec<Diagnostic>> {
+pub fn check_modules_in_memory(modules: &[Node]) -> Result<Vec<CheckedModule>, Vec<Diagnostic>> {
     let mut diags = Vec::new();
     let mut env = DefinitionEnv::new();
 
-    for (unit_index, unit) in units.iter().enumerate() {
-        let Some(parts) = unit_parts(unit) else {
+    for (module_index, module) in modules.iter().enumerate() {
+        let Some(parts) = module_artifact_parts(module) else {
             diags.push(Diagnostic::unresolved_type(
-                &[unit_index],
-                "expected Phase 6 unit",
+                &[module_index],
+                "expected logical module artifact",
             ));
             continue;
         };
@@ -85,8 +85,8 @@ pub fn check_units_in_memory(units: &[Node]) -> Result<Vec<TypedUnit>, Vec<Diagn
     }
 
     let mut typed = Vec::new();
-    for (unit_index, unit) in units.iter().enumerate() {
-        match check_unit_with_path(unit, &env, &[unit_index]) {
+    for (module_index, module) in modules.iter().enumerate() {
+        match check_module_with_path(module, &env, &[module_index]) {
             Ok(t) => typed.push(t),
             Err(mut errors) => diags.append(&mut errors),
         }
@@ -99,19 +99,22 @@ pub fn check_units_in_memory(units: &[Node]) -> Result<Vec<TypedUnit>, Vec<Diagn
     }
 }
 
-pub fn check_unit(unit: &Node, providers: &DefinitionEnv) -> Result<TypedUnit, Vec<Diagnostic>> {
-    check_unit_with_path(unit, providers, &[])
+pub fn check_module(
+    module: &Node,
+    providers: &DefinitionEnv,
+) -> Result<CheckedModule, Vec<Diagnostic>> {
+    check_module_with_path(module, providers, &[])
 }
 
-fn check_unit_with_path(
-    unit: &Node,
+fn check_module_with_path(
+    module: &Node,
     providers: &DefinitionEnv,
     path: &[usize],
-) -> Result<TypedUnit, Vec<Diagnostic>> {
-    let Some(parts) = unit_parts(unit) else {
+) -> Result<CheckedModule, Vec<Diagnostic>> {
+    let Some(parts) = module_artifact_parts(module) else {
         return Err(vec![Diagnostic::unresolved_type(
             path,
-            "expected Phase 6 unit",
+            "expected logical module artifact",
         )]);
     };
 
@@ -259,7 +262,7 @@ fn check_unit_with_path(
     }
 
     if diags.is_empty() {
-        Ok(TypedUnit {
+        Ok(CheckedModule {
             definition_types,
             definition_effects,
         })
@@ -268,19 +271,19 @@ fn check_unit_with_path(
     }
 }
 
-struct UnitParts<'a> {
+struct ModuleArtifactParts<'a> {
     imports: &'a [Node],
     exports: &'a [Node],
     defs: &'a [Node],
 }
 
-fn unit_parts(node: &Node) -> Option<UnitParts<'_>> {
+fn module_artifact_parts(node: &Node) -> Option<ModuleArtifactParts<'_>> {
     match node {
         Node::Unit {
             imports,
             exports,
             defs,
-        } => Some(UnitParts {
+        } => Some(ModuleArtifactParts {
             imports,
             exports,
             defs,

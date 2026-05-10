@@ -73,37 +73,37 @@ struct Parser {
     pos: usize,
     /// Binding stack: names in scope, innermost last.
     stack: Vec<String>,
-    /// Phase 6 unit-local aliases that should lower to hash refs after parsing.
+    /// Logical-module local aliases that should lower to hash refs after parsing.
     top_aliases: BTreeSet<String>,
-    /// Phase 6 import aliases already bound to external definition hashes.
+    /// Logical-module import aliases already bound to external definition hashes.
     import_aliases: BTreeMap<String, String>,
     /// Holes emitted during recovery; callers may inspect these.
     pub holes: Vec<HoleDiag>,
 }
 
 #[derive(Clone)]
-struct Phase6DefDraft {
+struct ModuleDefDraft {
     alias: String,
     visibility: Option<String>,
     sig: Node,
     body: Node,
 }
 
-struct Phase6ResolvedDef {
+struct ResolvedModuleDef {
     alias: String,
     visibility: Option<String>,
     hash: String,
     def: Node,
 }
 
-const PHASE6_PLACEHOLDER_PREFIX: &str = "__tacit_phase6_ref__";
+const MODULE_REF_PLACEHOLDER_PREFIX: &str = "__tacit_module_ref__";
 
-fn phase6_placeholder(alias: &str) -> String {
-    format!("{}{}", PHASE6_PLACEHOLDER_PREFIX, alias)
+fn module_ref_placeholder(alias: &str) -> String {
+    format!("{}{}", MODULE_REF_PLACEHOLDER_PREFIX, alias)
 }
 
-fn phase6_placeholder_alias(name: &str) -> Option<&str> {
-    name.strip_prefix(PHASE6_PLACEHOLDER_PREFIX)
+fn module_ref_placeholder_alias(name: &str) -> Option<&str> {
+    name.strip_prefix(MODULE_REF_PLACEHOLDER_PREFIX)
 }
 
 impl Parser {
@@ -257,7 +257,7 @@ impl Parser {
         }
     }
 
-    fn scan_phase6_unit_decls(
+    fn scan_module_decls(
         &mut self,
     ) -> Result<(BTreeSet<String>, BTreeMap<String, String>), ParseError> {
         let mut def_aliases = BTreeSet::new();
@@ -385,7 +385,7 @@ impl Parser {
     fn parse_module(&mut self) -> Result<(Node, SidecarNode), ParseError> {
         self.consume(&Token::Module, "'module'")?;
         if matches!(self.peek(), Some(Token::Ident(_))) {
-            return self.parse_phase6_unit_after_module();
+            return self.parse_logical_module_after_keyword();
         }
         self.consume(&Token::LBrace, "'{'")?;
 
@@ -501,12 +501,12 @@ impl Parser {
         ))
     }
 
-    fn parse_phase6_unit_after_module(&mut self) -> Result<(Node, SidecarNode), ParseError> {
+    fn parse_logical_module_after_keyword(&mut self) -> Result<(Node, SidecarNode), ParseError> {
         let module_alias = self.consume_ident("module alias")?;
         self.consume(&Token::LBrace, "'{'")?;
         let body_start = self.pos;
 
-        let (all_def_aliases, import_aliases) = self.scan_phase6_unit_decls()?;
+        let (all_def_aliases, import_aliases) = self.scan_module_decls()?;
         self.pos = body_start;
         let old_top_aliases = std::mem::replace(&mut self.top_aliases, all_def_aliases);
         let old_import_aliases = std::mem::replace(&mut self.import_aliases, import_aliases);
@@ -532,14 +532,14 @@ impl Parser {
                 });
                 import_alias_map.insert(hash, alias);
             } else if self.consume_ident_keyword("private") {
-                let draft = self.parse_phase6_def_decl(None)?;
+                let draft = self.parse_module_def_decl(None)?;
                 drafts.push(draft);
             } else if self.consume_ident_keyword("export") {
                 let visibility = self.consume_ident("export visibility")?;
                 if visibility != "public" && visibility != "package" {
                     return err("export visibility must be public or package");
                 }
-                let draft = self.parse_phase6_def_decl(Some(visibility))?;
+                let draft = self.parse_module_def_decl(Some(visibility))?;
                 drafts.push(draft);
             } else {
                 return err(format!(
@@ -559,7 +559,7 @@ impl Parser {
         self.top_aliases = old_top_aliases;
         self.import_aliases = old_import_aliases;
 
-        let resolved = resolve_phase6_defs(drafts)?;
+        let resolved = resolve_module_defs(drafts)?;
         let mut defs = Vec::new();
         let mut exports = Vec::new();
         let mut definition_aliases = BTreeMap::new();
@@ -595,16 +595,16 @@ impl Parser {
         ))
     }
 
-    fn parse_phase6_def_decl(
+    fn parse_module_def_decl(
         &mut self,
         visibility: Option<String>,
-    ) -> Result<Phase6DefDraft, ParseError> {
+    ) -> Result<ModuleDefDraft, ParseError> {
         let alias = self.consume_ident("definition alias")?;
         self.consume(&Token::Colon, "':'")?;
         let sig_type = self.parse_type_expr()?;
         self.consume(&Token::Eq, "'='")?;
         let (body, _body_sc) = self.parse_expr()?;
-        Ok(Phase6DefDraft {
+        Ok(ModuleDefDraft {
             alias,
             visibility,
             sig: Node::Sig {
@@ -1050,7 +1050,7 @@ impl Parser {
                 } else if self.top_aliases.contains(&name) {
                     Ok((
                         Node::Sym {
-                            name: phase6_placeholder(&name),
+                            name: module_ref_placeholder(&name),
                         },
                         SidecarNode::default(),
                         false,
@@ -1348,8 +1348,8 @@ impl Parser {
     }
 }
 
-fn resolve_phase6_defs(drafts: Vec<Phase6DefDraft>) -> Result<Vec<Phase6ResolvedDef>, ParseError> {
-    let draft_map: BTreeMap<String, Phase6DefDraft> = drafts
+fn resolve_module_defs(drafts: Vec<ModuleDefDraft>) -> Result<Vec<ResolvedModuleDef>, ParseError> {
+    let draft_map: BTreeMap<String, ModuleDefDraft> = drafts
         .into_iter()
         .map(|draft| (draft.alias.clone(), draft))
         .collect();
@@ -1358,7 +1358,7 @@ fn resolve_phase6_defs(drafts: Vec<Phase6DefDraft>) -> Result<Vec<Phase6Resolved
     let mut order = Vec::new();
 
     for alias in draft_map.keys() {
-        resolve_phase6_def(alias, &draft_map, &mut marks, &mut resolved, &mut order)?;
+        resolve_module_def(alias, &draft_map, &mut marks, &mut resolved, &mut order)?;
     }
 
     Ok(order
@@ -1367,11 +1367,11 @@ fn resolve_phase6_defs(drafts: Vec<Phase6DefDraft>) -> Result<Vec<Phase6Resolved
         .collect())
 }
 
-fn resolve_phase6_def(
+fn resolve_module_def(
     alias: &str,
-    drafts: &BTreeMap<String, Phase6DefDraft>,
+    drafts: &BTreeMap<String, ModuleDefDraft>,
     marks: &mut BTreeMap<String, bool>,
-    resolved: &mut BTreeMap<String, Phase6ResolvedDef>,
+    resolved: &mut BTreeMap<String, ResolvedModuleDef>,
     order: &mut Vec<String>,
 ) -> Result<String, ParseError> {
     if let Some(done) = marks.get(alias).copied() {
@@ -1390,14 +1390,14 @@ fn resolve_phase6_def(
         .clone();
     marks.insert(alias.to_string(), false);
 
-    let deps = phase6_local_deps(&draft.body, drafts);
+    let deps = module_local_deps(&draft.body, drafts);
     let mut dep_hashes = BTreeMap::new();
     for dep in deps {
-        let dep_hash = resolve_phase6_def(&dep, drafts, marks, resolved, order)?;
+        let dep_hash = resolve_module_def(&dep, drafts, marks, resolved, order)?;
         dep_hashes.insert(dep, dep_hash);
     }
 
-    let body = replace_phase6_placeholders(&draft.body, &dep_hashes)?;
+    let body = replace_module_ref_placeholders(&draft.body, &dep_hashes)?;
     let def = Node::Def {
         sig: Box::new(draft.sig),
         body: Box::new(body),
@@ -1406,7 +1406,7 @@ fn resolve_phase6_def(
         .iter()
         .map(|b| format!("{:02x}", b))
         .collect::<String>();
-    let resolved_def = Phase6ResolvedDef {
+    let resolved_def = ResolvedModuleDef {
         alias: draft.alias.clone(),
         visibility: draft.visibility,
         hash: hash.clone(),
@@ -1418,36 +1418,36 @@ fn resolve_phase6_def(
     Ok(hash)
 }
 
-fn phase6_local_deps(node: &Node, drafts: &BTreeMap<String, Phase6DefDraft>) -> BTreeSet<String> {
+fn module_local_deps(node: &Node, drafts: &BTreeMap<String, ModuleDefDraft>) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
-    collect_phase6_local_deps(node, drafts, &mut out);
+    collect_module_local_deps(node, drafts, &mut out);
     out
 }
 
-fn collect_phase6_local_deps(
+fn collect_module_local_deps(
     node: &Node,
-    drafts: &BTreeMap<String, Phase6DefDraft>,
+    drafts: &BTreeMap<String, ModuleDefDraft>,
     out: &mut BTreeSet<String>,
 ) {
     match node {
         Node::Sym { name } => {
-            if let Some(alias) = phase6_placeholder_alias(name) {
+            if let Some(alias) = module_ref_placeholder_alias(name) {
                 if drafts.contains_key(alias) {
                     out.insert(alias.to_string());
                 }
             }
         }
-        _ => for_each_phase6_child(node, |child| collect_phase6_local_deps(child, drafts, out)),
+        _ => for_each_module_ref_child(node, |child| collect_module_local_deps(child, drafts, out)),
     }
 }
 
-fn replace_phase6_placeholders(
+fn replace_module_ref_placeholders(
     node: &Node,
     dep_hashes: &BTreeMap<String, String>,
 ) -> Result<Node, ParseError> {
     match node {
         Node::Sym { name } => {
-            if let Some(alias) = phase6_placeholder_alias(name) {
+            if let Some(alias) = module_ref_placeholder_alias(name) {
                 let Some(hash) = dep_hashes.get(alias) else {
                     return err(format!("unresolved module alias '{}'", alias));
                 };
@@ -1457,38 +1457,38 @@ fn replace_phase6_placeholders(
             }
         }
         Node::Lam { body } => Ok(Node::Lam {
-            body: Box::new(replace_phase6_placeholders(body, dep_hashes)?),
+            body: Box::new(replace_module_ref_placeholders(body, dep_hashes)?),
         }),
         Node::App { fn_, arg } => Ok(Node::App {
-            fn_: Box::new(replace_phase6_placeholders(fn_, dep_hashes)?),
-            arg: Box::new(replace_phase6_placeholders(arg, dep_hashes)?),
+            fn_: Box::new(replace_module_ref_placeholders(fn_, dep_hashes)?),
+            arg: Box::new(replace_module_ref_placeholders(arg, dep_hashes)?),
         }),
         Node::Let { rhs, body } => Ok(Node::Let {
-            rhs: Box::new(replace_phase6_placeholders(rhs, dep_hashes)?),
-            body: Box::new(replace_phase6_placeholders(body, dep_hashes)?),
+            rhs: Box::new(replace_module_ref_placeholders(rhs, dep_hashes)?),
+            body: Box::new(replace_module_ref_placeholders(body, dep_hashes)?),
         }),
         Node::Rec { bindings, body } => Ok(Node::Rec {
             bindings: bindings
                 .iter()
-                .map(|binding| replace_phase6_placeholders(binding, dep_hashes))
+                .map(|binding| replace_module_ref_placeholders(binding, dep_hashes))
                 .collect::<Result<Vec<_>, _>>()?,
-            body: Box::new(replace_phase6_placeholders(body, dep_hashes)?),
+            body: Box::new(replace_module_ref_placeholders(body, dep_hashes)?),
         }),
         Node::If { cond, then, else_ } => Ok(Node::If {
-            cond: Box::new(replace_phase6_placeholders(cond, dep_hashes)?),
-            then: Box::new(replace_phase6_placeholders(then, dep_hashes)?),
-            else_: Box::new(replace_phase6_placeholders(else_, dep_hashes)?),
+            cond: Box::new(replace_module_ref_placeholders(cond, dep_hashes)?),
+            then: Box::new(replace_module_ref_placeholders(then, dep_hashes)?),
+            else_: Box::new(replace_module_ref_placeholders(else_, dep_hashes)?),
         }),
         Node::Match { scrutinee, arms } => Ok(Node::Match {
-            scrutinee: Box::new(replace_phase6_placeholders(scrutinee, dep_hashes)?),
+            scrutinee: Box::new(replace_module_ref_placeholders(scrutinee, dep_hashes)?),
             arms: arms
                 .iter()
-                .map(|arm| replace_phase6_placeholders(arm, dep_hashes))
+                .map(|arm| replace_module_ref_placeholders(arm, dep_hashes))
                 .collect::<Result<Vec<_>, _>>()?,
         }),
         Node::Arm { pattern, body } => Ok(Node::Arm {
             pattern: pattern.clone(),
-            body: Box::new(replace_phase6_placeholders(body, dep_hashes)?),
+            body: Box::new(replace_module_ref_placeholders(body, dep_hashes)?),
         }),
         Node::Record { fields } => Ok(Node::Record {
             fields: fields
@@ -1496,35 +1496,35 @@ fn replace_phase6_placeholders(
                 .map(|(name, value)| {
                     Ok((
                         name.clone(),
-                        replace_phase6_placeholders(value, dep_hashes)?,
+                        replace_module_ref_placeholders(value, dep_hashes)?,
                     ))
                 })
                 .collect::<Result<Vec<_>, ParseError>>()?,
         }),
         Node::Proj { record, field } => Ok(Node::Proj {
-            record: Box::new(replace_phase6_placeholders(record, dep_hashes)?),
+            record: Box::new(replace_module_ref_placeholders(record, dep_hashes)?),
             field: field.clone(),
         }),
         Node::Ctor { name, args } => Ok(Node::Ctor {
             name: name.clone(),
             args: args
                 .iter()
-                .map(|arg| replace_phase6_placeholders(arg, dep_hashes))
+                .map(|arg| replace_module_ref_placeholders(arg, dep_hashes))
                 .collect::<Result<Vec<_>, _>>()?,
         }),
         Node::Ann { expr, type_ } => Ok(Node::Ann {
-            expr: Box::new(replace_phase6_placeholders(expr, dep_hashes)?),
+            expr: Box::new(replace_module_ref_placeholders(expr, dep_hashes)?),
             type_: type_.clone(),
         }),
         Node::Def { sig, body } => Ok(Node::Def {
             sig: sig.clone(),
-            body: Box::new(replace_phase6_placeholders(body, dep_hashes)?),
+            body: Box::new(replace_module_ref_placeholders(body, dep_hashes)?),
         }),
         _ => Ok(node.clone()),
     }
 }
 
-fn for_each_phase6_child(node: &Node, mut f: impl FnMut(&Node)) {
+fn for_each_module_ref_child(node: &Node, mut f: impl FnMut(&Node)) {
     match node {
         Node::Lam { body } => f(body),
         Node::App { fn_, arg } => {

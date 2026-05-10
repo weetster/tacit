@@ -19,8 +19,8 @@ pub mod type_from_node;
 pub use error::{DiagOutput, Diagnostic};
 pub use infer::infer;
 pub use modules::{
-    check_unit, check_units_in_memory, DefinitionEnv, ModuleVisibility, ProvidedDefinition,
-    TypedUnit,
+    check_module, check_modules_in_memory, CheckedModule, DefinitionEnv, ModuleVisibility,
+    ProvidedDefinition,
 };
 pub use sidecar::check_against_tacd;
 pub use ty::{EffSet, Ty};
@@ -45,7 +45,7 @@ pub struct TypedModule {
 /// or `Err(Vec<Diagnostic>)` if any errors are found.
 pub fn infer_module(node: &Node) -> Result<TypedModule, Vec<Diagnostic>> {
     if matches!(node, Node::Unit { .. }) {
-        let typed = modules::check_unit(node, &DefinitionEnv::new())?;
+        let typed = modules::check_module(node, &DefinitionEnv::new())?;
         return Ok(TypedModule {
             ty: Ty::Unknown,
             effects: EffSet::empty(),

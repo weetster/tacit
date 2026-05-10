@@ -17,7 +17,7 @@ fn sig() -> Node {
 }
 
 #[test]
-fn parses_and_emits_phase6_unit_nodes() {
+fn parses_and_emits_logical_module_unit_nodes() {
     let src = format!(
         "(unit (imports (imp \"{}\" (sig (fn-ty (sym Int) (sym Int) (eff-set)) (eff-set)))) (exports (exp public \"{}\")) (defs (def (sig (fn-ty (sym Int) (sym Int) (eff-set)) (eff-set)) (lam (ref \"{}\")))))",
         h('0'),

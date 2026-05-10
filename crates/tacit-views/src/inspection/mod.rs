@@ -146,7 +146,7 @@ impl<'f> Ctx<'f> {
                 imports,
                 exports,
                 defs,
-            } => self.render_unit(node, imports, exports, defs, sc, indent),
+            } => self.render_logical_module(node, imports, exports, defs, sc, indent),
             Node::Imports { entries } => self.render_imports(entries, sc, indent),
             Node::Import { hash, sig } => {
                 let alias = alias_from_map(sc.and_then(|s| s.import_aliases.as_ref()), hash)
@@ -824,10 +824,10 @@ impl<'f> Ctx<'f> {
     }
 
     // -----------------------------------------------------------------------
-    // Phase 6 logical unit — always-break.
+    // Logical module artifact — always-break.
     // -----------------------------------------------------------------------
 
-    fn render_unit(
+    fn render_logical_module(
         &mut self,
         node: &Node,
         imports: &[Node],
@@ -836,7 +836,9 @@ impl<'f> Ctx<'f> {
         sc: Option<&SidecarNode>,
         indent: usize,
     ) -> Rendered {
-        let module_name = sc.and_then(|s| s.module_alias.as_deref()).unwrap_or("Unit");
+        let module_name = sc
+            .and_then(|s| s.module_alias.as_deref())
+            .unwrap_or("Module");
         let def_map = def_map_by_hash(defs);
         let export_hashes: BTreeSet<String> = exports
             .iter()

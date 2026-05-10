@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use tacit_canonical::ast::Node;
 use tacit_canonical::hash_node;
 use tacit_typecheck::{
-    check_unit, check_units_in_memory, DefinitionEnv, ModuleVisibility, ProvidedDefinition,
+    check_module, check_modules_in_memory, DefinitionEnv, ModuleVisibility, ProvidedDefinition,
 };
 
 fn sym(name: &str) -> Node {
@@ -69,7 +69,7 @@ fn imported_hash_signature_checks() {
     let consumer_def = apply_import_def(&provider_hash);
     let consumer_hash = hash(&consumer_def);
 
-    let unit = Node::Unit {
+    let module = Node::Unit {
         imports: vec![Node::Import {
             hash: provider_hash.clone(),
             sig: Box::new(int_to_int_sig()),
@@ -87,7 +87,7 @@ fn imported_hash_signature_checks() {
         ProvidedDefinition::new(provider_def, ModuleVisibility::Public, false),
     );
 
-    let typed = check_unit(&unit, &env).expect("unit checks");
+    let typed = check_module(&module, &env).expect("module checks");
     assert_eq!(typed.definition_types.len(), 1);
 }
 
@@ -98,7 +98,7 @@ fn import_signature_mismatch_is_reported() {
     let consumer_def = apply_import_def(&provider_hash);
     let consumer_hash = hash(&consumer_def);
 
-    let unit = Node::Unit {
+    let module = Node::Unit {
         imports: vec![Node::Import {
             hash: provider_hash.clone(),
             sig: Box::new(bool_to_int_sig()),
@@ -116,7 +116,7 @@ fn import_signature_mismatch_is_reported() {
         ProvidedDefinition::new(provider_def, ModuleVisibility::Public, false),
     );
 
-    let diags = check_unit(&unit, &env).expect_err("signature mismatch");
+    let diags = check_module(&module, &env).expect_err("signature mismatch");
     assert!(diags.iter().any(|d| d.kind == "signature-mismatch"));
 }
 
@@ -127,7 +127,7 @@ fn private_local_definition_can_be_referenced_by_hash() {
     let public = apply_import_def(&helper_hash);
     let public_hash = hash(&public);
 
-    let unit = Node::Unit {
+    let module = Node::Unit {
         imports: vec![],
         exports: vec![Node::Export {
             visibility: "public".into(),
@@ -136,14 +136,14 @@ fn private_local_definition_can_be_referenced_by_hash() {
         defs: vec![public, helper],
     };
 
-    check_unit(&unit, &BTreeMap::new()).expect("local private ref checks");
+    check_module(&module, &BTreeMap::new()).expect("local private ref checks");
 }
 
 #[test]
-fn package_exports_resolve_across_units_in_memory() {
+fn package_exports_resolve_across_modules_in_memory() {
     let provider = identity_def();
     let provider_hash = hash(&provider);
-    let provider_unit = Node::Unit {
+    let provider_module = Node::Unit {
         imports: vec![],
         exports: vec![Node::Export {
             visibility: "package".into(),
@@ -154,7 +154,7 @@ fn package_exports_resolve_across_units_in_memory() {
 
     let consumer = apply_import_def(&provider_hash);
     let consumer_hash = hash(&consumer);
-    let consumer_unit = Node::Unit {
+    let consumer_module = Node::Unit {
         imports: vec![Node::Import {
             hash: provider_hash,
             sig: Box::new(int_to_int_sig()),
@@ -166,5 +166,6 @@ fn package_exports_resolve_across_units_in_memory() {
         defs: vec![consumer],
     };
 
-    check_units_in_memory(&[provider_unit, consumer_unit]).expect("same-package import checks");
+    check_modules_in_memory(&[provider_module, consumer_module])
+        .expect("same-package import checks");
 }
