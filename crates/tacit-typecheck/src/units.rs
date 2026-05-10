@@ -15,18 +15,18 @@ use crate::ty::{unify, EffSet, FnEff, Subst, Ty};
 use crate::type_from_node::{eff_from_node, type_from_node};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ModuleVisibility {
+pub enum DefinitionVisibility {
     Public,
     Package,
     Private,
 }
 
-impl ModuleVisibility {
+impl DefinitionVisibility {
     fn as_str(self) -> &'static str {
         match self {
-            ModuleVisibility::Public => "public",
-            ModuleVisibility::Package => "package",
-            ModuleVisibility::Private => "private",
+            DefinitionVisibility::Public => "public",
+            DefinitionVisibility::Package => "package",
+            DefinitionVisibility::Private => "private",
         }
     }
 }
@@ -34,12 +34,12 @@ impl ModuleVisibility {
 #[derive(Debug, Clone)]
 pub struct ProvidedDefinition {
     pub def: Node,
-    pub visibility: ModuleVisibility,
+    pub visibility: DefinitionVisibility,
     pub same_package: bool,
 }
 
 impl ProvidedDefinition {
-    pub fn new(def: Node, visibility: ModuleVisibility, same_package: bool) -> Self {
+    pub fn new(def: Node, visibility: DefinitionVisibility, same_package: bool) -> Self {
         Self {
             def,
             visibility,
@@ -51,18 +51,18 @@ impl ProvidedDefinition {
 pub type DefinitionEnv = BTreeMap<String, ProvidedDefinition>;
 
 #[derive(Debug)]
-pub struct CheckedModule {
+pub struct CheckedUnit {
     pub definition_types: BTreeMap<String, Ty>,
     pub definition_effects: BTreeMap<String, EffSet>,
 }
 
-pub fn check_modules_in_memory(modules: &[Node]) -> Result<Vec<CheckedModule>, Vec<Diagnostic>> {
+pub fn check_units_in_memory(units: &[Node]) -> Result<Vec<CheckedUnit>, Vec<Diagnostic>> {
     let mut diags = Vec::new();
     let mut env = DefinitionEnv::new();
 
-    for (module_index, module) in modules.iter().enumerate() {
-        let Some(parts) = unit_artifact_parts(module) else {
-            diags.push(Diagnostic::invalid_unit_artifact(&[module_index]));
+    for (unit_index, unit) in units.iter().enumerate() {
+        let Some(parts) = unit_artifact_parts(unit) else {
+            diags.push(Diagnostic::invalid_unit_artifact(&[unit_index]));
             continue;
         };
         let local_defs = local_def_map(parts.defs);
@@ -73,7 +73,7 @@ pub fn check_modules_in_memory(modules: &[Node]) -> Result<Vec<CheckedModule>, V
             let Some(def) = local_defs.get(hash) else {
                 continue;
             };
-            let visibility = parse_visibility(visibility).unwrap_or(ModuleVisibility::Public);
+            let visibility = parse_visibility(visibility).unwrap_or(DefinitionVisibility::Public);
             env.insert(
                 hash.clone(),
                 ProvidedDefinition::new((*def).clone(), visibility, true),
@@ -82,8 +82,8 @@ pub fn check_modules_in_memory(modules: &[Node]) -> Result<Vec<CheckedModule>, V
     }
 
     let mut typed = Vec::new();
-    for (module_index, module) in modules.iter().enumerate() {
-        match check_module_with_path(module, &env, &[module_index]) {
+    for (unit_index, unit) in units.iter().enumerate() {
+        match check_unit_with_path(unit, &env, &[unit_index]) {
             Ok(t) => typed.push(t),
             Err(mut errors) => diags.append(&mut errors),
         }
@@ -96,19 +96,16 @@ pub fn check_modules_in_memory(modules: &[Node]) -> Result<Vec<CheckedModule>, V
     }
 }
 
-pub fn check_module(
-    module: &Node,
-    providers: &DefinitionEnv,
-) -> Result<CheckedModule, Vec<Diagnostic>> {
-    check_module_with_path(module, providers, &[])
+pub fn check_unit(unit: &Node, providers: &DefinitionEnv) -> Result<CheckedUnit, Vec<Diagnostic>> {
+    check_unit_with_path(unit, providers, &[])
 }
 
-fn check_module_with_path(
-    module: &Node,
+fn check_unit_with_path(
+    unit: &Node,
     providers: &DefinitionEnv,
     path: &[usize],
-) -> Result<CheckedModule, Vec<Diagnostic>> {
-    let Some(parts) = unit_artifact_parts(module) else {
+) -> Result<CheckedUnit, Vec<Diagnostic>> {
+    let Some(parts) = unit_artifact_parts(unit) else {
         return Err(vec![Diagnostic::invalid_unit_artifact(path)]);
     };
 
@@ -138,8 +135,8 @@ fn check_module_with_path(
         }
 
         match provider.visibility {
-            ModuleVisibility::Public => {}
-            ModuleVisibility::Package if provider.same_package => {}
+            DefinitionVisibility::Public => {}
+            DefinitionVisibility::Package if provider.same_package => {}
             other => diags.push(Diagnostic::visibility_violation(
                 &imp_path,
                 hash,
@@ -256,7 +253,7 @@ fn check_module_with_path(
     }
 
     if diags.is_empty() {
-        Ok(CheckedModule {
+        Ok(CheckedUnit {
             definition_types,
             definition_effects,
         })
@@ -293,10 +290,10 @@ fn local_def_map(defs: &[Node]) -> BTreeMap<String, &Node> {
         .collect()
 }
 
-fn parse_visibility(s: &str) -> Option<ModuleVisibility> {
+fn parse_visibility(s: &str) -> Option<DefinitionVisibility> {
     match s {
-        "public" => Some(ModuleVisibility::Public),
-        "package" => Some(ModuleVisibility::Package),
+        "public" => Some(DefinitionVisibility::Public),
+        "package" => Some(DefinitionVisibility::Package),
         _ => None,
     }
 }

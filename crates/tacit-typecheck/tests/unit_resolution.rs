@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use tacit_canonical::ast::Node;
 use tacit_canonical::hash_node;
 use tacit_typecheck::{
-    check_module, check_modules_in_memory, DefinitionEnv, ModuleVisibility, ProvidedDefinition,
+    check_unit, check_units_in_memory, DefinitionEnv, DefinitionVisibility, ProvidedDefinition,
 };
 
 fn sym(name: &str) -> Node {
@@ -69,7 +69,7 @@ fn imported_hash_signature_checks() {
     let consumer_def = apply_import_def(&provider_hash);
     let consumer_hash = hash(&consumer_def);
 
-    let module = Node::Unit {
+    let unit = Node::Unit {
         imports: vec![Node::Import {
             hash: provider_hash.clone(),
             sig: Box::new(int_to_int_sig()),
@@ -84,10 +84,10 @@ fn imported_hash_signature_checks() {
     let mut env = DefinitionEnv::new();
     env.insert(
         provider_hash,
-        ProvidedDefinition::new(provider_def, ModuleVisibility::Public, false),
+        ProvidedDefinition::new(provider_def, DefinitionVisibility::Public, false),
     );
 
-    let typed = check_module(&module, &env).expect("module checks");
+    let typed = check_unit(&unit, &env).expect("unit checks");
     assert_eq!(typed.definition_types.len(), 1);
 }
 
@@ -98,7 +98,7 @@ fn import_signature_mismatch_is_reported() {
     let consumer_def = apply_import_def(&provider_hash);
     let consumer_hash = hash(&consumer_def);
 
-    let module = Node::Unit {
+    let unit = Node::Unit {
         imports: vec![Node::Import {
             hash: provider_hash.clone(),
             sig: Box::new(bool_to_int_sig()),
@@ -113,10 +113,10 @@ fn import_signature_mismatch_is_reported() {
     let mut env = DefinitionEnv::new();
     env.insert(
         provider_hash,
-        ProvidedDefinition::new(provider_def, ModuleVisibility::Public, false),
+        ProvidedDefinition::new(provider_def, DefinitionVisibility::Public, false),
     );
 
-    let diags = check_module(&module, &env).expect_err("signature mismatch");
+    let diags = check_unit(&unit, &env).expect_err("signature mismatch");
     assert!(diags.iter().any(|d| d.kind == "signature-mismatch"));
 }
 
@@ -127,7 +127,7 @@ fn private_local_definition_can_be_referenced_by_hash() {
     let public = apply_import_def(&helper_hash);
     let public_hash = hash(&public);
 
-    let module = Node::Unit {
+    let unit = Node::Unit {
         imports: vec![],
         exports: vec![Node::Export {
             visibility: "public".into(),
@@ -136,14 +136,14 @@ fn private_local_definition_can_be_referenced_by_hash() {
         defs: vec![public, helper],
     };
 
-    check_module(&module, &BTreeMap::new()).expect("local private ref checks");
+    check_unit(&unit, &BTreeMap::new()).expect("local private ref checks");
 }
 
 #[test]
-fn package_exports_resolve_across_modules_in_memory() {
+fn package_exports_resolve_across_units_in_memory() {
     let provider = identity_def();
     let provider_hash = hash(&provider);
-    let provider_module = Node::Unit {
+    let provider_unit = Node::Unit {
         imports: vec![],
         exports: vec![Node::Export {
             visibility: "package".into(),
@@ -154,7 +154,7 @@ fn package_exports_resolve_across_modules_in_memory() {
 
     let consumer = apply_import_def(&provider_hash);
     let consumer_hash = hash(&consumer);
-    let consumer_module = Node::Unit {
+    let consumer_unit = Node::Unit {
         imports: vec![Node::Import {
             hash: provider_hash,
             sig: Box::new(int_to_int_sig()),
@@ -166,14 +166,13 @@ fn package_exports_resolve_across_modules_in_memory() {
         defs: vec![consumer],
     };
 
-    check_modules_in_memory(&[provider_module, consumer_module])
-        .expect("same-package import checks");
+    check_units_in_memory(&[provider_unit, consumer_unit]).expect("same-package import checks");
 }
 
 #[test]
 fn duplicate_import_diagnostic_names_unit_artifact() {
     let import_hash = "0".repeat(64);
-    let module = Node::Unit {
+    let unit = Node::Unit {
         imports: vec![
             Node::Import {
                 hash: import_hash.clone(),
@@ -188,7 +187,7 @@ fn duplicate_import_diagnostic_names_unit_artifact() {
         defs: vec![identity_def()],
     };
 
-    let diags = check_module(&module, &BTreeMap::new()).expect_err("duplicate import");
+    let diags = check_unit(&unit, &BTreeMap::new()).expect_err("duplicate import");
     assert!(diags
         .iter()
         .any(|d| d.kind == "duplicate-import" && d.message.starts_with("unit imports")));
@@ -200,6 +199,6 @@ fn module_binding_group_is_not_a_unit_artifact() {
         bindings: vec![Node::Int { value: "1".into() }],
     };
 
-    let diags = check_module(&node, &BTreeMap::new()).expect_err("not a unit artifact");
+    let diags = check_unit(&node, &BTreeMap::new()).expect_err("not a unit artifact");
     assert!(diags.iter().any(|d| d.kind == "invalid-unit-artifact"));
 }

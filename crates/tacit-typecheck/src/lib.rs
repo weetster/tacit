@@ -2,6 +2,7 @@
 //!
 //! Public surface:
 //! - `infer_module`: run type+effect inference on an AST node.
+//! - `check_unit`: validate a canonical `unit` artifact and resolve hash refs.
 //! - `check_against_tacd`: check a program against `.tacd` sidecar hints.
 //! - `Diagnostic` / `DiagOutput`: structured error format per ADR 0041.
 //!
@@ -10,20 +11,20 @@
 
 pub mod error;
 pub mod infer;
-pub mod modules;
 pub mod primitives;
 pub mod sidecar;
 pub mod ty;
 pub mod type_from_node;
+pub mod units;
 
 pub use error::{DiagOutput, Diagnostic};
 pub use infer::infer;
-pub use modules::{
-    check_module, check_modules_in_memory, CheckedModule, DefinitionEnv, ModuleVisibility,
-    ProvidedDefinition,
-};
 pub use sidecar::check_against_tacd;
 pub use ty::{EffSet, Ty};
+pub use units::{
+    check_unit, check_units_in_memory, CheckedUnit, DefinitionEnv, DefinitionVisibility,
+    ProvidedDefinition,
+};
 
 use tacit_canonical::ast::Node;
 use ty::Subst;
@@ -36,7 +37,7 @@ pub struct TypedModule {
     /// The eval-effect of the top-level expression (Stage 3).
     pub effects: EffSet,
     /// Binding types in DeBruijn order for `rec` and `module` binding-group nodes.
-    /// Logical `unit` definition types are exposed by `check_module`.
+    /// Logical `unit` definition types are exposed by `check_unit`.
     pub binding_types: Vec<Ty>,
 }
 
@@ -46,7 +47,7 @@ pub struct TypedModule {
 /// or `Err(Vec<Diagnostic>)` if any errors are found.
 pub fn infer_module(node: &Node) -> Result<TypedModule, Vec<Diagnostic>> {
     if matches!(node, Node::Unit { .. }) {
-        modules::check_module(node, &DefinitionEnv::new())?;
+        units::check_unit(node, &DefinitionEnv::new())?;
         return Ok(TypedModule {
             ty: Ty::Unknown,
             effects: EffSet::empty(),
