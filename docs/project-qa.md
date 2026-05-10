@@ -185,6 +185,70 @@ The fair claim is:
 This should be validated in Phase 5: measure whether a workflow primer plus
 existing tools improves larger-program repair enough to justify its token cost.
 
+## Are there scenarios where progressive disclosure of the primer could work?
+
+Yes. Progressive disclosure is plausible, especially in repositories that
+already contain enough Tacit code to serve as local examples. It should be
+treated as a workflow strategy, not as a replacement for the core language
+primer or as evidence for a primer-only benchmark.
+
+The useful shape is:
+
+- a small always-present orientation primer: syntax, output contract, semantic
+  invariants, and the few rules examples do not reliably teach
+- retrieved local examples from the current repository, chosen by feature,
+  library, module, error shape, or edit pattern
+- tool help or schemas injected only when the agent is about to use that tool
+- compiler/typechecker/test feedback used as the repair loop instead of adding
+  more prose up front
+
+A mature Tacit repository can make this work because the examples are not
+abstract teaching material. They are in-dialect, project-specific, already
+connected to local conventions, and often closer to the target task than a
+general primer could be. For maintenance and extension tasks, "here are three
+nearby modules that already do this" may be more valuable than another thousand
+tokens of generic primer text.
+
+But examples cannot carry the whole load. The base primer still needs to state
+rules that are easy to miss from examples: canonical identity, sidecar/display
+metadata, effect boundaries, output format, invalid capture cases, and the
+difference between authoring and inspection views. Examples show what worked
+somewhere; the primer defines what is legal and portable.
+
+This also changes the metric. Progressive disclosure should be accounted for as
+separate context classes:
+
+- always-paid language primer tokens
+- retrieved repository-example tokens
+- workflow/tool-schema tokens
+- repair feedback tokens
+- generated Tacit output tokens
+
+That separation matters because a repository-assisted workflow might be
+economical even though the Phase 4 primer-plus-generation metric remains
+negative. The two claims are different. Primer-only evaluation asks whether a
+cold model can learn Tacit from a fixed document. Progressive disclosure asks
+whether an agent can maintain Tacit efficiently when it has a real codebase,
+retrieval, tools, and feedback.
+
+The main constraints are:
+
+- never retrieve sealed or held-out evaluation material
+- only retrieve examples from the same language phase or a known-compatible
+  dialect
+- prefer compiling, tested examples over stale snippets
+- keep retrieval narrow enough that it replaces prose instead of becoming a
+  second large primer
+- report retrieved-example context separately from core primer cost
+
+The fair claim is:
+
+> Progressive primer disclosure is likely useful for real Tacit repositories,
+> especially once they contain enough idiomatic code to retrieve as examples.
+> It does not remove the need for a compact core primer, and it should not be
+> counted as primer-only fluency, but it may be the right production workflow
+> for larger maintenance, extension, and repair tasks.
+
 ## Should Tacit have IDE support to help humans understand LLM-generated code?
 
 Yes, as a stretch goal under the inspection/debugging track. Tacit is not meant
