@@ -124,9 +124,9 @@ remain host-owned capabilities during Phase 6.
 
 | ID | Question | Resolution Point |
 | --- | --- | --- |
-| Q-P6-1 | How are imports and exports represented in canonical form and authoring view? | Stage 1 ADR |
-| Q-P6-2 | What is public, package-local, or private at module boundaries? | Stage 1 ADR |
-| Q-P6-3 | How do imported hashes participate in type/effect checking and diagnostics? | Stage 1 ADR |
+| Q-P6-1 | How are imports and exports represented in canonical form and authoring view? | Resolved by [ADR 0080](../decisions/0080-phase-6-module-semantics.md) |
+| Q-P6-2 | What is public, package-local, or private at module boundaries? | Resolved by [ADR 0080](../decisions/0080-phase-6-module-semantics.md) |
+| Q-P6-3 | How do imported hashes participate in type/effect checking and diagnostics? | Resolved by [ADR 0080](../decisions/0080-phase-6-module-semantics.md) |
 | Q-P6-4 | What project layout is deterministic while keeping file layout non-semantic? | Stage 2 ADR |
 | Q-P6-5 | What manifest and lockfile formats represent hash-based dependencies? | Stage 3 ADR |
 | Q-P6-6 | What local object-store layout and cache invalidation rules are required? | Stage 3 ADR |
@@ -146,7 +146,8 @@ ADRs must land before implementation that depends on them.
 
 1. Phase 6 scope and stage plan. Done:
    [ADR 0079](../decisions/0079-phase-6-scope.md).
-2. Module imports, exports, visibility, and imported-hash semantics.
+2. Module imports, exports, visibility, and imported-hash semantics. Done:
+   [ADR 0080](../decisions/0080-phase-6-module-semantics.md).
 3. Multi-file project graph and deterministic derived layout.
 4. Package manifest, lockfile, dependency cache, and object-store layout.
 5. Package-level test surface and structured test-result schema.
@@ -198,7 +199,7 @@ Exit criteria:
 
 ## Stage 1: Module Semantics
 
-**Status:** Planned
+**Status:** Design ADR accepted 2026-05-10; implementation pending
 
 **Purpose:** Specify Tacit-to-Tacit module composition before project, package,
 stdlib, or host-interface work depends on it.

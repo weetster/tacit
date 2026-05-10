@@ -95,3 +95,4 @@ Keep ADRs short. They record the decision, not the full analysis that led to it.
 - [0077 — Phase 5 maintenance/debug metrics](0077-phase-5-metrics.md)
 - [0078 — Phase 5 decision: proceed to Phase 6](0078-phase-5-decision.md)
 - [0079 — Phase 6 scope and stage plan](0079-phase-6-scope.md)
+- [0080 — Phase 6 module imports, exports, visibility, and hash semantics](0080-phase-6-module-semantics.md)
