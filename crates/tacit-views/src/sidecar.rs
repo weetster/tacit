@@ -43,11 +43,7 @@ pub struct SidecarNode {
     pub children: Option<Vec<Option<SidecarNode>>>,
 
     /// Unit display alias.
-    #[serde(
-        rename = "unit_alias",
-        alias = "module_alias",
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub unit_alias: Option<String>,
 
     /// Unit definition hash → display alias map.
@@ -95,11 +91,7 @@ impl SidecarNode {
 pub struct Sidecar {
     pub tacd_version: String,
     pub targets_hash_blake3: String,
-    #[serde(
-        rename = "unit_alias",
-        alias = "module_alias",
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub unit_alias: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub definition_aliases: Option<BTreeMap<String, String>>,
@@ -239,7 +231,7 @@ mod tests {
     }
 
     #[test]
-    fn unit_alias_serializes_and_accepts_old_module_alias() {
+    fn unit_alias_serializes_cleanly() {
         let node = SidecarNode {
             unit_alias: Some("Math".to_string()),
             ..Default::default()
@@ -248,14 +240,5 @@ mod tests {
         let json = serde_json::to_string(&sidecar).unwrap();
         assert!(json.contains("unit_alias"));
         assert!(!json.contains("module_alias"));
-
-        let old_json = r#"{
-            "tacd_version": "1",
-            "targets_hash_blake3": "abc",
-            "module_alias": "Math",
-            "display": {}
-        }"#;
-        let back: Sidecar = serde_json::from_str(old_json).unwrap();
-        assert_eq!(back.unit_alias.as_deref(), Some("Math"));
     }
 }
