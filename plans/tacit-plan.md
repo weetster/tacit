@@ -259,9 +259,10 @@ Outcome: records, closures, and the `map`/`fold`/`for-each` family compile, type
 
 ### Phase 5: Maintenance and debugging validation
 
-**Status:** Active short gate per
-[ADR 0076](../decisions/0076-phase-5-short-gate.md) and
-[plans/phase-5-plan.md](phase-5-plan.md).
+**Status:** Complete 2026-05-09. Short gate accepted by
+[ADR 0076](../decisions/0076-phase-5-short-gate.md), metrics pinned by
+[ADR 0077](../decisions/0077-phase-5-metrics.md), and sequencing decision
+accepted by [ADR 0078](../decisions/0078-phase-5-decision.md).
 
 **Goal:** Validate the maintenance/debugging claim before building a large
 tool surface. Phase 4 already has structured diagnostics,
@@ -272,11 +273,11 @@ explicit sequencing decision. The Phase 4 Tacit-Lite primer remains
 language-facing and authoring-view-focused; workflow/tool instruction is
 measured separately.
 
-This is a gate before Phase 6 and broader tooling work, not a commitment to
-build every debugger/diff/blame feature immediately. Phase 6 may begin after
-the Phase 5 decision ADR chooses "proceed to Phase 6"; full
-inspection/debugging tooling remains Phase 7 unless the decision ADR selects
-one narrow pre-Phase-6 blocker.
+This was a gate before Phase 6 and broader tooling work, not a commitment to
+build every debugger/diff/blame feature immediately. The accepted decision is
+to proceed to Phase 6 without a pre-Phase-6 tool spike. Full
+inspection/debugging tooling remains Phase 7 unless a later bounded ADR selects
+one narrow blocker with new evidence.
 
 Deliverables:
 - **Maintenance/debug task spec.** Define a small open benchmark of edit,
@@ -305,10 +306,10 @@ Deliverables:
   Phase 6 modules/packages, build one proven tool before Phase 6, revise the
   benchmark, or pause engineering and publish the Phase 0-4 research artifact.
 
-Exit criteria: the project has evidence that AST-first tooling either improves
-larger-program maintenance/debugging enough to shape later tooling, or does
-not. The required output is a benchmark record, a metric ADR, and a decision
-ADR; a large new tool surface is explicitly not required.
+Outcome: the project now has a benchmark record, a metric ADR, and a decision
+ADR. The Stage 2 baseline passed the accepted Phase 5 gates on the
+authoring-facing benchmark, so Phase 6 is unblocked. A large new tool surface
+was not required.
 
 ### Phase 6: Modules, packages, systems primitives, and host-interface ABI
 

@@ -1,7 +1,8 @@
 # Phase 5 Plan
 
-**Status:** Active, scoped by
-[ADR 0076](../decisions/0076-phase-5-short-gate.md)
+**Status:** Complete 2026-05-09, scoped by
+[ADR 0076](../decisions/0076-phase-5-short-gate.md),
+[ADR 0078](../decisions/0078-phase-5-decision.md)
 **Scope:** Bounded maintenance/debugging validation gate before Phase 6
 
 ## Context
@@ -182,7 +183,8 @@ Exit criteria:
 
 ### Stage 4: Decision ADR
 
-**Status:** Pending
+**Status:** Complete 2026-05-09. Deliverable:
+[decisions/0078-phase-5-decision.md](../decisions/0078-phase-5-decision.md)
 
 Work items:
 
