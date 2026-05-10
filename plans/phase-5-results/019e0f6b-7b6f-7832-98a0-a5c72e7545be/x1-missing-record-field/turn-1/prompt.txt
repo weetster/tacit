@@ -1,0 +1,55 @@
+The previous explanation was incomplete.
+
+Task:
+Do not edit the file. Explain why the program fails, using the structured diagnostic output and, if helpful, the inspection view. The explanation must identify the failing projection and why the record does not support it.
+
+Previous explanation:
+The program attempts to project a field from a record value, but the field name used in the projection does not exist on the record type that was inferred for that value. In Tacit-Lite, projection is exact: the typechecker requires that the inferred record type contain precisely the field being accessed, spelled exactly as written. If the record was constructed with fields named, say, `total` and `items`, then writing `.sum` or `.count` on that record will fail with an `unresolved-type` or `invalid-projection` diagnostic because neither of those names appears in the structural type the typechecker knows about. There is no width subtyping and no fallback: every projected field must be present in the record's inferred type at the point of projection.
+
+The diagnostic identifies the projection site, reports the field name that was requested, and shows the record type that was actually inferred, which lacks that field. The fix is either to change the projection to use a field name that the record was actually constructed with, or to change the record construction to include a field with the name the projection expects. Until those two sides agree on the exact field name, the typechecker will reject the program.
+
+Feedback:
+{
+  "errors": [
+    {
+      "actual": {
+        "record": [
+          [
+            "left",
+            {
+              "sym": "Int"
+            }
+          ],
+          [
+            "right",
+            {
+              "sym": "Int"
+            }
+          ]
+        ]
+      },
+      "expected": null,
+      "fix": null,
+      "kind": "missing-field",
+      "location": {
+        "ast_path": [],
+        "source_span": null
+      },
+      "message": "record field 'total' does not exist on {left: Int, right: Int}",
+      "related": [],
+      "severity": "error"
+    }
+  ],
+  "schema_version": "p2.0"
+}
+
+Inspection view:
+{
+  left: 40,
+  right: 2,
+}.total
+
+Missing required concepts: left, right
+
+Return only the corrected explanation in plain prose. Do not include Tacit
+code or fenced blocks.

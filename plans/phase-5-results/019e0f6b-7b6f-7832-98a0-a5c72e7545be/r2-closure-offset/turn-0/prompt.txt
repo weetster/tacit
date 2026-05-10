@@ -1,0 +1,5 @@
+Repair the closure pipeline so the returned closure adds the captured offset to its input. The fixed program must compile and exit with status 42.
+
+Return the corrected solution as a single Tacit-Lite program in one fenced
+block: ```tacit ... ```. Do not include the sidecar. Do not include
+explanatory prose.

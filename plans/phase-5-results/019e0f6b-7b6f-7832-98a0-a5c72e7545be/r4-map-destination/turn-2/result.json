@@ -1,0 +1,20 @@
+{
+  "compile_pass": true,
+  "diagnostics": null,
+  "explanation": null,
+  "explanation_pass": false,
+  "failure_stage": null,
+  "generation_tokens": 112,
+  "inspection_text": "let xs = @i64-alloc 3 in\nlet _ = @i64-set xs 0 1 in\nlet _ = @i64-set xs 1 2 in\nlet _ = @i64-set xs 2 3 in\nlet ys = @i64-alloc 3 in\nlet offset = 4 in\nlet _ =\n  @map\n    input xs\n    count 3\n    callback lambda x [captures offset]. @add x offset\n    output ys\nin\n  @fold\n    input ys\n    count 3\n    initial 0\n    callback lambda acc x. @add acc x",
+  "missing_substrings": [],
+  "prompt": "The previous Tacit-Lite program failed.\n\nTask:\nThis vector map program compiles but returns the wrong result. Repair it so it uses the mapped output when computing the final sum. The fixed program must exit 18.\n\nPrevious program:\n```tacit\nlet xs = @i64-alloc 3 in\nlet _ = @i64-set xs 0 1 in\nlet _ = @i64-set xs 1 2 in\nlet _ = @i64-set xs 2 3 in\nlet ys = @i64-alloc 3 in\nlet offset = 3 in\nlet _ = @map xs 3 (lambda x. @add x offset) ys in\n@fold ys 3 0 (lambda acc. lambda x. @add acc x)\n```\n\nFailure stage: run\n\nFeedback:\n{\n  \"errors\": [\n    {\n      \"actual\": {\n        \"exit\": 15,\n        \"stderr\": \"\",\n        \"stdout\": \"\"\n      },\n      \"expected\": {\n        \"exit\": 18,\n        \"stdout\": \"\"\n      },\n      \"fix\": null,\n      \"kind\": \"behavior-mismatch\",\n      \"location\": {\n        \"ast_path\": [],\n        \"source_span\": null\n      },\n      \"message\": \"compiled program did not meet the benchmark pass condition\",\n      \"related\": [],\n      \"severity\": \"error\"\n    }\n  ],\n  \"schema_version\": \"p2.0\"\n}\n\nInspection view:\nlet xs = @i64-alloc 3 in\nlet _ = @i64-set xs 0 1 in\nlet _ = @i64-set xs 1 2 in\nlet _ = @i64-set xs 2 3 in\nlet ys = @i64-alloc 3 in\nlet offset = 3 in\nlet _ =\n  @map\n    input xs\n    count 3\n    callback lambda x [captures offset]. @add x offset\n    output ys\nin\n  @fold\n    input ys\n    count 3\n    initial 0\n    callback lambda acc x. @add acc x\n\nReturn a corrected solution as a single Tacit-Lite program in one fenced\nblock: ```tacit ... ```. Do not include the sidecar. Do not include\nexplanatory prose.\n",
+  "raw_output": "```tacit\nlet xs = @i64-alloc 3 in\nlet _ = @i64-set xs 0 1 in\nlet _ = @i64-set xs 1 2 in\nlet _ = @i64-set xs 2 3 in\nlet ys = @i64-alloc 3 in\nlet offset = 4 in\nlet _ = @map xs 3 (lambda x. @add x offset) ys in\n@fold ys 3 0 (lambda acc. lambda x. @add acc x)\n```",
+  "retries": 0,
+  "run_exit": 18,
+  "run_pass": true,
+  "run_stderr": "",
+  "run_stdout": "",
+  "source": "let xs = @i64-alloc 3 in\nlet _ = @i64-set xs 0 1 in\nlet _ = @i64-set xs 1 2 in\nlet _ = @i64-set xs 2 3 in\nlet ys = @i64-alloc 3 in\nlet offset = 4 in\nlet _ = @map xs 3 (lambda x. @add x offset) ys in\n@fold ys 3 0 (lambda acc. lambda x. @add acc x)\n",
+  "turn_index": 2,
+  "typecheck_pass": true
+}

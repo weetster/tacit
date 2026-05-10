@@ -1,0 +1,5 @@
+Extend the working closure pipeline so the returned closure doubles its input before adding the captured offset. Keep the returned-closure structure. The final program must compile and exit 42.
+
+Return the corrected solution as a single Tacit-Lite program in one fenced
+block: ```tacit ... ```. Do not include the sidecar. Do not include
+explanatory prose.

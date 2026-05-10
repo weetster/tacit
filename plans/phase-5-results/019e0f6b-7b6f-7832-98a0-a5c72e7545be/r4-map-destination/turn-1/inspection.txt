@@ -1,0 +1,18 @@
+let xs = @i64-alloc 3 in
+let _ = @i64-set xs 0 1 in
+let _ = @i64-set xs 1 2 in
+let _ = @i64-set xs 2 3 in
+let ys = @i64-alloc 3 in
+let offset = 3 in
+let _ =
+  @map
+    input xs
+    count 3
+    callback lambda x [captures offset]. @add x offset
+    output ys
+in
+  @fold
+    input ys
+    count 3
+    initial 0
+    callback lambda acc x. @add acc x

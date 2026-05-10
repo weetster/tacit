@@ -1,0 +1,20 @@
+{
+  "compile_pass": true,
+  "diagnostics": null,
+  "explanation": null,
+  "explanation_pass": false,
+  "failure_stage": null,
+  "generation_tokens": 25,
+  "inspection_text": "let offset = 40 in\nlet add_offset = lambda x [captures offset]. @add x offset in\n  add_offset 2",
+  "missing_substrings": [],
+  "prompt": "Repair the closure pipeline so the returned closure adds the captured offset to its input. The fixed program must compile and exit with status 42.\n\nReturn the corrected solution as a single Tacit-Lite program in one fenced\nblock: ```tacit ... ```. Do not include the sidecar. Do not include\nexplanatory prose.\n",
+  "raw_output": "```tacit\nlet offset = 40 in\nlet add_offset = lambda x. @add x offset in\nadd_offset 2\n```",
+  "retries": 0,
+  "run_exit": 42,
+  "run_pass": true,
+  "run_stderr": "",
+  "run_stdout": "",
+  "source": "let offset = 40 in\nlet add_offset = lambda x. @add x offset in\nadd_offset 2\n",
+  "turn_index": 0,
+  "typecheck_pass": true
+}

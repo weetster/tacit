@@ -1,0 +1,51 @@
+{
+  "diagnostics": {
+    "errors": [
+      {
+        "actual": {
+          "sym": "Int"
+        },
+        "expected": {
+          "fn-ty": {
+            "arg": {
+              "sym": "Int"
+            },
+            "eff": {
+              "eff-meta": 0
+            },
+            "ret": {
+              "sym": "Int"
+            }
+          }
+        },
+        "fix": null,
+        "kind": "callback-type-mismatch",
+        "location": {
+          "ast_path": [
+            {
+              "child": 1
+            },
+            {
+              "child": 1
+            },
+            {
+              "child": 1
+            },
+            {
+              "child": 2
+            }
+          ],
+          "source_span": null
+        },
+        "message": "@map callback type mismatch: expected Int -> Int / ?e0, got Int",
+        "related": [],
+        "severity": "error"
+      }
+    ],
+    "schema_version": "p2.0"
+  },
+  "passed": false,
+  "run_exit": null,
+  "run_stderr": null,
+  "run_stdout": null
+}

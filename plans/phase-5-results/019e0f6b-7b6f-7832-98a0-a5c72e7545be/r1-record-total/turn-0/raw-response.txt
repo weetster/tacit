@@ -1,0 +1,7 @@
+```tacit
+let start = {sum: 0, count: 0} in
+let one = {sum: @add start.sum 1, count: @add start.count 1} in
+let two = {sum: @add one.sum 2, count: @add one.count 1} in
+let three = {sum: @add two.sum 3, count: @add two.count 1} in
+@add three.sum three.count
+```

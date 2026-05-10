@@ -137,7 +137,9 @@ Exit criteria:
 
 ### Stage 2: Current-Tool Baseline
 
-**Status:** Pending
+**Status:** Complete 2026-05-09. Deliverables:
+[plans/phase-5-results/README.md](phase-5-results/README.md),
+[plans/phase-5-results/019e0f6b-7b6f-7832-98a0-a5c72e7545be/run.json](phase-5-results/019e0f6b-7b6f-7832-98a0-a5c72e7545be/run.json)
 
 Allowed tool surface:
 

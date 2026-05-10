@@ -1,0 +1,20 @@
+{
+  "compile_pass": true,
+  "diagnostics": null,
+  "explanation": null,
+  "explanation_pass": false,
+  "failure_stage": null,
+  "generation_tokens": 40,
+  "inspection_text": "let make_adder = lambda base x. @add (@mul x 2) base in\nlet add_ten = make_adder 10 in\n  add_ten 16",
+  "missing_substrings": [],
+  "prompt": "Extend the working closure pipeline so the returned closure doubles its input before adding the captured offset. Keep the returned-closure structure. The final program must compile and exit 42.\n\nReturn the corrected solution as a single Tacit-Lite program in one fenced\nblock: ```tacit ... ```. Do not include the sidecar. Do not include\nexplanatory prose.\n",
+  "raw_output": "```tacit\nlet make_adder = lambda base. lambda x. @add (@mul x 2) base in\nlet add_ten = make_adder 10 in\nadd_ten 16\n```",
+  "retries": 0,
+  "run_exit": 42,
+  "run_pass": true,
+  "run_stderr": "",
+  "run_stdout": "",
+  "source": "let make_adder = lambda base. lambda x. @add (@mul x 2) base in\nlet add_ten = make_adder 10 in\nadd_ten 16\n",
+  "turn_index": 0,
+  "typecheck_pass": true
+}

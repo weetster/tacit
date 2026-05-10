@@ -1,0 +1,95 @@
+{
+  "version": 1,
+  "tasks": [
+    {
+      "id": "r1-record-total",
+      "class": "repair",
+      "evaluation_kind": "program",
+      "canonical_source": "r1-record-total/main.tac",
+      "authoring_input": "r1-record-total/main.taca",
+      "prompt": "Fix the existing program so it returns the intended accumulator result. The program should compile cleanly and exit with status 9. Keep the current record-based structure; do not rewrite it into a different algorithm.",
+      "expected_exit": 9,
+      "expected_stdout": ""
+    },
+    {
+      "id": "r2-closure-offset",
+      "class": "repair",
+      "evaluation_kind": "program",
+      "canonical_source": "r2-closure-offset/main.tac",
+      "authoring_input": "r2-closure-offset/main.taca",
+      "prompt": "Repair the closure pipeline so the returned closure adds the captured offset to its input. The fixed program must compile and exit with status 42.",
+      "expected_exit": 42,
+      "expected_stdout": ""
+    },
+    {
+      "id": "r3-record-field",
+      "class": "repair",
+      "evaluation_kind": "program",
+      "canonical_source": "r3-record-field/main.tac",
+      "authoring_input": "r3-record-field/main.taca",
+      "prompt": "The program is meant to project a value from a small record and return it. Repair the failing program with the smallest coherent change so it compiles and exits 33.",
+      "expected_exit": 33,
+      "expected_stdout": ""
+    },
+    {
+      "id": "r4-map-destination",
+      "class": "repair",
+      "evaluation_kind": "program",
+      "canonical_source": "r4-map-destination/main.tac",
+      "authoring_input": "r4-map-destination/main.taca",
+      "prompt": "This vector map program compiles but returns the wrong result. Repair it so it uses the mapped output when computing the final sum. The fixed program must exit 18.",
+      "expected_exit": 18,
+      "expected_stdout": ""
+    },
+    {
+      "id": "e1-record-bonus",
+      "class": "edit",
+      "evaluation_kind": "program",
+      "canonical_source": "e1-record-bonus/main.tac",
+      "authoring_input": "e1-record-bonus/main.taca",
+      "prompt": "Extend the working program so it returns value plus bonus from the existing record. The edited program must compile and exit 35.",
+      "expected_exit": 35,
+      "expected_stdout": ""
+    },
+    {
+      "id": "e2-closure-scale",
+      "class": "edit",
+      "evaluation_kind": "program",
+      "canonical_source": "e2-closure-scale/main.tac",
+      "authoring_input": "e2-closure-scale/main.taca",
+      "prompt": "Extend the working closure pipeline so the returned closure doubles its input before adding the captured offset. Keep the returned-closure structure. The final program must compile and exit 42.",
+      "expected_exit": 42,
+      "expected_stdout": ""
+    },
+    {
+      "id": "x1-missing-record-field",
+      "class": "explanation",
+      "evaluation_kind": "explanation",
+      "canonical_source": "x1-missing-record-field/main.tac",
+      "authoring_input": "x1-missing-record-field/main.taca",
+      "prompt": "Do not edit the file. Explain why the program fails, using the structured diagnostic output and, if helpful, the inspection view. The explanation must identify the failing projection and why the record does not support it.",
+      "required_substrings": [
+        "total",
+        "left",
+        "right",
+        "field",
+        "record"
+      ]
+    },
+    {
+      "id": "x2-non-function-map",
+      "class": "explanation",
+      "evaluation_kind": "explanation",
+      "canonical_source": "x2-non-function-map/main.tac",
+      "authoring_input": "x2-non-function-map/main.taca",
+      "prompt": "Do not edit the file. Explain why the map call fails, using the structured diagnostic output and, if helpful, the inspection view. The explanation must identify the invalid callback position and the expected callback shape.",
+      "required_substrings": [
+        "map",
+        "callback",
+        "function",
+        "7",
+        "int"
+      ]
+    }
+  ]
+}

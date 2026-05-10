@@ -1,0 +1,4 @@
+Do not edit the file. Explain why the program fails, using the structured diagnostic output and, if helpful, the inspection view. The explanation must identify the failing projection and why the record does not support it.
+
+Return only the explanation in plain prose. Do not include Tacit code, fenced
+blocks, or sidecar metadata.

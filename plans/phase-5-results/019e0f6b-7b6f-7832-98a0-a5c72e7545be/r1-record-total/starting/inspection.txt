@@ -1,0 +1,25 @@
+let v0 =
+  {
+    count: 0,
+    sum: 0,
+  }
+in
+let v1 =
+  {
+    count: @add v0.count 1,
+    sum: @add v0.sum 1,
+  }
+in
+let v2 =
+  {
+    count: @add v1.count 1,
+    sum: @add v1.sum 2,
+  }
+in
+let v3 =
+  {
+    count: @add v2.count 1,
+    sum: @add v2.sum 3,
+  }
+in
+  @add v3.sum v3.sum

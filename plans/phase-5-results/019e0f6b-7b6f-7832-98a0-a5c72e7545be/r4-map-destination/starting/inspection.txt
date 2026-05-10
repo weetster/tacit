@@ -1,0 +1,13 @@
+let xs = @i64-alloc 3 in
+let _ = @i64-set xs 0 4 in
+let _ = @i64-set xs 1 5 in
+let _ = @i64-set xs 2 6 in
+let ys = @i64-alloc 3 in
+let _ =
+  @map
+    input xs
+    count 3
+    callback lambda x. @add x 1
+    output ys
+in
+  @add (@i64-get xs 0) (@add (@i64-get xs 1) (@i64-get xs 2))

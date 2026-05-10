@@ -1,0 +1,20 @@
+{
+  "compile_pass": true,
+  "diagnostics": null,
+  "explanation": null,
+  "explanation_pass": false,
+  "failure_stage": null,
+  "generation_tokens": 18,
+  "inspection_text": "let r =\n  {\n    x: 33,\n    y: 42,\n  }\nin\n  r.x",
+  "missing_substrings": [],
+  "prompt": "The program is meant to project a value from a small record and return it. Repair the failing program with the smallest coherent change so it compiles and exits 33.\n\nReturn the corrected solution as a single Tacit-Lite program in one fenced\nblock: ```tacit ... ```. Do not include the sidecar. Do not include\nexplanatory prose.\n",
+  "raw_output": "```tacit\nlet r = {x: 33, y: 42} in r.x\n```",
+  "retries": 0,
+  "run_exit": 33,
+  "run_pass": true,
+  "run_stderr": "",
+  "run_stdout": "",
+  "source": "let r = {x: 33, y: 42} in r.x\n",
+  "turn_index": 0,
+  "typecheck_pass": true
+}

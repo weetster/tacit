@@ -1,0 +1,8 @@
+let v0 = @i64-alloc 1 in
+let v1 = @i64-set v0 0 4 in
+let v2 = @i64-alloc 1 in
+  @map
+    input v0
+    count 1
+    callback 7
+    output v2

@@ -1,0 +1,20 @@
+{
+  "compile_pass": true,
+  "diagnostics": null,
+  "explanation": null,
+  "explanation_pass": false,
+  "failure_stage": null,
+  "generation_tokens": 95,
+  "inspection_text": "let start =\n  {\n    sum: 0,\n    count: 0,\n  }\nin\nlet one =\n  {\n    sum: @add start.sum 1,\n    count: @add start.count 1,\n  }\nin\nlet two =\n  {\n    sum: @add one.sum 2,\n    count: @add one.count 1,\n  }\nin\nlet three =\n  {\n    sum: @add two.sum 3,\n    count: @add two.count 1,\n  }\nin\n  @add three.sum three.count",
+  "missing_substrings": [],
+  "prompt": "Fix the existing program so it returns the intended accumulator result. The program should compile cleanly and exit with status 9. Keep the current record-based structure; do not rewrite it into a different algorithm.\n\nReturn the corrected solution as a single Tacit-Lite program in one fenced\nblock: ```tacit ... ```. Do not include the sidecar. Do not include\nexplanatory prose.\n",
+  "raw_output": "```tacit\nlet start = {sum: 0, count: 0} in\nlet one = {sum: @add start.sum 1, count: @add start.count 1} in\nlet two = {sum: @add one.sum 2, count: @add one.count 1} in\nlet three = {sum: @add two.sum 3, count: @add two.count 1} in\n@add three.sum three.count\n```",
+  "retries": 0,
+  "run_exit": 9,
+  "run_pass": true,
+  "run_stderr": "",
+  "run_stdout": "",
+  "source": "let start = {sum: 0, count: 0} in\nlet one = {sum: @add start.sum 1, count: @add start.count 1} in\nlet two = {sum: @add one.sum 2, count: @add one.count 1} in\nlet three = {sum: @add two.sum 3, count: @add two.count 1} in\n@add three.sum three.count\n",
+  "turn_index": 0,
+  "typecheck_pass": true
+}

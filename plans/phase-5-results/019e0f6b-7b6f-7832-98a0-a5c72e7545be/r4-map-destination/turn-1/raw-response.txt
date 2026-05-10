@@ -1,0 +1,10 @@
+```tacit
+let xs = @i64-alloc 3 in
+let _ = @i64-set xs 0 1 in
+let _ = @i64-set xs 1 2 in
+let _ = @i64-set xs 2 3 in
+let ys = @i64-alloc 3 in
+let offset = 3 in
+let _ = @map xs 3 (lambda x. @add x offset) ys in
+@fold ys 3 0 (lambda acc. lambda x. @add acc x)
+```

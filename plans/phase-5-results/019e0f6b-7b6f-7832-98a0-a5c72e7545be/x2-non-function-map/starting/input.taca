@@ -1,0 +1,1 @@
+let v0 = @i64-alloc 1 in let v1 = @i64-set v0 0 4 in let v2 = @i64-alloc 1 in @map v0 1 7 v2

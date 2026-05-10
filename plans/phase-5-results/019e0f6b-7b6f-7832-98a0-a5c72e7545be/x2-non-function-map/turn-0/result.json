@@ -1,0 +1,51 @@
+{
+  "compile_pass": false,
+  "diagnostics": {
+    "errors": [
+      {
+        "actual": {
+          "missing_substrings": [
+            "7"
+          ]
+        },
+        "expected": {
+          "required_substrings": [
+            "map",
+            "callback",
+            "function",
+            "7",
+            "int"
+          ]
+        },
+        "fix": null,
+        "kind": "explanation-mismatch",
+        "location": {
+          "ast_path": [],
+          "source_span": null
+        },
+        "message": "explanation omitted required benchmark concepts",
+        "related": [],
+        "severity": "error"
+      }
+    ],
+    "schema_version": "p2.0"
+  },
+  "explanation": "The map call fails because the callback is supplied in the wrong argument position. The primitive `@map` expects its arguments in the order: source vector, element count, callback function, destination vector. When the callback is placed after the destination vector instead of before it, the typechecker sees a fully-applied four-argument call where the third slot receives an `I64Vec` handle and the fourth slot receives a function value. The typechecker then tries to use the `I64Vec` as the callback, which does not have the required function shape `Int -> Int`, producing a callback-type-mismatch diagnostic. Conversely, the function value ends up in the destination slot, where a writable `I64Vec` handle is expected, producing a type-mismatch diagnostic there as well.\n\nThe expected callback shape is a single-parameter lambda that accepts one `Int` element and returns one `Int` result, written as `lambda x. <integer expression>`. It must occupy the third positional argument, immediately after the element count and before the destination vector. Placing any other kind of value \u2014 including an `I64Vec` handle \u2014 in that third slot is what triggers the failure, because the typechecker cannot reconcile a non-function type with the required `Int -> Int` function type at that position.",
+  "explanation_pass": false,
+  "failure_stage": "explanation",
+  "generation_tokens": 265,
+  "inspection_text": "let v0 = @i64-alloc 1 in\nlet v1 = @i64-set v0 0 4 in\nlet v2 = @i64-alloc 1 in\n  @map\n    input v0\n    count 1\n    callback 7\n    output v2",
+  "missing_substrings": [
+    "7"
+  ],
+  "prompt": "Do not edit the file. Explain why the map call fails, using the structured diagnostic output and, if helpful, the inspection view. The explanation must identify the invalid callback position and the expected callback shape.\n\nReturn only the explanation in plain prose. Do not include Tacit code, fenced\nblocks, or sidecar metadata.\n",
+  "raw_output": "The map call fails because the callback is supplied in the wrong argument position. The primitive `@map` expects its arguments in the order: source vector, element count, callback function, destination vector. When the callback is placed after the destination vector instead of before it, the typechecker sees a fully-applied four-argument call where the third slot receives an `I64Vec` handle and the fourth slot receives a function value. The typechecker then tries to use the `I64Vec` as the callback, which does not have the required function shape `Int -> Int`, producing a callback-type-mismatch diagnostic. Conversely, the function value ends up in the destination slot, where a writable `I64Vec` handle is expected, producing a type-mismatch diagnostic there as well.\n\nThe expected callback shape is a single-parameter lambda that accepts one `Int` element and returns one `Int` result, written as `lambda x. <integer expression>`. It must occupy the third positional argument, immediately after the element count and before the destination vector. Placing any other kind of value \u2014 including an `I64Vec` handle \u2014 in that third slot is what triggers the failure, because the typechecker cannot reconcile a non-function type with the required `Int -> Int` function type at that position.",
+  "retries": 0,
+  "run_exit": null,
+  "run_pass": false,
+  "run_stderr": null,
+  "run_stdout": null,
+  "source": null,
+  "turn_index": 0,
+  "typecheck_pass": false
+}

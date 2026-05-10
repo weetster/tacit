@@ -1,0 +1,5 @@
+```tacit
+let make_adder = lambda base. lambda x. @add (@mul x 2) base in
+let add_ten = make_adder 10 in
+add_ten 16
+```

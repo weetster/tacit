@@ -1,0 +1,1 @@
+(let (app (sym i64-alloc) (int 1)) (let (app (app (app (sym i64-set) (var 0)) (int 0)) (int 4)) (let (app (sym i64-alloc) (int 1)) (app (app (app (app (sym map) (var 2)) (int 1)) (int 7)) (var 0)))))

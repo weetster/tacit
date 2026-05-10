@@ -1,0 +1,4 @@
+{
+  left: 40,
+  right: 2,
+}.total

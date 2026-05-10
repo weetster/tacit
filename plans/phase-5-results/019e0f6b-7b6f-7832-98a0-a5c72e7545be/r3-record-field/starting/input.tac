@@ -1,0 +1,1 @@
+(app (lam (proj (var 0) total)) (record next (int 9) value (int 33)))

@@ -1,0 +1,71 @@
+The previous explanation was incomplete.
+
+Task:
+Do not edit the file. Explain why the map call fails, using the structured diagnostic output and, if helpful, the inspection view. The explanation must identify the invalid callback position and the expected callback shape.
+
+Previous explanation:
+The map call fails because the callback is supplied in the wrong argument position. The primitive `@map` expects its arguments in the order: source vector, element count, callback function, destination vector. When the callback is placed after the destination vector instead of before it, the typechecker sees a fully-applied four-argument call where the third slot receives an `I64Vec` handle and the fourth slot receives a function value. The typechecker then tries to use the `I64Vec` as the callback, which does not have the required function shape `Int -> Int`, producing a callback-type-mismatch diagnostic. Conversely, the function value ends up in the destination slot, where a writable `I64Vec` handle is expected, producing a type-mismatch diagnostic there as well.
+
+The expected callback shape is a single-parameter lambda that accepts one `Int` element and returns one `Int` result, written as `lambda x. <integer expression>`. It must occupy the third positional argument, immediately after the element count and before the destination vector. Placing any other kind of value — including an `I64Vec` handle — in that third slot is what triggers the failure, because the typechecker cannot reconcile a non-function type with the required `Int -> Int` function type at that position.
+
+Feedback:
+{
+  "errors": [
+    {
+      "actual": {
+        "sym": "Int"
+      },
+      "expected": {
+        "fn-ty": {
+          "arg": {
+            "sym": "Int"
+          },
+          "eff": {
+            "eff-meta": 0
+          },
+          "ret": {
+            "sym": "Int"
+          }
+        }
+      },
+      "fix": null,
+      "kind": "callback-type-mismatch",
+      "location": {
+        "ast_path": [
+          {
+            "child": 1
+          },
+          {
+            "child": 1
+          },
+          {
+            "child": 1
+          },
+          {
+            "child": 2
+          }
+        ],
+        "source_span": null
+      },
+      "message": "@map callback type mismatch: expected Int -> Int / ?e0, got Int",
+      "related": [],
+      "severity": "error"
+    }
+  ],
+  "schema_version": "p2.0"
+}
+
+Inspection view:
+let v0 = @i64-alloc 1 in
+let v1 = @i64-set v0 0 4 in
+let v2 = @i64-alloc 1 in
+  @map
+    input v0
+    count 1
+    callback 7
+    output v2
+
+Missing required concepts: 7
+
+Return only the corrected explanation in plain prose. Do not include Tacit
+code or fenced blocks.

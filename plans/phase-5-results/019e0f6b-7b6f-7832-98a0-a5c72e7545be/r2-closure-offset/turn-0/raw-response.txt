@@ -1,0 +1,5 @@
+```tacit
+let offset = 40 in
+let add_offset = lambda x. @add x offset in
+add_offset 2
+```

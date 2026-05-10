@@ -1,0 +1,20 @@
+{
+  "compile_pass": true,
+  "diagnostics": null,
+  "explanation": null,
+  "explanation_pass": false,
+  "failure_stage": null,
+  "generation_tokens": 24,
+  "inspection_text": "let r =\n  {\n    value: 30,\n    bonus: 5,\n  }\nin\n  @add r.value r.bonus",
+  "missing_substrings": [],
+  "prompt": "Extend the working program so it returns value plus bonus from the existing record. The edited program must compile and exit 35.\n\nReturn the corrected solution as a single Tacit-Lite program in one fenced\nblock: ```tacit ... ```. Do not include the sidecar. Do not include\nexplanatory prose.\n",
+  "raw_output": "```tacit\nlet r = {value: 30, bonus: 5} in\n@add r.value r.bonus\n```",
+  "retries": 0,
+  "run_exit": 35,
+  "run_pass": true,
+  "run_stderr": "",
+  "run_stdout": "",
+  "source": "let r = {value: 30, bonus: 5} in\n@add r.value r.bonus\n",
+  "turn_index": 0,
+  "typecheck_pass": true
+}

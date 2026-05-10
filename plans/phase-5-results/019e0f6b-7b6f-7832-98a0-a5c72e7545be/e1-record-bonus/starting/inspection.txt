@@ -1,0 +1,6 @@
+lambda v0. v0.value
+  {
+    bonus: 2,
+    next: 9,
+    value: 33,
+  }

@@ -18,6 +18,7 @@ corpus-run = "tacit_corpus.run:main"
 corpus-run-tacit = "tacit_corpus.run_tacit:main"
 corpus-tokens = "tacit_corpus.count_tokens:main"
 corpus-eval = "tacit_corpus.eval:main"
+phase5-eval = "tacit_corpus.phase5_eval:main"
 corpus-preflight = "tacit_corpus.preflight:main"
 corpus-verify-sealed = "tacit_corpus.verify_sealed:main"
 

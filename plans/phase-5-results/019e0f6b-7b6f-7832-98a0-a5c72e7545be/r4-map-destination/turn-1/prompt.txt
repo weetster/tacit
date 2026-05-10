@@ -1,0 +1,69 @@
+The previous Tacit-Lite program failed.
+
+Task:
+This vector map program compiles but returns the wrong result. Repair it so it uses the mapped output when computing the final sum. The fixed program must exit 18.
+
+Previous program:
+```tacit
+let xs = @i64-alloc 3 in
+let _ = @i64-set xs 0 1 in
+let _ = @i64-set xs 1 2 in
+let _ = @i64-set xs 2 3 in
+let ys = @i64-alloc 3 in
+let offset = 10 in
+let _ = @map xs 3 (lambda x. @add x offset) ys in
+@fold ys 3 0 (lambda acc. lambda x. @add acc x)
+```
+
+Failure stage: run
+
+Feedback:
+{
+  "errors": [
+    {
+      "actual": {
+        "exit": 36,
+        "stderr": "",
+        "stdout": ""
+      },
+      "expected": {
+        "exit": 18,
+        "stdout": ""
+      },
+      "fix": null,
+      "kind": "behavior-mismatch",
+      "location": {
+        "ast_path": [],
+        "source_span": null
+      },
+      "message": "compiled program did not meet the benchmark pass condition",
+      "related": [],
+      "severity": "error"
+    }
+  ],
+  "schema_version": "p2.0"
+}
+
+Inspection view:
+let xs = @i64-alloc 3 in
+let _ = @i64-set xs 0 1 in
+let _ = @i64-set xs 1 2 in
+let _ = @i64-set xs 2 3 in
+let ys = @i64-alloc 3 in
+let offset = 10 in
+let _ =
+  @map
+    input xs
+    count 3
+    callback lambda x [captures offset]. @add x offset
+    output ys
+in
+  @fold
+    input ys
+    count 3
+    initial 0
+    callback lambda acc x. @add acc x
+
+Return a corrected solution as a single Tacit-Lite program in one fenced
+block: ```tacit ... ```. Do not include the sidecar. Do not include
+explanatory prose.

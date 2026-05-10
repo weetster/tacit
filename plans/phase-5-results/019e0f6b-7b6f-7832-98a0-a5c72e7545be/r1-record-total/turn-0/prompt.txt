@@ -1,0 +1,5 @@
+Fix the existing program so it returns the intended accumulator result. The program should compile cleanly and exit with status 9. Keep the current record-based structure; do not rewrite it into a different algorithm.
+
+Return the corrected solution as a single Tacit-Lite program in one fenced
+block: ```tacit ... ```. Do not include the sidecar. Do not include
+explanatory prose.

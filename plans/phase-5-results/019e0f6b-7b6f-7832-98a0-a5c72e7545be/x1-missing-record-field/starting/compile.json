@@ -1,0 +1,39 @@
+{
+  "diagnostics": {
+    "errors": [
+      {
+        "actual": {
+          "record": [
+            [
+              "left",
+              {
+                "sym": "Int"
+              }
+            ],
+            [
+              "right",
+              {
+                "sym": "Int"
+              }
+            ]
+          ]
+        },
+        "expected": null,
+        "fix": null,
+        "kind": "missing-field",
+        "location": {
+          "ast_path": [],
+          "source_span": null
+        },
+        "message": "record field 'total' does not exist on {left: Int, right: Int}",
+        "related": [],
+        "severity": "error"
+      }
+    ],
+    "schema_version": "p2.0"
+  },
+  "passed": false,
+  "run_exit": null,
+  "run_stderr": null,
+  "run_stdout": null
+}

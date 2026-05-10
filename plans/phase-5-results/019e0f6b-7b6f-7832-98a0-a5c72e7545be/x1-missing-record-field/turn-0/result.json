@@ -1,0 +1,53 @@
+{
+  "compile_pass": false,
+  "diagnostics": {
+    "errors": [
+      {
+        "actual": {
+          "missing_substrings": [
+            "left",
+            "right"
+          ]
+        },
+        "expected": {
+          "required_substrings": [
+            "total",
+            "left",
+            "right",
+            "field",
+            "record"
+          ]
+        },
+        "fix": null,
+        "kind": "explanation-mismatch",
+        "location": {
+          "ast_path": [],
+          "source_span": null
+        },
+        "message": "explanation omitted required benchmark concepts",
+        "related": [],
+        "severity": "error"
+      }
+    ],
+    "schema_version": "p2.0"
+  },
+  "explanation": "The program attempts to project a field from a record value, but the field name used in the projection does not exist on the record type that was inferred for that value. In Tacit-Lite, projection is exact: the typechecker requires that the inferred record type contain precisely the field being accessed, spelled exactly as written. If the record was constructed with fields named, say, `total` and `items`, then writing `.sum` or `.count` on that record will fail with an `unresolved-type` or `invalid-projection` diagnostic because neither of those names appears in the structural type the typechecker knows about. There is no width subtyping and no fallback: every projected field must be present in the record's inferred type at the point of projection.\n\nThe diagnostic identifies the projection site, reports the field name that was requested, and shows the record type that was actually inferred, which lacks that field. The fix is either to change the projection to use a field name that the record was actually constructed with, or to change the record construction to include a field with the name the projection expects. Until those two sides agree on the exact field name, the typechecker will reject the program.",
+  "explanation_pass": false,
+  "failure_stage": "explanation",
+  "generation_tokens": 242,
+  "inspection_text": "{\n  left: 40,\n  right: 2,\n}.total",
+  "missing_substrings": [
+    "left",
+    "right"
+  ],
+  "prompt": "Do not edit the file. Explain why the program fails, using the structured diagnostic output and, if helpful, the inspection view. The explanation must identify the failing projection and why the record does not support it.\n\nReturn only the explanation in plain prose. Do not include Tacit code, fenced\nblocks, or sidecar metadata.\n",
+  "raw_output": "The program attempts to project a field from a record value, but the field name used in the projection does not exist on the record type that was inferred for that value. In Tacit-Lite, projection is exact: the typechecker requires that the inferred record type contain precisely the field being accessed, spelled exactly as written. If the record was constructed with fields named, say, `total` and `items`, then writing `.sum` or `.count` on that record will fail with an `unresolved-type` or `invalid-projection` diagnostic because neither of those names appears in the structural type the typechecker knows about. There is no width subtyping and no fallback: every projected field must be present in the record's inferred type at the point of projection.\n\nThe diagnostic identifies the projection site, reports the field name that was requested, and shows the record type that was actually inferred, which lacks that field. The fix is either to change the projection to use a field name that the record was actually constructed with, or to change the record construction to include a field with the name the projection expects. Until those two sides agree on the exact field name, the typechecker will reject the program.",
+  "retries": 0,
+  "run_exit": null,
+  "run_pass": false,
+  "run_stderr": null,
+  "run_stdout": null,
+  "source": null,
+  "turn_index": 0,
+  "typecheck_pass": false
+}

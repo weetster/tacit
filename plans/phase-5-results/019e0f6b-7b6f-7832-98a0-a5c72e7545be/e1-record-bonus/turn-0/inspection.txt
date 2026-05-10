@@ -1,0 +1,7 @@
+let r =
+  {
+    value: 30,
+    bonus: 5,
+  }
+in
+  @add r.value r.bonus
