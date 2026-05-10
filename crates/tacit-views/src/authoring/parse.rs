@@ -380,7 +380,7 @@ impl Parser {
             }
             Some(Token::Unit) => {
                 let msg = "unexpected 'unit' keyword in expression position";
-                Ok(self.recover_expr("module-binding-error", msg))
+                Ok(self.recover_expr("invalid-unit-artifact", msg))
             }
             _ => self.parse_app_expr(),
         }

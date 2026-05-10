@@ -93,3 +93,18 @@ fn rejects_empty_logical_unit() {
         .to_string()
         .contains("unit requires at least one definition"));
 }
+
+#[test]
+fn unit_keyword_in_expression_position_uses_unit_diagnostic() {
+    let src = b"lambda x. unit Math { export public id : Int -> Int = lambda y. y }";
+    let (node, _sidecar) = parse_authoring(src).expect("parser should recover with a hole");
+    let canonical = String::from_utf8(emit(&node)).unwrap();
+    assert!(
+        canonical.contains("(hole invalid-unit-artifact"),
+        "expected unit-specific hole diagnostic, got: {canonical}"
+    );
+    assert!(
+        !canonical.contains("module-binding-error"),
+        "unit expression recovery should not use the module diagnostic: {canonical}"
+    );
+}

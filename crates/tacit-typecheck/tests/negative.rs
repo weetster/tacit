@@ -177,6 +177,13 @@ fn neg_module_missing_annotation() {
             .map(|d| (&d.kind, &d.severity))
             .collect::<Vec<_>>()
     );
+    assert!(
+        diags
+            .iter()
+            .any(|d| d.message == "module binding 0 has no type+effect signature"),
+        "module diagnostic should describe a binding, not an export: {:?}",
+        diags.iter().map(|d| &d.message).collect::<Vec<_>>()
+    );
 }
 
 // ── hole-diagnostic ───────────────────────────────────────────────────────────

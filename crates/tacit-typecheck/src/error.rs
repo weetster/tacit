@@ -166,7 +166,7 @@ impl Diagnostic {
             "warning",
             path,
             format!(
-                "exported binding {} has no type+effect signature",
+                "module binding {} has no type+effect signature",
                 binding_idx
             ),
         )
