@@ -1473,6 +1473,12 @@ fn replace_unit_ref_placeholders(
                 .collect::<Result<Vec<_>, _>>()?,
             body: Box::new(replace_unit_ref_placeholders(body, dep_hashes)?),
         }),
+        Node::Module { bindings } => Ok(Node::Module {
+            bindings: bindings
+                .iter()
+                .map(|binding| replace_unit_ref_placeholders(binding, dep_hashes))
+                .collect::<Result<Vec<_>, _>>()?,
+        }),
         Node::If { cond, then, else_ } => Ok(Node::If {
             cond: Box::new(replace_unit_ref_placeholders(cond, dep_hashes)?),
             then: Box::new(replace_unit_ref_placeholders(then, dep_hashes)?),
@@ -1539,6 +1545,11 @@ fn for_each_unit_ref_child(node: &Node, mut f: impl FnMut(&Node)) {
                 f(binding);
             }
             f(body);
+        }
+        Node::Module { bindings } => {
+            for binding in bindings {
+                f(binding);
+            }
         }
         Node::If { cond, then, else_ } => {
             f(cond);

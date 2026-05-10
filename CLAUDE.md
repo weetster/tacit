@@ -89,6 +89,29 @@ Per [ADR 0075](decisions/0075-phase-4-frozen.md):
 
 - Variable references use **DeBruijn indices** in canonical text; no variable IDs. Names are display metadata only.
 - Mutual recursion uses explicit `rec { ... }` groupings that hash as a single atom.
+- **`module` and `unit` are distinct current concepts, not old/new names for
+  the same thing.** Do not frame either construct as replacing the other.
+  - A canonical `module` node is `(module binding0 binding1 ...)` /
+    `Node::Module { bindings }`: a simultaneous top-level binding group with
+    one or more bindings, no body, no import table, no export table, no
+    visibility metadata, and DeBruijn indexing shared with `rec` binding
+    groups. In authoring view this is `module { name = expr; ... }`. It is the
+    canonical construct for a self-contained binding group.
+  - A canonical `unit` node is
+    `(unit (imports ...) (exports ...) (defs ...))` /
+    `Node::Unit { imports, exports, defs }`: the Phase 6 logical artifact for
+    module composition. It contains hash-addressed imports, hash-addressed
+    exports with `public` or `package` visibility, and local `def` artifacts
+    with explicit `sig` boundaries. In authoring view this is
+    `unit Alias { import ...; private ...; export public/package ... }`.
+  - Private unit definitions are not `module` bindings. They are `def` entries
+    inside the unit's `defs` list and are omitted from the unit's `exports`
+    list. A `module` binding group must not be used as a substitute for a unit
+    definition list.
+  - Use `module` when discussing the simultaneous binding-group node and its
+    DeBruijn behavior. Use `unit` when discussing Phase 6 imports, exports,
+    visibility, definition hashes, package graph checking, or cross-unit
+    references. See [ADR 0080](decisions/0080-phase-6-module-semantics.md).
 - Parser errors produce **typed `Hole` nodes** with structured diagnostics, not failed parses. Hole-node recovery landed in Phase 2 ([ADR 0040](decisions/0040-p2-hole-recovery.md)); the Phase 1 deferral note is [ADR 0023](decisions/0023-hole-node-recovery-deferred.md).
 - **BLAKE3** is the hash.
 - Display names, comments, and file layout are all sidecar / advisory. The AST is the source of truth.

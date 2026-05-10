@@ -202,3 +202,46 @@ fn module_binding_group_is_not_a_unit_artifact() {
     let diags = check_unit(&node, &BTreeMap::new()).expect_err("not a unit artifact");
     assert!(diags.iter().any(|d| d.kind == "invalid-unit-artifact"));
 }
+
+#[test]
+fn empty_unit_is_not_a_unit_artifact() {
+    let node = Node::Unit {
+        imports: vec![],
+        exports: vec![],
+        defs: vec![],
+    };
+
+    let diags = check_unit(&node, &BTreeMap::new()).expect_err("empty unit artifact");
+    assert!(diags.iter().any(|d| d.kind == "invalid-unit-artifact"));
+}
+
+#[test]
+fn unit_artifact_rejects_module_binding_in_defs() {
+    let node = Node::Unit {
+        imports: vec![],
+        exports: vec![],
+        defs: vec![Node::Module {
+            bindings: vec![Node::Int { value: "1".into() }],
+        }],
+    };
+
+    let diags = check_unit(&node, &BTreeMap::new()).expect_err("malformed unit artifact");
+    assert!(diags.iter().any(|d| d.kind == "invalid-unit-artifact"));
+}
+
+#[test]
+fn unit_artifact_rejects_private_export_entry() {
+    let def = identity_def();
+    let def_hash = hash(&def);
+    let node = Node::Unit {
+        imports: vec![],
+        exports: vec![Node::Export {
+            visibility: "private".into(),
+            hash: def_hash,
+        }],
+        defs: vec![def],
+    };
+
+    let diags = check_unit(&node, &BTreeMap::new()).expect_err("malformed export visibility");
+    assert!(diags.iter().any(|d| d.kind == "invalid-unit-artifact"));
+}

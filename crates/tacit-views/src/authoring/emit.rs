@@ -548,6 +548,7 @@ fn needs_parens_as_fn(node: &Node) -> bool {
         Node::Lam { .. }
             | Node::Let { .. }
             | Node::Rec { .. }
+            | Node::Module { .. }
             | Node::Unit { .. }
             | Node::If { .. }
             | Node::Match { .. }
@@ -561,6 +562,7 @@ fn needs_parens_as_arg(node: &Node) -> bool {
         | Node::Lam { .. }
         | Node::Let { .. }
         | Node::Rec { .. }
+        | Node::Module { .. }
         | Node::Unit { .. }
         | Node::If { .. }
         | Node::Match { .. }

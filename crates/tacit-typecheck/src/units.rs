@@ -274,11 +274,32 @@ fn unit_artifact_parts(node: &Node) -> Option<UnitArtifactParts<'_>> {
             imports,
             exports,
             defs,
-        } => Some(UnitArtifactParts {
-            imports,
-            exports,
-            defs,
-        }),
+        } => {
+            let valid_imports = imports
+                .iter()
+                .all(|entry| matches!(entry, Node::Import { .. }));
+            let valid_exports = exports.iter().all(|entry| {
+                matches!(
+                    entry,
+                    Node::Export {
+                        visibility,
+                        ..
+                    } if visibility == "public" || visibility == "package"
+                )
+            });
+            let valid_defs =
+                !defs.is_empty() && defs.iter().all(|entry| matches!(entry, Node::Def { .. }));
+
+            if valid_imports && valid_exports && valid_defs {
+                Some(UnitArtifactParts {
+                    imports,
+                    exports,
+                    defs,
+                })
+            } else {
+                None
+            }
+        }
         _ => None,
     }
 }

@@ -32,6 +32,9 @@ fn collect_tac_files(dir: &PathBuf, out: &mut Vec<PathBuf>) {
     };
     for entry in entries.flatten() {
         let path = entry.path();
+        if path.ends_with("corpus/sealed") {
+            continue;
+        }
         if path.is_dir() {
             collect_tac_files(&path, out);
         } else if path.extension().and_then(|s| s.to_str()) == Some("tac") {
