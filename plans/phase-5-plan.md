@@ -164,7 +164,8 @@ Exit criteria:
 
 ### Stage 3: Metric ADR
 
-**Status:** Pending
+**Status:** Complete 2026-05-09. Deliverable:
+[decisions/0077-phase-5-metrics.md](../decisions/0077-phase-5-metrics.md)
 
 Work items:
 
