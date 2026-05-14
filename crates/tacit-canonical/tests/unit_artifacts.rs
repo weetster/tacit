@@ -38,7 +38,7 @@ fn imports_exports_and_defs_emit_sorted_by_hash() {
         sig: Box::new(sig()),
         body: Box::new(Node::Int { value: "2".into() }),
     };
-    let mut expected_defs = vec![
+    let mut expected_defs = [
         (hash_node(&def_a), String::from_utf8(emit(&def_a)).unwrap()),
         (hash_node(&def_b), String::from_utf8(emit(&def_b)).unwrap()),
     ];

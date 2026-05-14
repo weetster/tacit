@@ -257,10 +257,11 @@ Exit criteria:
 
 ## Stage 2: Whole-Project Graph
 
-**Status:** In progress 2026-05-14. Design ADR accepted by
-[ADR 0081](../decisions/0081-phase-6-project-graph.md); first
-implementation slice is project loading, deterministic hash indexing, and
-project-level `check`.
+**Status:** Complete 2026-05-14. Design ADR accepted by
+[ADR 0081](../decisions/0081-phase-6-project-graph.md); implementation
+verified for deterministic project loading, local hash indexing, derived
+layout materialization, project-level `check`, project inspection, and
+project-level `compile` for standalone executable entries.
 
 **Purpose:** Make multi-file projects real while preserving the rule that file
 layout has no semantic weight.
@@ -287,6 +288,29 @@ Exit criteria:
 - The same semantic graph hashes identically regardless of file ordering.
 - Diagnostics identify the logical module/import problem without treating file
   layout as semantic.
+
+Outcome:
+
+- Project roots load canonical `unit` artifacts from `src/` when present, or
+  from the root otherwise; `.taca`, `.tacd`, `.git`, `.tacit`, and `target`
+  are not semantic project inputs.
+- The loader builds a deterministic hash-ordered project graph, coalesces
+  duplicate unit and definition artifacts by hash, preserves fresh sidecar
+  aliases, and ignores missing or stale sidecars.
+- Project-level `check` resolves same-package imports through the local hash
+  index and reports missing imports, visibility failures, and malformed unit
+  artifacts without using file path order as meaning.
+- Project-level `view --as inspection` renders a graph summary plus per-unit
+  inspection views.
+- Project-level `compile` selects a public export by `blake3:<hash>`, raw
+  hash, sidecar alias, or the sole public export; it lowers the selected
+  standalone `Int`/`Bool` entry by expanding local hash refs and writes
+  deterministic derived artifacts under `.tacit/derived/project-<hash>/`.
+- Tests cover deterministic file-order independence, missing and stale
+  sidecars, duplicate entry aliases, unresolved imports, private visibility
+  violations, dependency-cycle rejection during entry lowering, derived layout
+  materialization, project inspection, and LLVM IR generation for a multi-unit
+  project entry.
 
 ## Stage 3: Package Manifest, Lockfile, And Cache Design
 

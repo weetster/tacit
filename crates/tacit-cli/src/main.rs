@@ -5,7 +5,8 @@ use std::process::Command;
 use clap::{Parser, Subcommand, ValueEnum};
 
 use tacit_typecheck::{
-    check_project, check_unit_with_sidecar, infer_module, load_project, DefinitionEnv, DiagOutput,
+    check_project, check_unit_with_sidecar, emit_project_inspection, infer_module, load_project,
+    materialize_project_derived, project_entry_expression, DefinitionEnv, DiagOutput,
 };
 use tacit_views::authoring::{emit_authoring, parse_authoring};
 use tacit_views::sidecar::{Sidecar, SidecarNode};
@@ -22,12 +23,16 @@ struct Cli {
 enum Cmd {
     /// Compile a .tac source file to a native executable.
     Compile {
-        /// Input .tac file (authoring view).
+        /// Input .tac/.taca file or project root directory.
         input: PathBuf,
 
         /// Write executable to FILE.
         #[arg(short, long = "output", value_name = "FILE")]
         output: Option<PathBuf>,
+
+        /// Project entry public export, as blake3:<hash>, raw hash, or sidecar alias.
+        #[arg(long, value_name = "HASH_OR_ALIAS")]
+        entry: Option<String>,
 
         /// Dump the constructed LLVM IR to stdout (the executable is still
         /// produced if -o is also given).
@@ -152,8 +157,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         Cmd::Compile {
             input,
             output,
+            entry,
             emit_llvm_ir,
-        } => cmd_compile(input, output, emit_llvm_ir),
+        } => cmd_compile(input, output, entry, emit_llvm_ir),
         Cmd::Check { input, format } => cmd_check(input, format),
         Cmd::Canonicalize {
             input,
@@ -437,6 +443,25 @@ fn cmd_view(
     types: bool,
     effects: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    if input.is_dir() {
+        let graph = load_project(&input)?;
+        return match view_format {
+            ViewFormat::Inspection => {
+                let flags = InspectFlags {
+                    debruijn,
+                    hashes,
+                    types,
+                    effects,
+                };
+                print!("{}", emit_project_inspection(&graph, &flags));
+                Ok(())
+            }
+            ViewFormat::Authoring => {
+                Err("project authoring view is not supported; use --as inspection".into())
+            }
+        };
+    }
+
     let (node, sidecar) = load_canonical(&input)?;
 
     match view_format {
@@ -463,8 +488,17 @@ fn cmd_view(
 fn cmd_compile(
     input: PathBuf,
     output: Option<PathBuf>,
+    entry: Option<String>,
     emit_llvm_ir: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    if input.is_dir() {
+        return cmd_compile_project(input, output, entry, emit_llvm_ir);
+    }
+
+    if entry.is_some() {
+        return Err("--entry is only valid when compiling a project directory".into());
+    }
+
     if output.is_none() && !emit_llvm_ir {
         return Err("must specify -o <output> or --emit-llvm-ir (or both)".into());
     }
@@ -495,12 +529,64 @@ fn cmd_compile(
     }
 }
 
+fn cmd_compile_project(
+    input: PathBuf,
+    output: Option<PathBuf>,
+    entry: Option<String>,
+    emit_llvm_ir: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let graph = load_project(&input)?;
+    if let Err(diags) = check_project(&graph) {
+        let out = DiagOutput::new(diags);
+        eprintln!("{}", out.to_json_string());
+        std::process::exit(1);
+    }
+
+    let derived_root = materialize_project_derived(&graph)?;
+    let entry = project_entry_expression(&graph, entry.as_deref())?;
+    let module_name = format!("project_{}", &graph.graph_hash[..12]);
+    let output = output.or_else(|| {
+        (!emit_llvm_ir).then(|| {
+            derived_root
+                .join("bin")
+                .join(format!("entry-{}", &entry.hash[..12]))
+        })
+    });
+
+    #[cfg(feature = "llvm")]
+    {
+        compile_with_llvm_node_in_dir(
+            &entry.expression,
+            &module_name,
+            output,
+            emit_llvm_ir,
+            Some(&derived_root.join("build")),
+        )
+    }
+    #[cfg(not(feature = "llvm"))]
+    {
+        let _ = (entry, module_name, output, emit_llvm_ir, derived_root);
+        Err("tacit was not built with LLVM support (rebuild with --features llvm19-1)".into())
+    }
+}
+
 #[cfg(feature = "llvm")]
 fn compile_with_llvm_node(
     node: &tacit_canonical::ast::Node,
     module_name: &str,
     output: Option<PathBuf>,
     emit_llvm_ir: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    compile_with_llvm_node_in_dir(node, module_name, output, emit_llvm_ir, None)
+}
+
+#[cfg(feature = "llvm")]
+fn compile_with_llvm_node_in_dir(
+    node: &tacit_canonical::ast::Node,
+    module_name: &str,
+    output: Option<PathBuf>,
+    emit_llvm_ir: bool,
+    object_dir: Option<&Path>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     use tacit_codegen::{compile_to_ir_string, compile_to_object};
 
@@ -510,8 +596,15 @@ fn compile_with_llvm_node(
     }
 
     if let Some(out) = output {
-        let tmp = tempfile::tempdir()?;
-        let obj_path = tmp.path().join(format!("{}.o", module_name));
+        let _tmp;
+        let obj_path = if let Some(object_dir) = object_dir {
+            std::fs::create_dir_all(object_dir)
+                .map_err(|e| format!("{}: {}", object_dir.display(), e))?;
+            object_dir.join(format!("{}.o", module_name))
+        } else {
+            _tmp = tempfile::tempdir()?;
+            _tmp.path().join(format!("{}.o", module_name))
+        };
         compile_to_object(node, module_name, &obj_path)?;
 
         let linker = pick_linker()

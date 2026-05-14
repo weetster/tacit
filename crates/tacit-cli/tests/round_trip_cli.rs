@@ -1,7 +1,9 @@
+use std::collections::BTreeMap;
 use std::process::Command;
 
 use tacit_canonical::ast::Node;
 use tacit_canonical::{emit, hash_node};
+use tacit_views::sidecar::{Sidecar, SidecarNode};
 
 fn tacit_bin() -> std::path::PathBuf {
     std::path::PathBuf::from(env!("CARGO_BIN_EXE_tacit"))
@@ -203,8 +205,101 @@ fn check_accepts_project_directory() {
     assert!(stdout.contains(r#""errors": []"#), "{stdout}");
 }
 
+#[test]
+fn view_accepts_project_directory_as_inspection() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let d = dir.path();
+    let (_entry_hash, _provider_unit, main_unit) = write_cli_project(d);
+
+    let out = tacit(&["view", "--as", "inspection", "."], d);
+    assert!(
+        out.status.success(),
+        "project view failed\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("project blake3:"), "{stdout}");
+    assert!(stdout.contains("unit views"), "{stdout}");
+    assert!(stdout.contains(&cli_hash(&main_unit)), "{stdout}");
+}
+
+#[cfg(feature = "llvm")]
+#[test]
+fn compile_project_directory_to_ir_by_alias() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let d = dir.path();
+    let (_entry_hash, _provider_unit, _main_unit) = write_cli_project(d);
+
+    let out = tacit(&["compile", ".", "--entry", "main", "--emit-llvm-ir"], d);
+    assert!(
+        out.status.success(),
+        "project compile failed\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("define i32 @main()"), "{stdout}");
+    assert!(stdout.contains("ret i32 42"), "{stdout}");
+    assert!(d.join(".tacit/derived").exists());
+}
+
+fn write_cli_project(d: &std::path::Path) -> (String, Node, Node) {
+    std::fs::create_dir_all(d.join("src")).unwrap();
+
+    let provider = cli_const_int_def("40");
+    let provider_hash = cli_hash(&provider);
+    let provider_unit = Node::Unit {
+        imports: vec![],
+        exports: vec![Node::Export {
+            visibility: "package".into(),
+            hash: provider_hash.clone(),
+        }],
+        defs: vec![provider],
+    };
+
+    let main = cli_add_import_const_def(&provider_hash, "2");
+    let main_hash = cli_hash(&main);
+    let main_unit = Node::Unit {
+        imports: vec![Node::Import {
+            hash: provider_hash,
+            sig: Box::new(cli_int_sig()),
+        }],
+        exports: vec![Node::Export {
+            visibility: "public".into(),
+            hash: main_hash.clone(),
+        }],
+        defs: vec![main],
+    };
+
+    std::fs::write(d.join("src/provider.tac"), emit(&provider_unit)).unwrap();
+    let main_bytes = emit(&main_unit);
+    std::fs::write(d.join("src/main.tac"), &main_bytes).unwrap();
+
+    let mut export_aliases = BTreeMap::new();
+    export_aliases.insert(main_hash.clone(), "main".to_string());
+    Sidecar::new(
+        &main_bytes,
+        SidecarNode {
+            export_aliases: Some(export_aliases),
+            ..Default::default()
+        },
+    )
+    .write(&d.join("src/main.tacd"))
+    .unwrap();
+
+    (main_hash, provider_unit, main_unit)
+}
+
 fn cli_sym(name: &str) -> Node {
     Node::Sym { name: name.into() }
+}
+
+fn cli_int_sig() -> Node {
+    Node::Sig {
+        type_: Box::new(cli_sym("Int")),
+        eval_eff: Box::new(Node::EffSet { atoms: vec![] }),
+    }
 }
 
 fn cli_int_to_int_sig() -> Node {
@@ -227,6 +322,15 @@ fn cli_identity_def() -> Node {
     }
 }
 
+fn cli_const_int_def(value: &str) -> Node {
+    Node::Def {
+        sig: Box::new(cli_int_sig()),
+        body: Box::new(Node::Int {
+            value: value.into(),
+        }),
+    }
+}
+
 fn cli_apply_import_def(import_hash: &str) -> Node {
     Node::Def {
         sig: Box::new(cli_int_to_int_sig()),
@@ -236,6 +340,23 @@ fn cli_apply_import_def(import_hash: &str) -> Node {
                     hash: import_hash.into(),
                 }),
                 arg: Box::new(Node::Var { index: 0 }),
+            }),
+        }),
+    }
+}
+
+fn cli_add_import_const_def(import_hash: &str, value: &str) -> Node {
+    Node::Def {
+        sig: Box::new(cli_int_sig()),
+        body: Box::new(Node::App {
+            fn_: Box::new(Node::App {
+                fn_: Box::new(cli_sym("add")),
+                arg: Box::new(Node::Ref {
+                    hash: import_hash.into(),
+                }),
+            }),
+            arg: Box::new(Node::Int {
+                value: value.into(),
             }),
         }),
     }

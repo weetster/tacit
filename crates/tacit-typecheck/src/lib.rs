@@ -21,7 +21,9 @@ pub mod units;
 pub use error::{DiagOutput, Diagnostic};
 pub use infer::infer;
 pub use project::{
-    check_project, discover_project_root, load_project, ProjectGraph, ProjectLoadError,
+    check_project, discover_project_root, emit_project_inspection, load_project,
+    materialize_project_derived, project_entry_expression, ProjectDefinition, ProjectDerivedError,
+    ProjectEntry, ProjectEntryError, ProjectGraph, ProjectLoadError, ProjectUnit,
 };
 pub use sidecar::check_against_tacd;
 pub use ty::{EffSet, Ty};
