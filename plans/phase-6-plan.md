@@ -128,8 +128,8 @@ remain host-owned capabilities during Phase 6.
 | Q-P6-2 | What is public, package-local, or private at module boundaries? | Resolved by [ADR 0080](../decisions/0080-phase-6-module-semantics.md) |
 | Q-P6-3 | How do imported hashes participate in type/effect checking and diagnostics? | Resolved by [ADR 0080](../decisions/0080-phase-6-module-semantics.md) |
 | Q-P6-4 | What project layout is deterministic while keeping file layout non-semantic? | Resolved by [ADR 0081](../decisions/0081-phase-6-project-graph.md) |
-| Q-P6-5 | What manifest and lockfile formats represent hash-based dependencies? | Stage 3 ADR |
-| Q-P6-6 | What local object-store layout and cache invalidation rules are required? | Stage 3 ADR |
+| Q-P6-5 | What manifest and lockfile formats represent hash-based dependencies? | Resolved by [ADR 0082](../decisions/0082-phase-6-package-manifest-lockfile-cache.md) |
+| Q-P6-6 | What local object-store layout and cache invalidation rules are required? | Resolved by [ADR 0082](../decisions/0082-phase-6-package-manifest-lockfile-cache.md) |
 | Q-P6-7 | What is the minimum unit-test surface and structured result schema? | Stage 5 ADR |
 | Q-P6-8 | Are fixed-width integer operations primitives, source-library functions, or both? | Stage 6 ADR |
 | Q-P6-9 | What typed mutable-memory surface replaces or subsumes `Buf` and `I64Vec`? | Stage 7 ADR |
@@ -151,6 +151,8 @@ ADRs must land before implementation that depends on them.
 3. Multi-file project graph and deterministic derived layout. Done:
    [ADR 0081](../decisions/0081-phase-6-project-graph.md).
 4. Package manifest, lockfile, dependency cache, and object-store layout.
+   Done:
+   [ADR 0082](../decisions/0082-phase-6-package-manifest-lockfile-cache.md).
 5. Package-level test surface and structured test-result schema.
 6. Fixed-width integer and bit-operation surface.
 7. Typed mutable memory and bounds behavior.
@@ -314,7 +316,8 @@ Outcome:
 
 ## Stage 3: Package Manifest, Lockfile, And Cache Design
 
-**Status:** Planned
+**Status:** Complete 2026-05-13. Design ADR accepted by
+[ADR 0082](../decisions/0082-phase-6-package-manifest-lockfile-cache.md).
 
 **Purpose:** Specify hash-based package composition before implementation
 commits to file formats or cache layout.
@@ -339,6 +342,31 @@ Exit criteria:
 - Cache/object-store invariants are accepted.
 - Registry operation is explicitly out of scope.
 - Historical dependency hashes are buildable without relying on mutable names.
+
+Outcome:
+
+- Package identity is content-addressed by the same byte sequence as the
+  project-graph hash (ADR 0081), recomputed under the `tacit-package-v1`
+  envelope tag. Manifest display fields and declared dependency aliases do
+  not change package identity.
+- The manifest is `tacit.toml`. Schema accepts optional `[package]`,
+  `[dependencies]`, `[exports]`, and `[bin]` tables. Dependencies pin
+  `hash = "blake3:<hex>"` or `path = "<relative>"`; combined or missing
+  sources are rejected with structured diagnostics. Registry hints are
+  passive metadata.
+- The lockfile is `tacit.lock`, a deterministic JSON file pinning the direct
+  and transitive dependency closure. Keys are fixed-order, entries are
+  sorted, and serialization round-trips byte-exactly.
+- The dependency cache lives at `.tacit/cache/` with a hash-rooted layout
+  (`objects/units`, `objects/defs`, `objects/sidecars`, `packages/<hash>/`).
+  Reads recompute BLAKE3 and reject corruption; writes are atomic; eviction
+  is explicit. Stage 10 reserves `packages/<hash>/interface.json`.
+- Lockfile drift, manifest schema errors, dependency-resolution failures,
+  cache corruption, and circular package dependencies have reserved
+  structured diagnostic kinds for Stage 4 implementation.
+- Project-graph compatibility is preserved: a manifestless project is a
+  valid manifestless package whose hash equals its project-graph hash under
+  the new envelope tag.
 
 ## Stage 4: Package And Dependency Implementation
 
