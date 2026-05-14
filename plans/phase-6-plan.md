@@ -199,7 +199,8 @@ Exit criteria:
 
 ## Stage 1: Module Semantics
 
-**Status:** Design ADR accepted 2026-05-10; implementation pending
+**Status:** Complete 2026-05-13. Design ADR accepted 2026-05-10;
+implementation verified in canonical, view, and typechecker tests.
 
 **Purpose:** Specify Tacit-to-Tacit module composition before project, package,
 stdlib, or host-interface work depends on it.
@@ -219,6 +220,29 @@ Work items:
   mismatches, visibility violations, and cyclic dependency errors.
 - Specify inspection-view rendering for imports, exports, and imported hashes.
 - Add canonical, authoring, sidecar, and diagnostic test-vector expectations.
+
+Outcome:
+
+- Module semantics are accepted by
+  [ADR 0080](../decisions/0080-phase-6-module-semantics.md).
+- Canonical `unit`, `imports`, `imp`, `exports`, `exp`, `defs`, `def`,
+  `sig`, and `ref` artifacts parse and emit deterministically.
+- Authoring view supports `unit`, `import ... from blake3:<hash>`,
+  `export public`, `export package`, and `private` declarations.
+- Sidecar metadata carries unit, import, definition, and export display
+  aliases; stale duplicate aliases fall back to synthetic hash-based names.
+- Inspection view renders import/export/private boundaries and hash references.
+- The checker resolves imported definitions by exact hash, verifies declared
+  signatures, checks visibility, rejects dangling and duplicate boundary
+  entries, and detects hash-reference dependency cycles. Unit diagnostics use
+  unambiguous sidecar aliases alongside hashes when alias metadata is available.
+- A single in-memory package can contain multiple logical units through
+  `check_units_in_memory`.
+- Direct tests cover canonical ordering, authoring syntax, inspection output,
+  sidecar alias fallback, imported-hash checking, and all Stage 1 reserved
+  diagnostic kinds.
+- Whole-project loading, file discovery, project-level check/compile, and
+  deterministic multi-file graph traversal remain Stage 2.
 
 Exit criteria:
 

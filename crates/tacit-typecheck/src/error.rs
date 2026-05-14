@@ -173,31 +173,36 @@ impl Diagnostic {
     }
 
     pub fn missing_import(path: &[usize], hash: &str, alias: Option<&str>) -> Self {
-        let display = alias
-            .map(|a| format!("{} ({})", a, blake3_display(hash)))
-            .unwrap_or_else(|| blake3_display(hash));
         let mut d = Self::new(
             "missing-import",
             "error",
             path,
-            format!("imported definition {} cannot be resolved", display),
+            format!(
+                "imported definition {} cannot be resolved",
+                hash_display(hash, alias)
+            ),
         );
-        d.expected = Some(serde_json::json!({"hash": hash}));
+        d.expected = Some(hash_json(hash, alias));
         d
     }
 
-    pub fn hash_mismatch(path: &[usize], expected: &str, actual: &str) -> Self {
+    pub fn hash_mismatch(
+        path: &[usize],
+        expected: &str,
+        actual: &str,
+        alias: Option<&str>,
+    ) -> Self {
         let mut d = Self::new(
             "hash-mismatch",
             "error",
             path,
             format!(
                 "artifact hash mismatch: expected {}, got {}",
-                blake3_display(expected),
+                hash_display(expected, alias),
                 blake3_display(actual)
             ),
         );
-        d.expected = Some(serde_json::json!({"hash": expected}));
+        d.expected = Some(hash_json(expected, alias));
         d.actual = Some(serde_json::json!({"hash": actual}));
         d
     }
@@ -217,21 +222,33 @@ impl Diagnostic {
         d
     }
 
-    pub fn visibility_violation(path: &[usize], hash: &str, visibility: &str) -> Self {
+    pub fn visibility_violation(
+        path: &[usize],
+        hash: &str,
+        visibility: &str,
+        alias: Option<&str>,
+    ) -> Self {
         let mut d = Self::new(
             "visibility-violation",
             "error",
             path,
             format!(
                 "definition {} is not importable with {} visibility",
-                blake3_display(hash),
+                hash_display(hash, alias),
                 visibility
             ),
         );
-        d.actual = Some(serde_json::json!({
-            "hash": hash,
-            "visibility": visibility,
-        }));
+        d.actual = Some(match alias {
+            Some(alias) => serde_json::json!({
+                "hash": hash,
+                "alias": alias,
+                "visibility": visibility,
+            }),
+            None => serde_json::json!({
+                "hash": hash,
+                "visibility": visibility,
+            }),
+        });
         d
     }
 
@@ -246,32 +263,32 @@ impl Diagnostic {
         d
     }
 
-    pub fn duplicate_import(path: &[usize], hash: &str) -> Self {
+    pub fn duplicate_import(path: &[usize], hash: &str, alias: Option<&str>) -> Self {
         Self::new(
             "duplicate-import",
             "error",
             path,
-            format!("unit imports {} more than once", blake3_display(hash)),
+            format!("unit imports {} more than once", hash_display(hash, alias)),
         )
     }
 
-    pub fn duplicate_export(path: &[usize], hash: &str) -> Self {
+    pub fn duplicate_export(path: &[usize], hash: &str, alias: Option<&str>) -> Self {
         Self::new(
             "duplicate-export",
             "error",
             path,
-            format!("unit exports {} more than once", blake3_display(hash)),
+            format!("unit exports {} more than once", hash_display(hash, alias)),
         )
     }
 
-    pub fn dangling_export(path: &[usize], hash: &str) -> Self {
+    pub fn dangling_export(path: &[usize], hash: &str, alias: Option<&str>) -> Self {
         Self::new(
             "dangling-export",
             "error",
             path,
             format!(
                 "unit exports {} but no local def has that hash",
-                blake3_display(hash)
+                hash_display(hash, alias)
             ),
         )
     }
@@ -452,6 +469,19 @@ impl Diagnostic {
 
 fn blake3_display(hash: &str) -> String {
     format!("blake3:{}", hash)
+}
+
+fn hash_display(hash: &str, alias: Option<&str>) -> String {
+    alias
+        .map(|alias| format!("{} ({})", alias, blake3_display(hash)))
+        .unwrap_or_else(|| blake3_display(hash))
+}
+
+fn hash_json(hash: &str, alias: Option<&str>) -> Value {
+    match alias {
+        Some(alias) => serde_json::json!({"hash": hash, "alias": alias}),
+        None => serde_json::json!({"hash": hash}),
+    }
 }
 
 /// Reserved type names that Phase 3+ will implement (ADR 0042).

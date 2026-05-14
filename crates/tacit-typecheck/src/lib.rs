@@ -22,8 +22,8 @@ pub use infer::infer;
 pub use sidecar::check_against_tacd;
 pub use ty::{EffSet, Ty};
 pub use units::{
-    check_unit, check_units_in_memory, CheckedUnit, DefinitionEnv, DefinitionVisibility,
-    ProvidedDefinition,
+    check_unit, check_unit_with_sidecar, check_units_in_memory, CheckedUnit, DefinitionEnv,
+    DefinitionVisibility, ProvidedDefinition,
 };
 
 use tacit_canonical::ast::Node;

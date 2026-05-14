@@ -4,7 +4,7 @@ use std::process::Command;
 
 use clap::{Parser, Subcommand, ValueEnum};
 
-use tacit_typecheck::{infer_module, DiagOutput};
+use tacit_typecheck::{check_unit_with_sidecar, infer_module, DefinitionEnv, DiagOutput};
 use tacit_views::authoring::{emit_authoring, parse_authoring};
 use tacit_views::sidecar::{Sidecar, SidecarNode};
 use tacit_views::{emit_inspection, InspectFlags};
@@ -332,9 +332,15 @@ fn cmd_render(
 // ---------------------------------------------------------------------------
 
 fn cmd_check(input: PathBuf, format: CheckFormat) -> Result<(), Box<dyn std::error::Error>> {
-    let (node, _sidecar) = load_canonical(&input)?;
+    let (node, sidecar) = load_canonical(&input)?;
 
-    match infer_module(&node) {
+    let result = if matches!(node, tacit_canonical::ast::Node::Unit { .. }) {
+        check_unit_with_sidecar(&node, &DefinitionEnv::new(), sidecar.as_ref()).map(|_| ())
+    } else {
+        infer_module(&node).map(|_| ())
+    };
+
+    match result {
         Ok(_) => {
             if let CheckFormat::Json = format {
                 println!("{}", DiagOutput::new(vec![]).to_json_string());

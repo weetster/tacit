@@ -3,6 +3,8 @@
 //! Uses sidecar binder names when present; falls back to synthetic names per
 //! sidecar-format.md § 5.  Projection rules: authoring-bpe-compact.md § "Direction 2".
 
+use std::collections::BTreeMap;
+
 use tacit_canonical::ast::Node;
 
 use crate::sidecar::SidecarNode;
@@ -27,9 +29,9 @@ struct EmitCtx {
     stack: Vec<String>,
     /// Count of lam/let binders currently in scope (for v{n} synthetic names).
     lam_let_depth: usize,
-    definition_aliases: Option<std::collections::BTreeMap<String, String>>,
-    import_aliases: Option<std::collections::BTreeMap<String, String>>,
-    export_aliases: Option<std::collections::BTreeMap<String, String>>,
+    definition_aliases: Option<BTreeMap<String, String>>,
+    import_aliases: Option<BTreeMap<String, String>>,
+    export_aliases: Option<BTreeMap<String, String>>,
 }
 
 impl EmitCtx {
@@ -198,10 +200,8 @@ impl EmitCtx {
                     out.push_str("; ");
                 }
                 first = false;
-                let alias = sc
-                    .and_then(|s| s.import_aliases.as_ref())
-                    .and_then(|m| m.get(hash))
-                    .cloned()
+                let alias = self
+                    .import_alias(hash)
                     .unwrap_or_else(|| synthetic_hash_name("import", hash));
                 out.push_str("import ");
                 out.push_str(&alias);
@@ -228,14 +228,9 @@ impl EmitCtx {
                 } else {
                     out.push_str("private ");
                 }
-                let alias = sc
-                    .and_then(|s| s.definition_aliases.as_ref())
-                    .and_then(|m| m.get(hash.as_str()))
-                    .or_else(|| {
-                        sc.and_then(|s| s.export_aliases.as_ref())
-                            .and_then(|m| m.get(hash.as_str()))
-                    })
-                    .cloned()
+                let alias = self
+                    .definition_alias(hash.as_str())
+                    .or_else(|| self.export_alias(hash.as_str()))
                     .unwrap_or_else(|| synthetic_hash_name("def", &hash));
                 out.push_str(&alias);
                 out.push_str(" : ");
@@ -484,12 +479,45 @@ impl EmitCtx {
     }
 
     fn ref_alias(&self, hash: &str) -> Option<String> {
-        self.import_aliases
-            .as_ref()
-            .and_then(|m| m.get(hash))
-            .or_else(|| self.definition_aliases.as_ref().and_then(|m| m.get(hash)))
-            .or_else(|| self.export_aliases.as_ref().and_then(|m| m.get(hash)))
-            .cloned()
+        self.import_alias(hash)
+            .or_else(|| self.definition_alias(hash))
+            .or_else(|| self.export_alias(hash))
+    }
+
+    fn import_alias(&self, hash: &str) -> Option<String> {
+        self.alias_from_map(&self.import_aliases, hash)
+    }
+
+    fn definition_alias(&self, hash: &str) -> Option<String> {
+        self.alias_from_map(&self.definition_aliases, hash)
+    }
+
+    fn export_alias(&self, hash: &str) -> Option<String> {
+        self.alias_from_map(&self.export_aliases, hash)
+    }
+
+    fn alias_from_map(&self, map: &Option<BTreeMap<String, String>>, hash: &str) -> Option<String> {
+        let alias = map.as_ref()?.get(hash)?;
+        self.alias_is_unambiguous(hash, alias)
+            .then(|| alias.clone())
+    }
+
+    fn alias_is_unambiguous(&self, hash: &str, alias: &str) -> bool {
+        for map in [
+            &self.import_aliases,
+            &self.definition_aliases,
+            &self.export_aliases,
+        ] {
+            let Some(map) = map else {
+                continue;
+            };
+            for (candidate_hash, candidate_alias) in map {
+                if candidate_alias == alias && candidate_hash != hash {
+                    return false;
+                }
+            }
+        }
+        true
     }
 }
 
@@ -579,7 +607,7 @@ fn unit_entry_hash(node: &Node) -> &str {
     }
 }
 
-fn def_map_by_hash(defs: &[Node]) -> std::collections::BTreeMap<String, &Node> {
+fn def_map_by_hash(defs: &[Node]) -> BTreeMap<String, &Node> {
     defs.iter()
         .filter_map(|def| match def {
             Node::Def { .. } => {
@@ -592,7 +620,7 @@ fn def_map_by_hash(defs: &[Node]) -> std::collections::BTreeMap<String, &Node> {
         .collect()
 }
 
-fn export_visibility_map(exports: &[Node]) -> std::collections::BTreeMap<String, String> {
+fn export_visibility_map(exports: &[Node]) -> BTreeMap<String, String> {
     exports
         .iter()
         .filter_map(|export| match export {

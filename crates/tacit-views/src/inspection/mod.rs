@@ -149,7 +149,8 @@ impl<'f> Ctx<'f> {
             } => self.render_unit(node, imports, exports, defs, sc, indent),
             Node::Imports { entries } => self.render_imports(entries, sc, indent),
             Node::Import { hash, sig } => {
-                let alias = alias_from_map(sc.and_then(|s| s.import_aliases.as_ref()), hash)
+                let alias = self
+                    .import_alias(hash)
                     .unwrap_or_else(|| synthetic_hash_name("import", hash));
                 Rendered::leaf(format!(
                     "{} : {} = {}",
@@ -160,10 +161,9 @@ impl<'f> Ctx<'f> {
             }
             Node::Exports { entries } => self.render_exports(entries, sc, indent),
             Node::Export { visibility, hash } => {
-                let alias = alias_from_map(sc.and_then(|s| s.export_aliases.as_ref()), hash)
-                    .or_else(|| {
-                        alias_from_map(sc.and_then(|s| s.definition_aliases.as_ref()), hash)
-                    })
+                let alias = self
+                    .export_alias(hash)
+                    .or_else(|| self.definition_alias(hash))
                     .unwrap_or_else(|| synthetic_hash_name("export", hash));
                 Rendered::leaf(format!(
                     "{} {} = {}",
@@ -280,13 +280,46 @@ impl<'f> Ctx<'f> {
     }
 
     fn alias_for_ref(&self, hash: &str) -> String {
-        self.import_aliases
-            .as_ref()
-            .and_then(|m| m.get(hash))
-            .or_else(|| self.definition_aliases.as_ref().and_then(|m| m.get(hash)))
-            .or_else(|| self.export_aliases.as_ref().and_then(|m| m.get(hash)))
-            .cloned()
+        self.import_alias(hash)
+            .or_else(|| self.definition_alias(hash))
+            .or_else(|| self.export_alias(hash))
             .unwrap_or_else(|| hash_text(hash, self.flags.hashes))
+    }
+
+    fn import_alias(&self, hash: &str) -> Option<String> {
+        self.alias_from_map(&self.import_aliases, hash)
+    }
+
+    fn definition_alias(&self, hash: &str) -> Option<String> {
+        self.alias_from_map(&self.definition_aliases, hash)
+    }
+
+    fn export_alias(&self, hash: &str) -> Option<String> {
+        self.alias_from_map(&self.export_aliases, hash)
+    }
+
+    fn alias_from_map(&self, map: &Option<BTreeMap<String, String>>, hash: &str) -> Option<String> {
+        let alias = map.as_ref()?.get(hash)?;
+        self.alias_is_unambiguous(hash, alias)
+            .then(|| alias.clone())
+    }
+
+    fn alias_is_unambiguous(&self, hash: &str, alias: &str) -> bool {
+        for map in [
+            &self.import_aliases,
+            &self.definition_aliases,
+            &self.export_aliases,
+        ] {
+            let Some(map) = map else {
+                continue;
+            };
+            for (candidate_hash, candidate_alias) in map {
+                if candidate_alias == alias && candidate_hash != hash {
+                    return false;
+                }
+            }
+        }
+        true
     }
 
     // -----------------------------------------------------------------------
@@ -860,7 +893,8 @@ impl<'f> Ctx<'f> {
             ordered.sort_by(|a, b| unit_entry_hash(a).cmp(unit_entry_hash(b)));
             for entry in ordered {
                 if let Node::Import { hash, sig } = entry {
-                    let alias = alias_from_map(sc.and_then(|s| s.import_aliases.as_ref()), hash)
+                    let alias = self
+                        .import_alias(hash)
                         .unwrap_or_else(|| synthetic_hash_name("import", hash));
                     text.push('\n');
                     text.push_str(&Self::pad(indent + 2));
@@ -886,10 +920,9 @@ impl<'f> Ctx<'f> {
             ordered.sort_by(|a, b| unit_entry_hash(a).cmp(unit_entry_hash(b)));
             for entry in ordered {
                 if let Node::Export { visibility, hash } = entry {
-                    let alias = alias_from_map(sc.and_then(|s| s.export_aliases.as_ref()), hash)
-                        .or_else(|| {
-                            alias_from_map(sc.and_then(|s| s.definition_aliases.as_ref()), hash)
-                        })
+                    let alias = self
+                        .export_alias(hash)
+                        .or_else(|| self.definition_alias(hash))
                         .unwrap_or_else(|| synthetic_hash_name("export", hash));
                     let sig = def_map
                         .get(hash)
@@ -922,7 +955,8 @@ impl<'f> Ctx<'f> {
             text.push_str("<none>");
         } else {
             for (hash, def) in private_defs {
-                let alias = alias_from_map(sc.and_then(|s| s.definition_aliases.as_ref()), hash)
+                let alias = self
+                    .definition_alias(hash)
                     .unwrap_or_else(|| synthetic_hash_name("def", hash));
                 text.push('\n');
                 text.push_str(&Self::pad(indent + 2));
@@ -942,8 +976,9 @@ impl<'f> Ctx<'f> {
             def_map.iter().map(|(hash, def)| (hash, *def)).collect();
         ordered_defs.sort_by(|a, b| a.0.cmp(b.0));
         for (hash, def) in ordered_defs {
-            let alias = alias_from_map(sc.and_then(|s| s.definition_aliases.as_ref()), hash)
-                .or_else(|| alias_from_map(sc.and_then(|s| s.export_aliases.as_ref()), hash))
+            let alias = self
+                .definition_alias(hash)
+                .or_else(|| self.export_alias(hash))
                 .unwrap_or_else(|| synthetic_hash_name("def", hash));
             if let Node::Def { body, .. } = def {
                 let body_r = self.render(body, sc, indent + 4);
@@ -1465,10 +1500,6 @@ impl<'f> Ctx<'f> {
             result
         }
     }
-}
-
-fn alias_from_map(map: Option<&BTreeMap<String, String>>, hash: &str) -> Option<String> {
-    map.and_then(|m| m.get(hash)).cloned()
 }
 
 fn hash_text(hash: &str, full: bool) -> String {

@@ -8,6 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use tacit_canonical::ast::Node;
 use tacit_canonical::{emit, hash_node};
+use tacit_views::sidecar::SidecarNode;
 
 use crate::error::Diagnostic;
 use crate::infer::infer;
@@ -56,9 +57,87 @@ pub struct CheckedUnit {
     pub definition_effects: BTreeMap<String, EffSet>,
 }
 
+#[derive(Debug, Default)]
+struct UnitAliases {
+    import_aliases: BTreeMap<String, String>,
+    definition_aliases: BTreeMap<String, String>,
+    export_aliases: BTreeMap<String, String>,
+}
+
+impl UnitAliases {
+    fn from_sidecar(sidecar: Option<&SidecarNode>) -> Self {
+        Self {
+            import_aliases: sidecar
+                .and_then(|s| s.import_aliases.clone())
+                .unwrap_or_default(),
+            definition_aliases: sidecar
+                .and_then(|s| s.definition_aliases.clone())
+                .unwrap_or_default(),
+            export_aliases: sidecar
+                .and_then(|s| s.export_aliases.clone())
+                .unwrap_or_default(),
+        }
+    }
+
+    fn import_alias(&self, hash: &str) -> Option<&str> {
+        self.alias_from_map(&self.import_aliases, hash)
+    }
+
+    fn definition_alias(&self, hash: &str) -> Option<&str> {
+        self.alias_from_map(&self.definition_aliases, hash)
+    }
+
+    fn export_alias(&self, hash: &str) -> Option<&str> {
+        self.alias_from_map(&self.export_aliases, hash)
+    }
+
+    fn boundary_alias(&self, hash: &str) -> Option<&str> {
+        self.import_alias(hash)
+            .or_else(|| self.definition_alias(hash))
+            .or_else(|| self.export_alias(hash))
+    }
+
+    fn exported_definition_alias(&self, hash: &str) -> Option<&str> {
+        self.export_alias(hash)
+            .or_else(|| self.definition_alias(hash))
+    }
+
+    fn alias_from_map<'a>(
+        &'a self,
+        map: &'a BTreeMap<String, String>,
+        hash: &str,
+    ) -> Option<&'a str> {
+        let alias = map.get(hash)?;
+        self.alias_is_unambiguous(hash, alias)
+            .then_some(alias.as_str())
+    }
+
+    fn alias_is_unambiguous(&self, hash: &str, alias: &str) -> bool {
+        for map in [
+            &self.import_aliases,
+            &self.definition_aliases,
+            &self.export_aliases,
+        ] {
+            for (candidate_hash, candidate_alias) in map {
+                if candidate_alias == alias && candidate_hash != hash {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
+    fn display_hash(&self, hash: &str) -> String {
+        self.boundary_alias(hash)
+            .map(|alias| format!("{} (blake3:{})", alias, hash))
+            .unwrap_or_else(|| format!("blake3:{}", hash))
+    }
+}
+
 pub fn check_units_in_memory(units: &[Node]) -> Result<Vec<CheckedUnit>, Vec<Diagnostic>> {
     let mut diags = Vec::new();
     let mut env = DefinitionEnv::new();
+    let aliases = UnitAliases::default();
 
     for (unit_index, unit) in units.iter().enumerate() {
         let Some(parts) = unit_artifact_parts(unit) else {
@@ -83,7 +162,7 @@ pub fn check_units_in_memory(units: &[Node]) -> Result<Vec<CheckedUnit>, Vec<Dia
 
     let mut typed = Vec::new();
     for (unit_index, unit) in units.iter().enumerate() {
-        match check_unit_with_path(unit, &env, &[unit_index]) {
+        match check_unit_with_path(unit, &env, &[unit_index], &aliases) {
             Ok(t) => typed.push(t),
             Err(mut errors) => diags.append(&mut errors),
         }
@@ -97,13 +176,24 @@ pub fn check_units_in_memory(units: &[Node]) -> Result<Vec<CheckedUnit>, Vec<Dia
 }
 
 pub fn check_unit(unit: &Node, providers: &DefinitionEnv) -> Result<CheckedUnit, Vec<Diagnostic>> {
-    check_unit_with_path(unit, providers, &[])
+    let aliases = UnitAliases::default();
+    check_unit_with_path(unit, providers, &[], &aliases)
+}
+
+pub fn check_unit_with_sidecar(
+    unit: &Node,
+    providers: &DefinitionEnv,
+    sidecar: Option<&SidecarNode>,
+) -> Result<CheckedUnit, Vec<Diagnostic>> {
+    let aliases = UnitAliases::from_sidecar(sidecar);
+    check_unit_with_path(unit, providers, &[], &aliases)
 }
 
 fn check_unit_with_path(
     unit: &Node,
     providers: &DefinitionEnv,
     path: &[usize],
+    aliases: &UnitAliases,
 ) -> Result<CheckedUnit, Vec<Diagnostic>> {
     let Some(parts) = unit_artifact_parts(unit) else {
         return Err(vec![Diagnostic::invalid_unit_artifact(path)]);
@@ -120,18 +210,31 @@ fn check_unit_with_path(
         };
         let imp_path = child_path(path, &[0, i]);
         if !seen_imports.insert(hash.clone()) {
-            diags.push(Diagnostic::duplicate_import(&imp_path, hash));
+            diags.push(Diagnostic::duplicate_import(
+                &imp_path,
+                hash,
+                aliases.import_alias(hash),
+            ));
         }
         import_sigs.insert(hash.clone(), sig.as_ref().clone());
 
         let Some(provider) = providers.get(hash) else {
-            diags.push(Diagnostic::missing_import(&imp_path, hash, None));
+            diags.push(Diagnostic::missing_import(
+                &imp_path,
+                hash,
+                aliases.import_alias(hash),
+            ));
             continue;
         };
 
         let actual_hash = hex_hash(&provider.def);
         if actual_hash != *hash {
-            diags.push(Diagnostic::hash_mismatch(&imp_path, hash, &actual_hash));
+            diags.push(Diagnostic::hash_mismatch(
+                &imp_path,
+                hash,
+                &actual_hash,
+                aliases.import_alias(hash),
+            ));
         }
 
         match provider.visibility {
@@ -141,6 +244,7 @@ fn check_unit_with_path(
                 &imp_path,
                 hash,
                 other.as_str(),
+                aliases.import_alias(hash),
             )),
         }
 
@@ -148,8 +252,15 @@ fn check_unit_with_path(
         let expected = canonical_text(sig);
         let actual = canonical_text(provider_sig);
         if expected != actual {
+            let subject = format!(
+                "import {}",
+                aliases
+                    .import_alias(hash)
+                    .map(|alias| format!("{} (blake3:{})", alias, hash))
+                    .unwrap_or_else(|| format!("blake3:{}", hash))
+            );
             diags.push(Diagnostic::signature_mismatch(
-                &imp_path, "import", &expected, &actual,
+                &imp_path, &subject, &expected, &actual,
             ));
         }
     }
@@ -161,10 +272,18 @@ fn check_unit_with_path(
         };
         let exp_path = child_path(path, &[1, i]);
         if !seen_exports.insert(hash.clone()) {
-            diags.push(Diagnostic::duplicate_export(&exp_path, hash));
+            diags.push(Diagnostic::duplicate_export(
+                &exp_path,
+                hash,
+                aliases.exported_definition_alias(hash),
+            ));
         }
         if !local_defs.contains_key(hash) {
-            diags.push(Diagnostic::dangling_export(&exp_path, hash));
+            diags.push(Diagnostic::dangling_export(
+                &exp_path,
+                hash,
+                aliases.exported_definition_alias(hash),
+            ));
         }
     }
 
@@ -172,7 +291,7 @@ fn check_unit_with_path(
     for (hash, provider) in providers {
         graph_defs.insert(hash.clone(), &provider.def);
     }
-    detect_cycles(&graph_defs, path, &mut diags);
+    detect_cycles(&graph_defs, path, aliases, &mut diags);
 
     let mut sig_env = BTreeMap::new();
     for (hash, def) in &local_defs {
@@ -195,7 +314,11 @@ fn check_unit_with_path(
         let mut missing_refs = Vec::new();
         collect_missing_refs(body, &sig_env, &mut missing_refs);
         for missing in missing_refs {
-            diags.push(Diagnostic::missing_import(&def_path, &missing, None));
+            diags.push(Diagnostic::missing_import(
+                &def_path,
+                &missing,
+                aliases.boundary_alias(&missing),
+            ));
         }
 
         let ref_hashes: Vec<String> = sig_env.keys().cloned().collect();
@@ -228,9 +351,10 @@ fn check_unit_with_path(
             let expected = subst.apply(&declared_ty);
             let actual = subst.apply(&body_ty);
             if !expected.is_unknown() && !actual.is_unknown() {
+                let subject = format!("definition body {}", aliases.display_hash(&hash));
                 diags.push(Diagnostic::signature_mismatch(
                     &def_path,
-                    "definition body",
+                    &subject,
                     &expected.to_string(),
                     &actual.to_string(),
                 ));
@@ -239,9 +363,10 @@ fn check_unit_with_path(
 
         let body_eval_eff = subst.resolve_eff(&body_eff);
         if !body_eval_eff.is_subset_of(&declared_eval_eff) {
+            let subject = format!("definition effects {}", aliases.display_hash(&hash));
             diags.push(Diagnostic::signature_mismatch(
                 &def_path,
-                "definition effects",
+                &subject,
                 &declared_eval_eff.to_string(),
                 &body_eval_eff.to_string(),
             ));
@@ -459,7 +584,12 @@ fn rewrite_refs(node: &Node, ref_indices: &BTreeMap<String, usize>, depth: u64) 
     }
 }
 
-fn detect_cycles(defs: &BTreeMap<String, &Node>, path: &[usize], diags: &mut Vec<Diagnostic>) {
+fn detect_cycles(
+    defs: &BTreeMap<String, &Node>,
+    path: &[usize],
+    aliases: &UnitAliases,
+    diags: &mut Vec<Diagnostic>,
+) {
     #[derive(Clone, Copy, PartialEq, Eq)]
     enum Mark {
         Visiting,
@@ -472,6 +602,7 @@ fn detect_cycles(defs: &BTreeMap<String, &Node>, path: &[usize], diags: &mut Vec
         marks: &mut BTreeMap<String, Mark>,
         stack: &mut Vec<String>,
         path: &[usize],
+        aliases: &UnitAliases,
         diags: &mut Vec<Diagnostic>,
     ) {
         match marks.get(hash).copied() {
@@ -480,7 +611,11 @@ fn detect_cycles(defs: &BTreeMap<String, &Node>, path: &[usize], diags: &mut Vec
                 if let Some(start) = stack.iter().position(|h| h == hash) {
                     let mut cycle = stack[start..].to_vec();
                     cycle.push(hash.to_string());
-                    diags.push(Diagnostic::cyclic_dependency(path, &cycle));
+                    let displayed = cycle
+                        .iter()
+                        .map(|hash| aliases.display_hash(hash))
+                        .collect::<Vec<_>>();
+                    diags.push(Diagnostic::cyclic_dependency(path, &displayed));
                 }
                 return;
             }
@@ -497,7 +632,7 @@ fn detect_cycles(defs: &BTreeMap<String, &Node>, path: &[usize], diags: &mut Vec
             collect_refs(body, &mut refs);
             for dep in refs {
                 if defs.contains_key(&dep) {
-                    visit(&dep, defs, marks, stack, path, diags);
+                    visit(&dep, defs, marks, stack, path, aliases, diags);
                 }
             }
         }
@@ -508,7 +643,7 @@ fn detect_cycles(defs: &BTreeMap<String, &Node>, path: &[usize], diags: &mut Vec
     let mut marks = BTreeMap::new();
     let mut stack = Vec::new();
     for hash in defs.keys() {
-        visit(hash, defs, &mut marks, &mut stack, path, diags);
+        visit(hash, defs, &mut marks, &mut stack, path, aliases, diags);
     }
 }
 
