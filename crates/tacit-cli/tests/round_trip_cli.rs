@@ -1,5 +1,8 @@
 use std::process::Command;
 
+use tacit_canonical::ast::Node;
+use tacit_canonical::{emit, hash_node};
+
 fn tacit_bin() -> std::path::PathBuf {
     std::path::PathBuf::from(env!("CARGO_BIN_EXE_tacit"))
 }
@@ -154,4 +157,93 @@ fn view_accepts_tac_and_taca() {
         "{}",
         String::from_utf8_lossy(&out2.stderr)
     );
+}
+
+#[test]
+fn check_accepts_project_directory() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let d = dir.path();
+    std::fs::create_dir_all(d.join("src")).unwrap();
+
+    let provider = cli_identity_def();
+    let provider_hash = cli_hash(&provider);
+    let provider_unit = Node::Unit {
+        imports: vec![],
+        exports: vec![Node::Export {
+            visibility: "package".into(),
+            hash: provider_hash.clone(),
+        }],
+        defs: vec![provider],
+    };
+    let consumer = cli_apply_import_def(&provider_hash);
+    let consumer_hash = cli_hash(&consumer);
+    let consumer_unit = Node::Unit {
+        imports: vec![Node::Import {
+            hash: provider_hash,
+            sig: Box::new(cli_int_to_int_sig()),
+        }],
+        exports: vec![Node::Export {
+            visibility: "public".into(),
+            hash: consumer_hash,
+        }],
+        defs: vec![consumer],
+    };
+
+    std::fs::write(d.join("src/provider.tac"), emit(&provider_unit)).unwrap();
+    std::fs::write(d.join("src/consumer.tac"), emit(&consumer_unit)).unwrap();
+
+    let out = tacit(&["check", ".", "--format", "json"], d);
+    assert!(
+        out.status.success(),
+        "project check failed\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains(r#""errors": []"#), "{stdout}");
+}
+
+fn cli_sym(name: &str) -> Node {
+    Node::Sym { name: name.into() }
+}
+
+fn cli_int_to_int_sig() -> Node {
+    Node::Sig {
+        type_: Box::new(Node::FnTy {
+            arg: Box::new(cli_sym("Int")),
+            ret: Box::new(cli_sym("Int")),
+            eff: Box::new(Node::EffSet { atoms: vec![] }),
+        }),
+        eval_eff: Box::new(Node::EffSet { atoms: vec![] }),
+    }
+}
+
+fn cli_identity_def() -> Node {
+    Node::Def {
+        sig: Box::new(cli_int_to_int_sig()),
+        body: Box::new(Node::Lam {
+            body: Box::new(Node::Var { index: 0 }),
+        }),
+    }
+}
+
+fn cli_apply_import_def(import_hash: &str) -> Node {
+    Node::Def {
+        sig: Box::new(cli_int_to_int_sig()),
+        body: Box::new(Node::Lam {
+            body: Box::new(Node::App {
+                fn_: Box::new(Node::Ref {
+                    hash: import_hash.into(),
+                }),
+                arg: Box::new(Node::Var { index: 0 }),
+            }),
+        }),
+    }
+}
+
+fn cli_hash(node: &Node) -> String {
+    hash_node(node)
+        .iter()
+        .map(|byte| format!("{:02x}", byte))
+        .collect()
 }

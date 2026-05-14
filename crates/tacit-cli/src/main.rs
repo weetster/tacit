@@ -4,7 +4,9 @@ use std::process::Command;
 
 use clap::{Parser, Subcommand, ValueEnum};
 
-use tacit_typecheck::{check_unit_with_sidecar, infer_module, DefinitionEnv, DiagOutput};
+use tacit_typecheck::{
+    check_project, check_unit_with_sidecar, infer_module, load_project, DefinitionEnv, DiagOutput,
+};
 use tacit_views::authoring::{emit_authoring, parse_authoring};
 use tacit_views::sidecar::{Sidecar, SidecarNode};
 use tacit_views::{emit_inspection, InspectFlags};
@@ -35,7 +37,7 @@ enum Cmd {
 
     /// Check types and effects without compiling.
     Check {
-        /// Input .tac file (authoring view).
+        /// Input .tac/.taca file or project root directory.
         input: PathBuf,
 
         /// Output format: human-readable text (default) or JSON.
@@ -332,12 +334,17 @@ fn cmd_render(
 // ---------------------------------------------------------------------------
 
 fn cmd_check(input: PathBuf, format: CheckFormat) -> Result<(), Box<dyn std::error::Error>> {
-    let (node, sidecar) = load_canonical(&input)?;
-
-    let result = if matches!(node, tacit_canonical::ast::Node::Unit { .. }) {
-        check_unit_with_sidecar(&node, &DefinitionEnv::new(), sidecar.as_ref()).map(|_| ())
+    let result = if input.is_dir() {
+        let graph = load_project(&input)?;
+        check_project(&graph).map(|_| ())
     } else {
-        infer_module(&node).map(|_| ())
+        let (node, sidecar) = load_canonical(&input)?;
+
+        if matches!(node, tacit_canonical::ast::Node::Unit { .. }) {
+            check_unit_with_sidecar(&node, &DefinitionEnv::new(), sidecar.as_ref()).map(|_| ())
+        } else {
+            infer_module(&node).map(|_| ())
+        }
     };
 
     match result {

@@ -885,7 +885,7 @@ impl<'f> Ctx<'f> {
         text.push_str(&Self::pad(indent));
         text.push_str("imports");
         if imports.is_empty() {
-            text.push_str("\n");
+            text.push('\n');
             text.push_str(&Self::pad(indent + 2));
             text.push_str("<none>");
         } else {
@@ -912,7 +912,7 @@ impl<'f> Ctx<'f> {
         text.push_str(&Self::pad(indent));
         text.push_str("exports");
         if exports.is_empty() {
-            text.push_str("\n");
+            text.push('\n');
             text.push_str(&Self::pad(indent + 2));
             text.push_str("<none>");
         } else {
@@ -950,7 +950,7 @@ impl<'f> Ctx<'f> {
         text.push_str(&Self::pad(indent));
         text.push_str("private");
         if private_defs.is_empty() {
-            text.push_str("\n");
+            text.push('\n');
             text.push_str(&Self::pad(indent + 2));
             text.push_str("<none>");
         } else {

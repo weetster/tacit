@@ -127,7 +127,7 @@ remain host-owned capabilities during Phase 6.
 | Q-P6-1 | How are imports and exports represented in canonical form and authoring view? | Resolved by [ADR 0080](../decisions/0080-phase-6-module-semantics.md) |
 | Q-P6-2 | What is public, package-local, or private at module boundaries? | Resolved by [ADR 0080](../decisions/0080-phase-6-module-semantics.md) |
 | Q-P6-3 | How do imported hashes participate in type/effect checking and diagnostics? | Resolved by [ADR 0080](../decisions/0080-phase-6-module-semantics.md) |
-| Q-P6-4 | What project layout is deterministic while keeping file layout non-semantic? | Stage 2 ADR |
+| Q-P6-4 | What project layout is deterministic while keeping file layout non-semantic? | Resolved by [ADR 0081](../decisions/0081-phase-6-project-graph.md) |
 | Q-P6-5 | What manifest and lockfile formats represent hash-based dependencies? | Stage 3 ADR |
 | Q-P6-6 | What local object-store layout and cache invalidation rules are required? | Stage 3 ADR |
 | Q-P6-7 | What is the minimum unit-test surface and structured result schema? | Stage 5 ADR |
@@ -148,7 +148,8 @@ ADRs must land before implementation that depends on them.
    [ADR 0079](../decisions/0079-phase-6-scope.md).
 2. Module imports, exports, visibility, and imported-hash semantics. Done:
    [ADR 0080](../decisions/0080-phase-6-module-semantics.md).
-3. Multi-file project graph and deterministic derived layout.
+3. Multi-file project graph and deterministic derived layout. Done:
+   [ADR 0081](../decisions/0081-phase-6-project-graph.md).
 4. Package manifest, lockfile, dependency cache, and object-store layout.
 5. Package-level test surface and structured test-result schema.
 6. Fixed-width integer and bit-operation surface.
@@ -256,7 +257,10 @@ Exit criteria:
 
 ## Stage 2: Whole-Project Graph
 
-**Status:** Planned
+**Status:** In progress 2026-05-14. Design ADR accepted by
+[ADR 0081](../decisions/0081-phase-6-project-graph.md); first
+implementation slice is project loading, deterministic hash indexing, and
+project-level `check`.
 
 **Purpose:** Make multi-file projects real while preserving the rule that file
 layout has no semantic weight.

@@ -12,6 +12,7 @@
 pub mod error;
 pub mod infer;
 pub mod primitives;
+pub mod project;
 pub mod sidecar;
 pub mod ty;
 pub mod type_from_node;
@@ -19,6 +20,9 @@ pub mod units;
 
 pub use error::{DiagOutput, Diagnostic};
 pub use infer::infer;
+pub use project::{
+    check_project, discover_project_root, load_project, ProjectGraph, ProjectLoadError,
+};
 pub use sidecar::check_against_tacd;
 pub use ty::{EffSet, Ty};
 pub use units::{
