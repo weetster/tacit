@@ -130,7 +130,7 @@ remain host-owned capabilities during Phase 6.
 | Q-P6-4 | What project layout is deterministic while keeping file layout non-semantic? | Resolved by [ADR 0081](../decisions/0081-phase-6-project-graph.md) |
 | Q-P6-5 | What manifest and lockfile formats represent hash-based dependencies? | Resolved by [ADR 0082](../decisions/0082-phase-6-package-manifest-lockfile-cache.md) |
 | Q-P6-6 | What local object-store layout and cache invalidation rules are required? | Resolved by [ADR 0082](../decisions/0082-phase-6-package-manifest-lockfile-cache.md) |
-| Q-P6-7 | What is the minimum unit-test surface and structured result schema? | Stage 5 ADR |
+| Q-P6-7 | What is the minimum unit-test surface and structured result schema? | Resolved by [ADR 0083](../decisions/0083-phase-6-package-tests.md) |
 | Q-P6-8 | Are fixed-width integer operations primitives, source-library functions, or both? | Stage 6 ADR |
 | Q-P6-9 | What typed mutable-memory surface replaces or subsumes `Buf` and `I64Vec`? | Stage 7 ADR |
 | Q-P6-10 | Are existing records, constructors, and `match` sufficient for decode shapes? | Stage 8 ADR |
@@ -153,7 +153,9 @@ ADRs must land before implementation that depends on them.
 4. Package manifest, lockfile, dependency cache, and object-store layout.
    Done:
    [ADR 0082](../decisions/0082-phase-6-package-manifest-lockfile-cache.md).
-5. Package-level test surface and structured test-result schema.
+5. Package-level test surface and structured test-result schema. Design
+   accepted by [ADR 0083](../decisions/0083-phase-6-package-tests.md);
+   implementation pending.
 6. Fixed-width integer and bit-operation surface.
 7. Typed mutable memory and bounds behavior.
 8. Data layout and decode support.
@@ -434,24 +436,36 @@ Outcome:
 
 ## Stage 5: Unit Testing
 
-**Status:** Planned
+**Status:** Design accepted 2026-05-15 by
+[ADR 0083](../decisions/0083-phase-6-package-tests.md); implementation
+pending.
 
 **Purpose:** Give multi-module packages a first-class executable test surface
 before the systems and host-interface examples grow large.
 
 Work items:
 
-- Write the unit-testing ADR.
+- Write the unit-testing ADR. Done:
+  [ADR 0083](../decisions/0083-phase-6-package-tests.md).
 - Decide whether tests are ordinary exported definitions, marked test modules,
-  manifest entries, or a small test harness convention.
-- Define test function signatures and allowed effects.
+  manifest entries, or a small test harness convention. Done: tests are
+  ordinary package definitions listed from optional `[[tests]]` manifest
+  entries by definition hash.
+- Define test function signatures and allowed effects. Done: runnable tests
+  are zero-input `Bool` definitions with explicit per-entry allowed effects;
+  `Div` is not permitted for runnable package tests.
 - Define how tests call exported definitions across module and package
-  boundaries.
-- Define structured test-result JSON.
-- Add `tacit test` or an equivalent package-level test command.
+  boundaries. Done: tests use normal `unit` imports, package visibility, and
+  dependency public exports.
+- Define structured test-result JSON. Done: `tacit-test-v1` result envelope
+  with deterministic ordering and ADR 0041 diagnostics.
+- Add `tacit test` or an equivalent package-level test command. Defined by
+  ADR 0083; implementation pending.
 - Add pass, fail, panic/error, compile-fail, and effect-fail result cases.
+  Defined by ADR 0083; implementation pending.
 - Add examples for pure tests and effectful tests.
-- Ensure test output is stable and suitable for AI repair loops.
+- Ensure test output is stable and suitable for AI repair loops. Done in
+  design: stable JSON omits timings, absolute paths, and raw process output.
 
 Exit criteria:
 
