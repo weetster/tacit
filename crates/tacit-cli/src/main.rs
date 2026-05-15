@@ -5,8 +5,9 @@ use std::process::Command;
 use clap::{Parser, Subcommand, ValueEnum};
 
 use tacit_typecheck::{
-    check_project, check_unit_with_sidecar, emit_project_inspection, infer_module, load_project,
-    materialize_project_derived, project_entry_expression, DefinitionEnv, DiagOutput,
+    check_package, check_unit_with_sidecar, clear_package_cache, emit_project_inspection,
+    evict_package_cache, infer_module, load_package, load_project, lock_package,
+    materialize_package_derived, package_entry_expression, DefinitionEnv, DiagOutput,
 };
 use tacit_views::authoring::{emit_authoring, parse_authoring};
 use tacit_views::sidecar::{Sidecar, SidecarNode};
@@ -48,6 +49,19 @@ enum Cmd {
         /// Output format: human-readable text (default) or JSON.
         #[arg(long, value_enum, value_name = "FORMAT", default_value = "text")]
         format: CheckFormat,
+    },
+
+    /// Regenerate tacit.lock for a package root.
+    Lock {
+        /// Package root directory.
+        #[arg(default_value = ".")]
+        input: PathBuf,
+    },
+
+    /// Manage the workspace-local package cache.
+    Cache {
+        #[command(subcommand)]
+        command: CacheCmd,
     },
 
     /// Parse authoring view (.taca) and emit canonical .tac + .tacd sidecar.
@@ -138,6 +152,26 @@ enum CheckFormat {
     Json,
 }
 
+#[derive(Subcommand)]
+enum CacheCmd {
+    /// Remove the package cache under ROOT/.tacit/cache.
+    Clear {
+        /// Package root directory.
+        #[arg(default_value = ".")]
+        root: PathBuf,
+    },
+
+    /// Evict a package or object hash from ROOT/.tacit/cache.
+    Evict {
+        /// blake3:<hash> or bare 64-hex hash.
+        hash: String,
+
+        /// Package root directory.
+        #[arg(default_value = ".")]
+        root: PathBuf,
+    },
+}
+
 #[derive(ValueEnum, Clone)]
 enum ViewFormat {
     Authoring,
@@ -161,6 +195,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             emit_llvm_ir,
         } => cmd_compile(input, output, entry, emit_llvm_ir),
         Cmd::Check { input, format } => cmd_check(input, format),
+        Cmd::Lock { input } => cmd_lock(input),
+        Cmd::Cache { command } => cmd_cache(command),
         Cmd::Canonicalize {
             input,
             output,
@@ -341,8 +377,10 @@ fn cmd_render(
 
 fn cmd_check(input: PathBuf, format: CheckFormat) -> Result<(), Box<dyn std::error::Error>> {
     let result = if input.is_dir() {
-        let graph = load_project(&input)?;
-        check_project(&graph).map(|_| ())
+        match load_package(&input) {
+            Ok(package) => check_package(&package).map(|_| ()),
+            Err(diags) => Err(diags),
+        }
     } else {
         let (node, sidecar) = load_canonical(&input)?;
 
@@ -372,6 +410,27 @@ fn cmd_check(input: PathBuf, format: CheckFormat) -> Result<(), Box<dyn std::err
             }
             std::process::exit(1);
         }
+    }
+    Ok(())
+}
+
+fn cmd_lock(input: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+    match lock_package(&input) {
+        Ok(package) => {
+            println!("wrote {}", package.root.root.join("tacit.lock").display());
+            Ok(())
+        }
+        Err(diags) => {
+            eprintln!("{}", DiagOutput::new(diags).to_json_string());
+            std::process::exit(1);
+        }
+    }
+}
+
+fn cmd_cache(command: CacheCmd) -> Result<(), Box<dyn std::error::Error>> {
+    match command {
+        CacheCmd::Clear { root } => clear_package_cache(root)?,
+        CacheCmd::Evict { hash, root } => evict_package_cache(root, &hash)?,
     }
     Ok(())
 }
@@ -535,16 +594,22 @@ fn cmd_compile_project(
     entry: Option<String>,
     emit_llvm_ir: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let graph = load_project(&input)?;
-    if let Err(diags) = check_project(&graph) {
+    let package = match load_package(&input) {
+        Ok(package) => package,
+        Err(diags) => {
+            eprintln!("{}", DiagOutput::new(diags).to_json_string());
+            std::process::exit(1);
+        }
+    };
+    if let Err(diags) = check_package(&package) {
         let out = DiagOutput::new(diags);
         eprintln!("{}", out.to_json_string());
         std::process::exit(1);
     }
 
-    let derived_root = materialize_project_derived(&graph)?;
-    let entry = project_entry_expression(&graph, entry.as_deref())?;
-    let module_name = format!("project_{}", &graph.graph_hash[..12]);
+    let derived_root = materialize_package_derived(&package)?;
+    let entry = package_entry_expression(&package, entry.as_deref())?;
+    let module_name = format!("project_{}", &package.package_hash[..12]);
     let output = output.or_else(|| {
         (!emit_llvm_ir).then(|| {
             derived_root

@@ -11,6 +11,7 @@
 
 pub mod error;
 pub mod infer;
+pub mod package;
 pub mod primitives;
 pub mod project;
 pub mod sidecar;
@@ -20,6 +21,12 @@ pub mod units;
 
 pub use error::{DiagOutput, Diagnostic};
 pub use infer::infer;
+pub use package::{
+    check_package, clear_package_cache, evict_package_cache, load_package, lock_package,
+    materialize_package_derived, package_entry_expression, package_hash_for_project, CachedPackage,
+    DependencySpec, LockDependency, LockSource, LockTransitive, Lockfile, PackageCacheError,
+    PackageGraph, PackageManifest, PackageMetadata,
+};
 pub use project::{
     check_project, discover_project_root, emit_project_inspection, load_project,
     materialize_project_derived, project_entry_expression, ProjectDefinition, ProjectDerivedError,

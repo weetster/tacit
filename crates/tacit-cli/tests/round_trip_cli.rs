@@ -244,6 +244,66 @@ fn compile_project_directory_to_ir_by_alias() {
     assert!(d.join(".tacit/derived").exists());
 }
 
+#[test]
+fn lock_and_check_package_path_dependency_cli() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let dep = dir.path().join("dep");
+    let app = dir.path().join("app");
+    std::fs::create_dir_all(dep.join("src")).unwrap();
+    std::fs::create_dir_all(app.join("src")).unwrap();
+
+    let provider = cli_const_int_def("40");
+    let provider_hash = cli_hash(&provider);
+    let provider_unit = Node::Unit {
+        imports: vec![],
+        exports: vec![Node::Export {
+            visibility: "public".into(),
+            hash: provider_hash.clone(),
+        }],
+        defs: vec![provider],
+    };
+    std::fs::write(dep.join("src/lib.tac"), emit(&provider_unit)).unwrap();
+
+    let main = cli_add_import_const_def(&provider_hash, "2");
+    let main_hash = cli_hash(&main);
+    let main_unit = Node::Unit {
+        imports: vec![Node::Import {
+            hash: provider_hash,
+            sig: Box::new(cli_int_sig()),
+        }],
+        exports: vec![Node::Export {
+            visibility: "public".into(),
+            hash: main_hash,
+        }],
+        defs: vec![main],
+    };
+    std::fs::write(app.join("src/main.tac"), emit(&main_unit)).unwrap();
+    std::fs::write(
+        app.join("tacit.toml"),
+        "[dependencies]\nutil = { path = \"../dep\" }\n",
+    )
+    .unwrap();
+
+    let lock = tacit(&["lock", "."], &app);
+    assert!(
+        lock.status.success(),
+        "package lock failed\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&lock.stdout),
+        String::from_utf8_lossy(&lock.stderr)
+    );
+    assert!(app.join("tacit.lock").exists());
+
+    let check = tacit(&["check", ".", "--format", "json"], &app);
+    assert!(
+        check.status.success(),
+        "package check failed\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&check.stdout),
+        String::from_utf8_lossy(&check.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&check.stdout);
+    assert!(stdout.contains(r#""errors": []"#), "{stdout}");
+}
+
 fn write_cli_project(d: &std::path::Path) -> (String, Node, Node) {
     std::fs::create_dir_all(d.join("src")).unwrap();
 

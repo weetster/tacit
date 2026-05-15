@@ -580,7 +580,9 @@ fn read_fresh_sidecar(
     }
 }
 
-fn unit_boundary_hashes(unit: &Node) -> (Vec<String>, BTreeSet<String>, BTreeSet<String>) {
+pub(crate) fn unit_boundary_hashes(
+    unit: &Node,
+) -> (Vec<String>, BTreeSet<String>, BTreeSet<String>) {
     let mut definition_hashes = Vec::new();
     let mut public_exports = BTreeSet::new();
     let mut package_exports = BTreeSet::new();
@@ -606,7 +608,7 @@ fn unit_boundary_hashes(unit: &Node) -> (Vec<String>, BTreeSet<String>, BTreeSet
     (definition_hashes, public_exports, package_exports)
 }
 
-fn build_definition_index(units: &[ProjectUnit]) -> BTreeMap<String, ProjectDefinition> {
+pub(crate) fn build_definition_index(units: &[ProjectUnit]) -> BTreeMap<String, ProjectDefinition> {
     let mut definitions = BTreeMap::new();
 
     for unit in units {
@@ -688,12 +690,12 @@ fn resolve_entry_hash(
     }
 }
 
-fn selector_hash(selector: &str) -> Option<String> {
+pub(crate) fn selector_hash(selector: &str) -> Option<String> {
     let raw = selector.strip_prefix("blake3:").unwrap_or(selector);
     is_hash_str(raw).then(|| raw.to_string())
 }
 
-fn is_hash_str(s: &str) -> bool {
+pub(crate) fn is_hash_str(s: &str) -> bool {
     s.len() == 64
         && s.bytes()
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
@@ -969,7 +971,10 @@ fn relative_display(root: &Path, path: &Path) -> String {
         .into_owned()
 }
 
-fn max_visibility(left: DefinitionVisibility, right: DefinitionVisibility) -> DefinitionVisibility {
+pub(crate) fn max_visibility(
+    left: DefinitionVisibility,
+    right: DefinitionVisibility,
+) -> DefinitionVisibility {
     if visibility_rank(right) > visibility_rank(left) {
         right
     } else {
@@ -985,8 +990,16 @@ fn visibility_rank(visibility: DefinitionVisibility) -> u8 {
     }
 }
 
-fn project_graph_hash<'a>(unit_hashes: impl Iterator<Item = &'a str>) -> String {
-    let mut bytes = b"tacit-project-v1\n".to_vec();
+pub(crate) fn project_graph_hash<'a>(unit_hashes: impl Iterator<Item = &'a str>) -> String {
+    graph_hash_with_tag("tacit-project-v1", unit_hashes)
+}
+
+pub(crate) fn graph_hash_with_tag<'a>(
+    tag: &str,
+    unit_hashes: impl Iterator<Item = &'a str>,
+) -> String {
+    let mut bytes = tag.as_bytes().to_vec();
+    bytes.push(b'\n');
     for hash in unit_hashes {
         bytes.extend_from_slice(hash.as_bytes());
         bytes.push(b'\n');
@@ -1001,7 +1014,7 @@ fn hex_hash_node(node: &Node) -> String {
         .collect()
 }
 
-fn hex_hash_bytes(bytes: &[u8]) -> String {
+pub(crate) fn hex_hash_bytes(bytes: &[u8]) -> String {
     hash_bytes(bytes)
         .iter()
         .map(|byte| format!("{:02x}", byte))

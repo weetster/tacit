@@ -370,7 +370,10 @@ Outcome:
 
 ## Stage 4: Package And Dependency Implementation
 
-**Status:** Planned
+**Status:** Complete 2026-05-15. Implementation verified for manifest and
+lockfile parsing, local path dependencies, hash-only cache dependencies,
+package-level `check`, package-level `compile` entry resolution, cache object
+verification, lockfile drift, and deterministic lock regeneration.
 
 **Purpose:** Land the package model as an end-to-end compiler and CLI slice.
 
@@ -395,6 +398,39 @@ Exit criteria:
 - `check` and `compile` work from manifest plus lockfile.
 - The dependency cache verifies artifact hashes before use.
 - Build output is deterministic for a fixed lockfile and source set.
+
+Outcome:
+
+- `tacit.toml` parsing accepts strict `[package]`, `[dependencies]`,
+  `[exports]`, and `[bin]` tables, rejects unknown fields, ambiguous
+  dependency sources, missing dependency sources, malformed hashes, and
+  unresolved package entries with the reserved Stage 4 diagnostics.
+- `tacit.lock` is emitted as deterministic JSON by `tacit lock`, verified by
+  package-aware directory `check` and `compile`, and rejects drift from path
+  dependency mutation, manifest edits, malformed lockfiles, or missing
+  lockfiles for packages with dependencies.
+- Local path dependencies are resolved by loading the target project graph,
+  computing its `tacit-package-v1` hash, checking the locked hash, and
+  materializing its units, definitions, sidecars, manifest snapshot, and
+  package index into the consumer's `.tacit/cache/`.
+- Hash-only dependencies resolve from `.tacit/cache/packages/<hash>/` and can
+  be checked without consulting a path target once the cache is populated.
+- The cache writes `objects/units`, `objects/defs`, `objects/sidecars`, and
+  `packages/<hash>/package.json`; reads recompute BLAKE3 for unit and
+  definition objects, reject corrupt objects, and quarantine tampered files
+  under `.tacit/cache/trash/`.
+- Package-level `check` extends the Stage 2 project checker with dependency
+  definitions while preserving package visibility: external public exports
+  import, external package/private definitions produce visibility diagnostics.
+- Package-level `compile` resolves entries through `[bin]`, `[exports]`,
+  public export hashes, or sidecar aliases, expands dependency hash refs, and
+  materializes deterministic derived output under the package hash.
+- `tacit cache clear` and `tacit cache evict <hash>` provide the explicit
+  cache operations reserved by ADR 0082.
+- Tests cover path dependency locking, hash dependency cache reuse, manifest
+  `[bin]` entry expansion, lockfile drift, missing cache artifacts, cache
+  corruption quarantine, deterministic lock regeneration, manifest
+  diagnostics, and CLI package lock/check.
 
 ## Stage 5: Unit Testing
 

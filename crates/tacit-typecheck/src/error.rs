@@ -465,6 +465,12 @@ impl Diagnostic {
         d.actual = Some(eff_set_to_json(actual));
         d
     }
+
+    pub fn package_error(kind: &str, message: String, details: Value) -> Self {
+        let mut d = Self::new(kind, "error", &[], message);
+        d.actual = Some(details);
+        d
+    }
 }
 
 fn blake3_display(hash: &str) -> String {
