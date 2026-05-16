@@ -1,0 +1,7 @@
+[package]
+name = "tacit.core"
+version = "0.0.0"
+
+[exports]
+identity-int = "blake3:a0e7ce4a5a371802258450a2ae04cb4ae1c4c61e79b59f8130197f1b8add9708"
+const-true = "blake3:34b360506b44bd00fa2d2b277e540c30922aee5030ba196276b952240377c7f0"

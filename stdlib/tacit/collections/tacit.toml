@@ -1,0 +1,10 @@
+[package]
+name = "tacit.collections"
+version = "0.0.0"
+
+[exports]
+range-start = "blake3:93a2ae48613be8da6234f82113e635f6abf5758c72870d7c775288b24cf45fa1"
+range-len = "blake3:ef30f9853a5f6d67351e0e6532b0ed9c201849d38e1ef7c8019101f1e8d4a5a6"
+sort-i64 = "blake3:66895d9cae6b4e2dcde4c950b216dc83677cb0848762cc093e8997fbae65d660"
+lower-bound-i64 = "blake3:9dfa28078ccc60217b52a11626696e827e35efcfc4cc8be8edc9ec983e84ce09"
+count-equal-ranges = "blake3:b1d333ce8bbab598b04187cb0eb919dc67867ac21642c0612dfbf363424245e7"

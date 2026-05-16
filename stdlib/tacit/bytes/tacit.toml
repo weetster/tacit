@@ -1,0 +1,15 @@
+[package]
+name = "tacit.bytes"
+version = "0.0.0"
+
+[exports]
+u16-from-le = "blake3:2db5b3c1f3c0548a84beac0c4f70406ddde26e13803269d531e8fcfeed506ab0"
+u16-from-be = "blake3:f4411ed028e26b0e7b65ca75b31a877c6586d0680a9c0a570aff3b576239499e"
+u32-from-le = "blake3:2456ec6df6bdb93a7a5b908ef18005f639b9da32ebe30361d50c3f1d073d6766"
+u32-from-be = "blake3:01acfe3bc6b5359705cc32b0866717b1fc7b4b8f6061a3ebfbde3d24fea7ed70"
+u16-bswap = "blake3:5dbaa9d421baf7ec082205cae9dddad44144186ec155c51635e80c772e1b494f"
+u32-bswap = "blake3:b4f51da632005861a69c6224a615c2c8bed7f4c1e8207c8e3596d2986c1a8c8b"
+u8vec-load-u32-le = "blake3:c4c67c59047fc0931cb8e3518c1cf5c8bbc694be9d8ebe9bbce339caee4b2645"
+u8vec-load-u32-be = "blake3:6993070ac4d36c07612ce2032e4fdc682ac165c06b5adc0963abf6a0c94e68c1"
+u8vec-store-u32-le = "blake3:629e23baabd5fbb7777cae4816bf1a60b9177afbccac3b8ead0f417f232418e8"
+u8vec-store-u32-be = "blake3:1f6149c174dd7bf8044cc8e9acdeff1277c887eace62d29f0f35b790bfe60ea6"

@@ -697,7 +697,7 @@ Outcome:
 
 **Status:** Design accepted 2026-05-16 by
 [ADR 0087](../decisions/0087-phase-6-source-level-stdlib-foundations.md);
-implementation planned.
+implementation complete.
 
 **Purpose:** Start moving library logic out of compiler-recognized primitives
 once modules and packages make source libraries viable.
@@ -737,6 +737,21 @@ Design outcome:
   cooperation.
 - Networking and HTTP remain host-provided capability patterns for Stage 10,
   not built-in primitives.
+
+Implementation outcome:
+
+- Ordinary source packages now live under `stdlib/tacit/` for `core`,
+  `bytes`, `array`, `text`, `collections`, and `io`.
+- `stdlib/tacit/text` source-defines ASCII classification/case helpers and
+  keeps a package-local helper to exercise visibility boundaries.
+- Byte-order, typed-array, collection, UTF-8, and stream I/O wrappers expose
+  explicit public signatures while the lower-level primitives remain
+  compiler-recognized compatibility shims.
+- The `stdlib/tacit/host/` namespace is documentation-only in Stage 9 and
+  adds no networking, HTTP, arbitrary FFI, or dynamic plugin loading.
+- Integration tests load the stdlib packages as ordinary packages, consume
+  `tacit.text` through a path dependency and exact definition-hash import,
+  and verify package-local stdlib helpers are not externally importable.
 
 Exit criteria:
 
