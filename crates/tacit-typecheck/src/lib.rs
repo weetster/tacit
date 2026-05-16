@@ -23,14 +23,16 @@ pub use error::{DiagOutput, Diagnostic};
 pub use infer::infer;
 pub use package::{
     check_package, clear_package_cache, evict_package_cache, load_package, lock_package,
-    materialize_package_derived, package_entry_expression, package_hash_for_project, CachedPackage,
-    DependencySpec, LockDependency, LockSource, LockTransitive, Lockfile, PackageCacheError,
-    PackageGraph, PackageManifest, PackageMetadata,
+    materialize_package_derived, package_entry_expression, package_hash_for_project,
+    package_test_entry_expression, CachedPackage, DependencySpec, LockDependency, LockSource,
+    LockTransitive, Lockfile, PackageCacheError, PackageGraph, PackageManifest, PackageMetadata,
+    PackageTest,
 };
 pub use project::{
     check_project, discover_project_root, emit_project_inspection, load_project,
-    materialize_project_derived, project_entry_expression, ProjectDefinition, ProjectDerivedError,
-    ProjectEntry, ProjectEntryError, ProjectGraph, ProjectLoadError, ProjectUnit,
+    materialize_project_derived, project_definition_expression, project_entry_expression,
+    ProjectDefinition, ProjectDerivedError, ProjectEntry, ProjectEntryError, ProjectGraph,
+    ProjectLoadError, ProjectUnit,
 };
 pub use sidecar::check_against_tacd;
 pub use ty::{EffSet, Ty};

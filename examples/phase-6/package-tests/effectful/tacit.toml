@@ -1,0 +1,7 @@
+[package]
+name = "package-test-effectful"
+
+[[tests]]
+name = "effect_policy_opt_in"
+target = "blake3:42c6bae345a557792e0e5ec03d3466734a6394c76f7e23a2fe86ff79fa2d0956"
+effects = ["Alloc", "Mut"]

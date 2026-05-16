@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::process::Command;
 
+use serde_json::Value;
 use tacit_canonical::ast::Node;
 use tacit_canonical::{emit, hash_node};
 use tacit_views::sidecar::{Sidecar, SidecarNode};
@@ -304,6 +305,127 @@ fn lock_and_check_package_path_dependency_cli() {
     assert!(stdout.contains(r#""errors": []"#), "{stdout}");
 }
 
+#[cfg(feature = "llvm")]
+#[test]
+fn test_package_json_passes_multimodule_private_test() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let d = dir.path();
+    let test_hash = write_cli_test_package(d, cli_eq_import_const_def, "40");
+
+    let out = tacit(&["test", ".", "--format", "json"], d);
+    assert!(
+        out.status.success(),
+        "package test failed\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let json: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(json["schema_version"], "tacit-test-v1");
+    assert_eq!(json["outcome"], "pass");
+    assert_eq!(json["summary"]["pass"], 1);
+    assert_eq!(json["results"][0]["name"], "provider_matches");
+    assert_eq!(
+        json["results"][0]["definition_hash"],
+        format!("blake3:{test_hash}")
+    );
+    assert_eq!(json["results"][0]["observed"]["bool"], true);
+    assert!(d.join(".tacit/derived").exists());
+}
+
+#[cfg(feature = "llvm")]
+#[test]
+fn test_package_json_reports_bool_false_as_fail() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let d = dir.path();
+    write_cli_test_package(d, cli_eq_import_const_def, "41");
+
+    let out = tacit(&["test", ".", "--format", "json"], d);
+    assert_eq!(out.status.code(), Some(1));
+    let json: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(json["outcome"], "fail");
+    assert_eq!(json["summary"]["fail"], 1);
+    assert_eq!(json["results"][0]["status"], "fail");
+    assert_eq!(json["results"][0]["observed"]["bool"], false);
+}
+
+#[test]
+fn test_package_json_reports_signature_mismatch_as_compile_fail() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let d = dir.path();
+    std::fs::create_dir_all(d.join("src")).unwrap();
+    let def = cli_const_int_def("1");
+    let def_hash = cli_hash(&def);
+    let unit = Node::Unit {
+        imports: vec![],
+        exports: vec![],
+        defs: vec![def],
+    };
+    std::fs::write(d.join("src/tests.tac"), emit(&unit)).unwrap();
+    write_test_manifest(d, "not_bool", &def_hash, "");
+
+    let out = tacit(&["test", ".", "--format", "json"], d);
+    assert_eq!(out.status.code(), Some(2));
+    let json: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(json["outcome"], "error");
+    assert_eq!(json["summary"]["compile_fail"], 1);
+    assert_eq!(
+        json["results"][0]["diagnostics"]["errors"][0]["kind"],
+        "test-signature-mismatch"
+    );
+}
+
+#[test]
+fn test_package_json_reports_effect_violation() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let d = dir.path();
+    std::fs::create_dir_all(d.join("src")).unwrap();
+    let def = cli_bool_def_with_effect(["IO"]);
+    let def_hash = cli_hash(&def);
+    let unit = Node::Unit {
+        imports: vec![],
+        exports: vec![],
+        defs: vec![def],
+    };
+    std::fs::write(d.join("src/tests.tac"), emit(&unit)).unwrap();
+    write_test_manifest(d, "io_test", &def_hash, "");
+
+    let out = tacit(&["test", ".", "--format", "json"], d);
+    assert_eq!(out.status.code(), Some(2));
+    let json: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(json["summary"]["effect_fail"], 1);
+    assert_eq!(json["results"][0]["status"], "effect-fail");
+    assert_eq!(
+        json["results"][0]["declared_effects"],
+        serde_json::json!(["IO"])
+    );
+}
+
+#[cfg(feature = "llvm")]
+#[test]
+fn test_package_json_reports_runtime_error() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let d = dir.path();
+    std::fs::create_dir_all(d.join("src")).unwrap();
+    let def = cli_non_exhaustive_bool_match_def();
+    let def_hash = cli_hash(&def);
+    let unit = Node::Unit {
+        imports: vec![],
+        exports: vec![],
+        defs: vec![def],
+    };
+    std::fs::write(d.join("src/tests.tac"), emit(&unit)).unwrap();
+    write_test_manifest(d, "runtime_error", &def_hash, "");
+
+    let out = tacit(&["test", ".", "--format", "json"], d);
+    assert_eq!(out.status.code(), Some(2));
+    let json: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(json["summary"]["error"], 1);
+    assert_eq!(
+        json["results"][0]["diagnostics"]["errors"][0]["kind"],
+        "test-runtime-error"
+    );
+}
+
 fn write_cli_project(d: &std::path::Path) -> (String, Node, Node) {
     std::fs::create_dir_all(d.join("src")).unwrap();
 
@@ -351,6 +473,57 @@ fn write_cli_project(d: &std::path::Path) -> (String, Node, Node) {
     (main_hash, provider_unit, main_unit)
 }
 
+fn write_cli_test_package(
+    d: &std::path::Path,
+    test_def: fn(&str, &str) -> Node,
+    expected_value: &str,
+) -> String {
+    std::fs::create_dir_all(d.join("src")).unwrap();
+
+    let provider = cli_const_int_def("40");
+    let provider_hash = cli_hash(&provider);
+    let provider_unit = Node::Unit {
+        imports: vec![],
+        exports: vec![Node::Export {
+            visibility: "package".into(),
+            hash: provider_hash.clone(),
+        }],
+        defs: vec![provider],
+    };
+
+    let test = test_def(&provider_hash, expected_value);
+    let test_hash = cli_hash(&test);
+    let test_unit = Node::Unit {
+        imports: vec![Node::Import {
+            hash: provider_hash,
+            sig: Box::new(cli_int_sig()),
+        }],
+        exports: vec![],
+        defs: vec![test],
+    };
+
+    std::fs::write(d.join("src/provider.tac"), emit(&provider_unit)).unwrap();
+    std::fs::write(d.join("src/tests.tac"), emit(&test_unit)).unwrap();
+    write_test_manifest(d, "provider_matches", &test_hash, "");
+    test_hash
+}
+
+fn write_test_manifest(d: &std::path::Path, name: &str, target: &str, effects: &str) {
+    let effects = if effects.is_empty() {
+        String::new()
+    } else {
+        format!("effects = [{}]\n", effects)
+    };
+    std::fs::write(
+        d.join("tacit.toml"),
+        format!(
+            "[package]\nname = \"cli-test\"\n\n[[tests]]\nname = \"{}\"\ntarget = \"blake3:{}\"\n{}",
+            name, target, effects
+        ),
+    )
+    .unwrap();
+}
+
 fn cli_sym(name: &str) -> Node {
     Node::Sym { name: name.into() }
 }
@@ -359,6 +532,22 @@ fn cli_int_sig() -> Node {
     Node::Sig {
         type_: Box::new(cli_sym("Int")),
         eval_eff: Box::new(Node::EffSet { atoms: vec![] }),
+    }
+}
+
+fn cli_bool_sig() -> Node {
+    Node::Sig {
+        type_: Box::new(cli_sym("Bool")),
+        eval_eff: Box::new(Node::EffSet { atoms: vec![] }),
+    }
+}
+
+fn cli_bool_sig_with_effect<const N: usize>(atoms: [&str; N]) -> Node {
+    Node::Sig {
+        type_: Box::new(cli_sym("Bool")),
+        eval_eff: Box::new(Node::EffSet {
+            atoms: atoms.iter().map(|atom| atom.to_string()).collect(),
+        }),
     }
 }
 
@@ -373,11 +562,60 @@ fn cli_int_to_int_sig() -> Node {
     }
 }
 
+fn cli_bool_def_with_effect<const N: usize>(atoms: [&str; N]) -> Node {
+    Node::Def {
+        sig: Box::new(cli_bool_sig_with_effect(atoms)),
+        body: Box::new(cli_eq_ints("1", "1")),
+    }
+}
+
+fn cli_non_exhaustive_bool_match_def() -> Node {
+    Node::Def {
+        sig: Box::new(cli_bool_sig()),
+        body: Box::new(Node::Match {
+            scrutinee: Box::new(Node::Int { value: "2".into() }),
+            arms: vec![Node::Arm {
+                pattern: Box::new(Node::PatInt { value: "1".into() }),
+                body: Box::new(cli_eq_ints("1", "1")),
+            }],
+        }),
+    }
+}
+
 fn cli_identity_def() -> Node {
     Node::Def {
         sig: Box::new(cli_int_to_int_sig()),
         body: Box::new(Node::Lam {
             body: Box::new(Node::Var { index: 0 }),
+        }),
+    }
+}
+
+fn cli_eq_import_const_def(import_hash: &str, value: &str) -> Node {
+    Node::Def {
+        sig: Box::new(cli_bool_sig()),
+        body: Box::new(Node::App {
+            fn_: Box::new(Node::App {
+                fn_: Box::new(cli_sym("eq")),
+                arg: Box::new(Node::Ref {
+                    hash: import_hash.into(),
+                }),
+            }),
+            arg: Box::new(Node::Int {
+                value: value.into(),
+            }),
+        }),
+    }
+}
+
+fn cli_eq_ints(left: &str, right: &str) -> Node {
+    Node::App {
+        fn_: Box::new(Node::App {
+            fn_: Box::new(cli_sym("eq")),
+            arg: Box::new(Node::Int { value: left.into() }),
+        }),
+        arg: Box::new(Node::Int {
+            value: right.into(),
         }),
     }
 }

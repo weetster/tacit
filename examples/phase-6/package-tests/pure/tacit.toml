@@ -1,0 +1,6 @@
+[package]
+name = "package-test-pure"
+
+[[tests]]
+name = "one_equals_one"
+target = "blake3:255e4fe4a49601abc68f6e854494390cb9ecd2e3e2d162b076f6668bb00663e6"

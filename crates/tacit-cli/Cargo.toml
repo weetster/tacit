@@ -17,6 +17,8 @@ tacit-codegen = { path = "../tacit-codegen" }
 tacit-typecheck = { path = "../tacit-typecheck" }
 clap = { version = "4", features = ["derive"] }
 tempfile = "3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 
 # Feature flags mirror tacit-codegen: pick one llvm<N>-<M> to enable the
 # compile subcommand.  The local `llvm` aggregate gates the compile code in

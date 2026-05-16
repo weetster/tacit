@@ -16,10 +16,11 @@ use tacit_views::sidecar::{Sidecar, SidecarNode};
 use crate::error::{Diagnostic, PathStep};
 use crate::project::{
     build_definition_index, graph_hash_with_tag, hex_hash_bytes, is_hash_str, load_project,
-    materialize_project_derived, max_visibility, project_entry_expression, selector_hash,
-    unit_boundary_hashes, ProjectDefinition, ProjectDerivedError, ProjectEntry, ProjectEntryError,
-    ProjectGraph, ProjectUnit,
+    materialize_project_derived, max_visibility, project_definition_expression,
+    project_entry_expression, selector_hash, unit_boundary_hashes, ProjectDefinition,
+    ProjectDerivedError, ProjectEntry, ProjectEntryError, ProjectGraph, ProjectUnit,
 };
+use crate::ty::{EffAtom, EffSet};
 use crate::units::{check_unit_with_sidecar, CheckedUnit, DefinitionEnv, ProvidedDefinition};
 
 const MANIFEST_FILE: &str = "tacit.toml";
@@ -33,6 +34,7 @@ pub struct PackageManifest {
     pub dependencies: BTreeMap<String, DependencySpec>,
     pub exports: BTreeMap<String, String>,
     pub bin: BTreeMap<String, String>,
+    pub tests: Vec<PackageTest>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -52,6 +54,13 @@ pub enum DependencySpec {
     Path {
         path: String,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PackageTest {
+    pub name: String,
+    pub target: String,
+    pub effects: EffSet,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -201,6 +210,19 @@ pub fn package_entry_expression(
     let selector = package.resolve_entry_selector(selector)?;
     let graph = package.linked_project_graph();
     project_entry_expression(&graph, selector.as_deref())
+}
+
+pub fn package_test_entry_expression(
+    package: &PackageGraph,
+    target_hash: &str,
+) -> Result<ProjectEntry, ProjectEntryError> {
+    if !package.root.definitions.contains_key(target_hash) {
+        return Err(ProjectEntryError::MissingDefinition(
+            target_hash.to_string(),
+        ));
+    }
+    let graph = package.linked_project_graph();
+    project_definition_expression(&graph, target_hash)
 }
 
 pub fn clear_package_cache(root: impl AsRef<Path>) -> Result<(), PackageCacheError> {
@@ -1151,7 +1173,10 @@ fn parse_manifest(text: &str, path: &Path) -> Result<PackageManifest, Diagnostic
     };
 
     for key in table.keys() {
-        if !matches!(key.as_str(), "package" | "dependencies" | "exports" | "bin") {
+        if !matches!(
+            key.as_str(),
+            "package" | "dependencies" | "exports" | "bin" | "tests"
+        ) {
             return Err(package_diag(
                 "manifest-unknown-field",
                 format!(
@@ -1199,6 +1224,11 @@ fn parse_manifest(text: &str, path: &Path) -> Result<PackageManifest, Diagnostic
         bin: table
             .get("bin")
             .map(|value| parse_string_table(value, path, "bin"))
+            .transpose()?
+            .unwrap_or_default(),
+        tests: table
+            .get("tests")
+            .map(|value| parse_tests(value, path))
             .transpose()?
             .unwrap_or_default(),
     })
@@ -1355,6 +1385,129 @@ fn parse_string_table(
     Ok(out)
 }
 
+fn parse_tests(value: &toml::Value, path: &Path) -> Result<Vec<PackageTest>, Diagnostic> {
+    let Some(entries) = value.as_array() else {
+        return Err(package_diag(
+            "manifest-parse",
+            format!("[[tests]] must be an array of tables in {}", path.display()),
+            None,
+            None,
+            Some(path),
+        ));
+    };
+
+    let mut out = Vec::new();
+    for (index, value) in entries.iter().enumerate() {
+        let table = expect_table(value, path, &format!("[[tests]] entry {index}"))?;
+        for key in table.keys() {
+            if !matches!(key.as_str(), "name" | "target" | "effects") {
+                return Err(package_diag(
+                    "manifest-unknown-field",
+                    format!("[[tests]] entry {} contains unknown field {}", index, key),
+                    None,
+                    None,
+                    Some(path),
+                ));
+            }
+        }
+        let name = optional_string(table, "name", path)?.ok_or_else(|| {
+            package_diag(
+                "manifest-parse",
+                format!("[[tests]] entry {} is missing required name", index),
+                None,
+                None,
+                Some(path),
+            )
+        })?;
+        let target = optional_string(table, "target", path)?.ok_or_else(|| {
+            package_diag(
+                "manifest-parse",
+                format!("[[tests]] entry {} is missing required target", index),
+                Some(&name),
+                None,
+                Some(path),
+            )
+        })?;
+        let Some(target) = parse_prefixed_hash(&target) else {
+            return Err(package_diag(
+                "manifest-parse",
+                format!("[[tests]].{} target must be a blake3:<hash>", name),
+                Some(&name),
+                None,
+                Some(path),
+            ));
+        };
+        let effects = table
+            .get("effects")
+            .map(|value| parse_test_effects(value, path, &name))
+            .transpose()?
+            .unwrap_or_default();
+        out.push(PackageTest {
+            name,
+            target,
+            effects,
+        });
+    }
+    Ok(out)
+}
+
+fn parse_test_effects(value: &toml::Value, path: &Path, name: &str) -> Result<EffSet, Diagnostic> {
+    let Some(entries) = value.as_array() else {
+        return Err(package_diag(
+            "manifest-parse",
+            format!("[[tests]].{} effects must be an array of strings", name),
+            Some(name),
+            None,
+            Some(path),
+        ));
+    };
+    let mut effects = EffSet::empty();
+    let mut previous_rank = None;
+    for entry in entries {
+        let Some(atom) = entry.as_str() else {
+            return Err(package_diag(
+                "manifest-parse",
+                format!("[[tests]].{} effects entries must be strings", name),
+                Some(name),
+                None,
+                Some(path),
+            ));
+        };
+        let (atom, rank) = match atom {
+            "Alloc" => (EffAtom::Alloc, 0),
+            "IO" => (EffAtom::IO, 1),
+            "Mut" => (EffAtom::Mut, 2),
+            other => {
+                return Err(package_diag(
+                    "manifest-parse",
+                    format!(
+                        "[[tests]].{} effects contains {}; valid atoms are Alloc, IO, Mut",
+                        name, other
+                    ),
+                    Some(name),
+                    None,
+                    Some(path),
+                ));
+            }
+        };
+        if previous_rank.is_some_and(|previous| previous >= rank) {
+            return Err(package_diag(
+                "manifest-parse",
+                format!(
+                    "[[tests]].{} effects must be sorted without duplicates as Alloc, IO, Mut",
+                    name
+                ),
+                Some(name),
+                None,
+                Some(path),
+            ));
+        }
+        previous_rank = Some(rank);
+        effects.atoms.insert(atom);
+    }
+    Ok(effects)
+}
+
 fn validate_manifest_entries(manifest: &PackageManifest, graph: &ProjectGraph) -> Vec<Diagnostic> {
     let public_exports = project_public_exports(graph);
     let mut diags = Vec::new();
@@ -1397,6 +1550,33 @@ fn validate_manifest_entries(manifest: &PackageManifest, graph: &ProjectGraph) -
                 None,
                 Some(&graph.root.join(MANIFEST_FILE)),
             )),
+        }
+    }
+
+    let manifest_path = graph.root.join(MANIFEST_FILE);
+    let mut test_names = BTreeSet::new();
+    let mut test_targets = BTreeSet::new();
+    for test in &manifest.tests {
+        if !test_names.insert(test.name.clone()) {
+            diags.push(package_diag(
+                "duplicate-test-alias",
+                format!("[[tests]] repeats test name {}", test.name),
+                Some(&test.name),
+                Some(&test.target),
+                Some(&manifest_path),
+            ));
+        }
+        if !test_targets.insert(test.target.clone()) {
+            diags.push(package_diag(
+                "duplicate-test-target",
+                format!(
+                    "[[tests]] repeats target blake3:{} for test {}",
+                    test.target, test.name
+                ),
+                Some(&test.name),
+                Some(&test.target),
+                Some(&manifest_path),
+            ));
         }
     }
 

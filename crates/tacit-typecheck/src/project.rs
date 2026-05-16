@@ -357,21 +357,28 @@ pub fn project_entry_expression(
     selector: Option<&str>,
 ) -> Result<ProjectEntry, ProjectEntryError> {
     let hash = resolve_entry_hash(graph, selector)?;
+    project_definition_expression(graph, &hash)
+}
+
+pub fn project_definition_expression(
+    graph: &ProjectGraph,
+    hash: &str,
+) -> Result<ProjectEntry, ProjectEntryError> {
     let definition = graph
         .definitions
-        .get(&hash)
-        .ok_or_else(|| ProjectEntryError::MissingDefinition(hash.clone()))?;
+        .get(hash)
+        .ok_or_else(|| ProjectEntryError::MissingDefinition(hash.to_string()))?;
 
-    let ty = definition_value_type(&hash, &definition.def)?;
+    let ty = definition_value_type(hash, &definition.def)?;
     if !matches!(ty, Ty::Int | Ty::Bool) {
         return Err(ProjectEntryError::NonExecutableEntry {
-            hash,
+            hash: hash.to_string(),
             ty: ty.to_string(),
         });
     }
 
     let mut stack = Vec::new();
-    let expression = expanded_definition_body(graph, &definition.hash, &mut stack)?;
+    let expression = expanded_definition_body(graph, hash, &mut stack)?;
     Ok(ProjectEntry {
         hash: definition.hash.clone(),
         expression,

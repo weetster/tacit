@@ -155,7 +155,7 @@ ADRs must land before implementation that depends on them.
    [ADR 0082](../decisions/0082-phase-6-package-manifest-lockfile-cache.md).
 5. Package-level test surface and structured test-result schema. Design
    accepted by [ADR 0083](../decisions/0083-phase-6-package-tests.md);
-   implementation pending.
+   implementation complete.
 6. Fixed-width integer and bit-operation surface.
 7. Typed mutable memory and bounds behavior.
 8. Data layout and decode support.
@@ -438,7 +438,7 @@ Outcome:
 
 **Status:** Design accepted 2026-05-15 by
 [ADR 0083](../decisions/0083-phase-6-package-tests.md); implementation
-pending.
+complete 2026-05-16.
 
 **Purpose:** Give multi-module packages a first-class executable test surface
 before the systems and host-interface examples grow large.
@@ -460,10 +460,11 @@ Work items:
 - Define structured test-result JSON. Done: `tacit-test-v1` result envelope
   with deterministic ordering and ADR 0041 diagnostics.
 - Add `tacit test` or an equivalent package-level test command. Defined by
-  ADR 0083; implementation pending.
+  ADR 0083; implemented as `tacit test [ROOT] [--format text|json]`.
 - Add pass, fail, panic/error, compile-fail, and effect-fail result cases.
-  Defined by ADR 0083; implementation pending.
-- Add examples for pure tests and effectful tests.
+  Defined by ADR 0083; implemented and covered by CLI tests.
+- Add examples for pure tests and effectful tests. Done under
+  `examples/phase-6/package-tests/`.
 - Ensure test output is stable and suitable for AI repair loops. Done in
   design: stable JSON omits timings, absolute paths, and raw process output.
 
@@ -473,6 +474,32 @@ Exit criteria:
 - Test results are emitted in a structured stable format.
 - Tests can call exported definitions from multiple modules.
 - CI covers at least one multi-module package test fixture.
+
+Outcome:
+
+- `tacit.toml` accepts optional strict `[[tests]]` entries with required
+  `name`, required local `target = "blake3:<hash>"`, and optional sorted
+  `effects = ["Alloc", "IO", "Mut"]`; duplicate test names and targets use
+  the reserved `duplicate-test-alias` and `duplicate-test-target`
+  diagnostics.
+- `tacit test [ROOT] [--format text|json]` loads the same package graph as
+  package-level `check` and `compile`, validates local test targets, enforces
+  the no-`Div` and allowed-effects policy, lowers selected local definitions
+  by hash, and runs executable `Bool` tests.
+- JSON output uses the stable `tacit-test-v1` envelope with package metadata,
+  summary counters, package-level ADR 0041 diagnostics, deterministic
+  hash/name result ordering, per-test declared and allowed effects,
+  `observed.bool`, and per-result diagnostics.
+- Result statuses cover `pass`, `fail`, `compile-fail`, `effect-fail`, and
+  `error`; exit codes follow ADR 0083 (`0` pass, `1` Bool failure only, `2`
+  static/runtime/package errors).
+- Derived test outputs live under
+  `.tacit/derived/project-<package-hash>/tests/`, including `results.json`
+  and `build/` intermediates; cache/object-store package identity remains
+  untouched.
+- Tests cover manifest parsing and diagnostics, a multi-module package test
+  calling a package-visible definition, Bool false failures, signature
+  compile-fail, effect-fail, and runtime-error JSON.
 
 ## Stage 6: Fixed-Width Integer And Bit Primitive Surface
 

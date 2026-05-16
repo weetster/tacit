@@ -1,13 +1,17 @@
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 #[cfg(feature = "llvm")]
 use std::process::Command;
 
 use clap::{Parser, Subcommand, ValueEnum};
+use serde::Serialize;
 
+use tacit_typecheck::ty::EffAtom;
 use tacit_typecheck::{
     check_package, check_unit_with_sidecar, clear_package_cache, emit_project_inspection,
     evict_package_cache, infer_module, load_package, load_project, lock_package,
-    materialize_package_derived, package_entry_expression, DefinitionEnv, DiagOutput,
+    materialize_package_derived, package_entry_expression, package_test_entry_expression,
+    CheckedUnit, DefinitionEnv, DiagOutput, Diagnostic, EffSet, PackageTest, Ty,
 };
 use tacit_views::authoring::{emit_authoring, parse_authoring};
 use tacit_views::sidecar::{Sidecar, SidecarNode};
@@ -49,6 +53,17 @@ enum Cmd {
         /// Output format: human-readable text (default) or JSON.
         #[arg(long, value_enum, value_name = "FORMAT", default_value = "text")]
         format: CheckFormat,
+    },
+
+    /// Run package-level tests declared in tacit.toml.
+    Test {
+        /// Package root directory.
+        #[arg(default_value = ".")]
+        input: PathBuf,
+
+        /// Output format: human-readable text (default) or stable JSON.
+        #[arg(long, value_enum, value_name = "FORMAT", default_value = "text")]
+        format: TestFormat,
     },
 
     /// Regenerate tacit.lock for a package root.
@@ -152,6 +167,14 @@ enum CheckFormat {
     Json,
 }
 
+#[derive(ValueEnum, Clone)]
+enum TestFormat {
+    /// Human-readable summary on stdout (default).
+    Text,
+    /// Stable tacit-test-v1 result envelope on stdout.
+    Json,
+}
+
 #[derive(Subcommand)]
 enum CacheCmd {
     /// Remove the package cache under ROOT/.tacit/cache.
@@ -195,6 +218,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             emit_llvm_ir,
         } => cmd_compile(input, output, entry, emit_llvm_ir),
         Cmd::Check { input, format } => cmd_check(input, format),
+        Cmd::Test { input, format } => cmd_test(input, format),
         Cmd::Lock { input } => cmd_lock(input),
         Cmd::Cache { command } => cmd_cache(command),
         Cmd::Canonicalize {
@@ -412,6 +436,606 @@ fn cmd_check(input: PathBuf, format: CheckFormat) -> Result<(), Box<dyn std::err
         }
     }
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// test subcommand
+// ---------------------------------------------------------------------------
+
+#[derive(Serialize)]
+struct TestEnvelope {
+    schema_version: &'static str,
+    package: TestPackageInfo,
+    outcome: String,
+    summary: TestSummary,
+    diagnostics: DiagOutput,
+    results: Vec<TestResult>,
+}
+
+#[derive(Serialize)]
+struct TestPackageInfo {
+    hash: Option<String>,
+    name: Option<String>,
+}
+
+#[derive(Default, Serialize)]
+struct TestSummary {
+    total: usize,
+    pass: usize,
+    fail: usize,
+    compile_fail: usize,
+    effect_fail: usize,
+    error: usize,
+}
+
+#[derive(Serialize)]
+struct TestResult {
+    name: String,
+    definition_hash: String,
+    unit_hash: Option<String>,
+    status: String,
+    declared_effects: Vec<String>,
+    allowed_effects: Vec<String>,
+    observed: TestObserved,
+    diagnostics: DiagOutput,
+}
+
+#[derive(Serialize)]
+struct TestObserved {
+    bool: Option<bool>,
+}
+
+fn cmd_test(input: PathBuf, format: TestFormat) -> Result<(), Box<dyn std::error::Error>> {
+    let envelope = run_package_tests(&input);
+    let exit_code = test_exit_code(&envelope);
+
+    match format {
+        TestFormat::Json => {
+            println!("{}", serde_json::to_string_pretty(&envelope)?);
+        }
+        TestFormat::Text => {
+            print_test_text(&envelope);
+            for diagnostic in &envelope.diagnostics.errors {
+                eprintln!("error[{}]: {}", diagnostic.kind, diagnostic.message);
+            }
+        }
+    }
+
+    if exit_code != 0 {
+        std::process::exit(exit_code);
+    }
+    Ok(())
+}
+
+fn run_package_tests(input: &Path) -> TestEnvelope {
+    let package = match load_package(input) {
+        Ok(package) => package,
+        Err(diags) => return test_envelope(None, None, diags, Vec::new()),
+    };
+
+    let package_hash = package.package_hash.clone();
+    let package_name = package
+        .manifest
+        .package
+        .as_ref()
+        .and_then(|metadata| metadata.name.clone());
+    let mut package_diags = Vec::new();
+
+    let tests_dir = match materialize_package_derived(&package) {
+        Ok(derived) => {
+            let tests = derived.join("tests");
+            let build = tests.join("build");
+            if let Err(source) = std::fs::create_dir_all(&build) {
+                package_diags.push(test_diag(
+                    "test-runtime-error",
+                    format!(
+                        "{}: failed to create test build directory: {}",
+                        build.display(),
+                        source
+                    ),
+                    Some(&package_hash),
+                    None,
+                    None,
+                ));
+                None
+            } else {
+                Some(tests)
+            }
+        }
+        Err(error) => {
+            package_diags.push(test_diag(
+                "test-runtime-error",
+                format!("failed to materialize package test output: {}", error),
+                Some(&package_hash),
+                None,
+                None,
+            ));
+            None
+        }
+    };
+
+    let checked = match check_package(&package) {
+        Ok(checked) => Some(checked),
+        Err(diags) => {
+            package_diags.extend(diags.clone());
+            let results = sorted_tests(&package.manifest.tests)
+                .into_iter()
+                .map(|test| {
+                    compile_fail_result(
+                        test,
+                        unit_hash_for_test(&package, test),
+                        Vec::new(),
+                        diags.clone(),
+                    )
+                })
+                .collect();
+            let envelope = test_envelope(Some(package_hash), package_name, package_diags, results);
+            write_test_results(tests_dir.as_deref(), &envelope);
+            return envelope;
+        }
+    };
+
+    if tests_dir.is_none() {
+        let results = sorted_tests(&package.manifest.tests)
+            .into_iter()
+            .map(|test| {
+                error_result(
+                    test,
+                    unit_hash_for_test(&package, test),
+                    Vec::new(),
+                    vec![test_diag(
+                        "test-runtime-error",
+                        format!("test {} could not be launched because the derived test directory is unavailable", test.name),
+                        Some(&package_hash),
+                        Some(test),
+                        unit_hash_for_test(&package, test).as_deref(),
+                    )],
+                )
+            })
+            .collect();
+        return test_envelope(Some(package_hash), package_name, package_diags, results);
+    }
+
+    let definition_types = checked_definition_types(checked.as_ref().expect("checked is Some"));
+    let definition_effects = checked_definition_effects(checked.as_ref().expect("checked is Some"));
+    let build_dir = tests_dir.as_ref().expect("checked above").join("build");
+    let results = sorted_tests(&package.manifest.tests)
+        .into_iter()
+        .map(|test| {
+            run_one_package_test(
+                &package,
+                test,
+                &definition_types,
+                &definition_effects,
+                &build_dir,
+            )
+        })
+        .collect();
+    let envelope = test_envelope(Some(package_hash), package_name, package_diags, results);
+    write_test_results(tests_dir.as_deref(), &envelope);
+    envelope
+}
+
+fn run_one_package_test(
+    package: &tacit_typecheck::PackageGraph,
+    test: &PackageTest,
+    definition_types: &BTreeMap<String, Ty>,
+    definition_effects: &BTreeMap<String, EffSet>,
+    build_dir: &Path,
+) -> TestResult {
+    let unit_hash = unit_hash_for_test(package, test);
+    let package_hash = package.package_hash.as_str();
+    let declared = definition_effects
+        .get(&test.target)
+        .cloned()
+        .unwrap_or_default();
+
+    if !package.root.definitions.contains_key(&test.target) {
+        return compile_fail_result(
+            test,
+            unit_hash,
+            effect_strings(&declared),
+            vec![test_diag(
+                "test-target-unresolved",
+                format!(
+                    "test {} target blake3:{} is not a local package definition",
+                    test.name, test.target
+                ),
+                Some(package_hash),
+                Some(test),
+                None,
+            )],
+        );
+    }
+
+    match definition_types.get(&test.target) {
+        Some(Ty::Bool) => {}
+        Some(ty) => {
+            return compile_fail_result(
+                test,
+                unit_hash.clone(),
+                effect_strings(&declared),
+                vec![test_diag(
+                    "test-signature-mismatch",
+                    format!(
+                        "test {} target blake3:{} has type {}; expected Bool",
+                        test.name, test.target, ty
+                    ),
+                    Some(package_hash),
+                    Some(test),
+                    unit_hash.as_deref(),
+                )],
+            );
+        }
+        None => {
+            return compile_fail_result(
+                test,
+                unit_hash.clone(),
+                effect_strings(&declared),
+                vec![test_diag(
+                    "test-signature-mismatch",
+                    format!(
+                        "test {} target blake3:{} has no checked signature",
+                        test.name, test.target
+                    ),
+                    Some(package_hash),
+                    Some(test),
+                    unit_hash.as_deref(),
+                )],
+            );
+        }
+    }
+
+    if declared.atoms.contains(&EffAtom::Div) || !declared.is_subset_of(&test.effects) {
+        return effect_fail_result(
+            test,
+            unit_hash.clone(),
+            effect_strings(&declared),
+            vec![test_diag(
+                "test-effect-violation",
+                format!(
+                    "test {} declares effects {} but manifest allows {}",
+                    test.name, declared, test.effects
+                ),
+                Some(package_hash),
+                Some(test),
+                unit_hash.as_deref(),
+            )],
+        );
+    }
+
+    let entry = match package_test_entry_expression(package, &test.target) {
+        Ok(entry) => entry,
+        Err(error) => {
+            return compile_fail_result(
+                test,
+                unit_hash.clone(),
+                effect_strings(&declared),
+                vec![test_diag(
+                    "test-compile-failure",
+                    format!("test {} failed entry lowering: {}", test.name, error),
+                    Some(package_hash),
+                    Some(test),
+                    unit_hash.as_deref(),
+                )],
+            );
+        }
+    };
+
+    match compile_and_run_test(&entry.expression, package_hash, &test.target, build_dir) {
+        Ok(value) => TestResult {
+            name: test.name.clone(),
+            definition_hash: prefixed(&test.target),
+            unit_hash: unit_hash.map(|hash| prefixed(&hash)),
+            status: if value { "pass" } else { "fail" }.to_string(),
+            declared_effects: effect_strings(&declared),
+            allowed_effects: effect_strings(&test.effects),
+            observed: TestObserved { bool: Some(value) },
+            diagnostics: DiagOutput::new(Vec::new()),
+        },
+        Err(diag) if diag.kind == "test-compile-failure" => {
+            compile_fail_result(test, unit_hash, effect_strings(&declared), vec![*diag])
+        }
+        Err(diag) => error_result(test, unit_hash, effect_strings(&declared), vec![*diag]),
+    }
+}
+
+#[cfg(feature = "llvm")]
+fn compile_and_run_test(
+    node: &tacit_canonical::ast::Node,
+    package_hash: &str,
+    target_hash: &str,
+    build_dir: &Path,
+) -> Result<bool, Box<Diagnostic>> {
+    let module_name = format!("test_{}_{}", &package_hash[..12], &target_hash[..12]);
+    let output = build_dir.join(format!("test-{}", &target_hash[..12]));
+    compile_with_llvm_node_in_dir(
+        node,
+        &module_name,
+        Some(output.clone()),
+        false,
+        Some(build_dir),
+    )
+    .map_err(|error| {
+        Box::new(test_diag(
+            "test-compile-failure",
+            format!("test blake3:{} failed to compile: {}", target_hash, error),
+            Some(package_hash),
+            None,
+            None,
+        ))
+    })?;
+    let status = Command::new(&output).status().map_err(|error| {
+        Box::new(test_diag(
+            "test-runtime-error",
+            format!(
+                "test blake3:{} could not be launched: {}",
+                target_hash, error
+            ),
+            Some(package_hash),
+            None,
+            None,
+        ))
+    })?;
+    match status.code() {
+        Some(1) => Ok(true),
+        Some(0) => Ok(false),
+        Some(code) => Err(Box::new(test_diag(
+            "test-runtime-error",
+            format!(
+                "test blake3:{} exited with code {}; Bool tests must return 0 or 1",
+                target_hash, code
+            ),
+            Some(package_hash),
+            None,
+            None,
+        ))),
+        None => Err(Box::new(test_diag(
+            "test-runtime-error",
+            format!(
+                "test blake3:{} terminated without an exit code",
+                target_hash
+            ),
+            Some(package_hash),
+            None,
+            None,
+        ))),
+    }
+}
+
+#[cfg(not(feature = "llvm"))]
+fn compile_and_run_test(
+    _node: &tacit_canonical::ast::Node,
+    package_hash: &str,
+    target_hash: &str,
+    _build_dir: &Path,
+) -> Result<bool, Box<Diagnostic>> {
+    Err(Box::new(test_diag(
+        "test-compile-failure",
+        format!(
+            "test blake3:{} cannot compile because tacit was not built with LLVM support",
+            target_hash
+        ),
+        Some(package_hash),
+        None,
+        None,
+    )))
+}
+
+fn sorted_tests(tests: &[PackageTest]) -> Vec<&PackageTest> {
+    let mut tests: Vec<_> = tests.iter().collect();
+    tests.sort_by(|left, right| {
+        left.target
+            .cmp(&right.target)
+            .then_with(|| left.name.cmp(&right.name))
+    });
+    tests
+}
+
+fn checked_definition_types(checked: &[CheckedUnit]) -> BTreeMap<String, Ty> {
+    let mut out = BTreeMap::new();
+    for unit in checked {
+        for (hash, ty) in &unit.definition_types {
+            out.insert(hash.clone(), ty.clone());
+        }
+    }
+    out
+}
+
+fn checked_definition_effects(checked: &[CheckedUnit]) -> BTreeMap<String, EffSet> {
+    let mut out = BTreeMap::new();
+    for unit in checked {
+        for (hash, effects) in &unit.definition_effects {
+            out.insert(hash.clone(), effects.clone());
+        }
+    }
+    out
+}
+
+fn unit_hash_for_test(
+    package: &tacit_typecheck::PackageGraph,
+    test: &PackageTest,
+) -> Option<String> {
+    package
+        .root
+        .definitions
+        .get(&test.target)
+        .and_then(|definition| definition.unit_hashes.iter().next().cloned())
+}
+
+fn compile_fail_result(
+    test: &PackageTest,
+    unit_hash: Option<String>,
+    declared_effects: Vec<String>,
+    diags: Vec<Diagnostic>,
+) -> TestResult {
+    static_result(test, unit_hash, "compile-fail", declared_effects, diags)
+}
+
+fn effect_fail_result(
+    test: &PackageTest,
+    unit_hash: Option<String>,
+    declared_effects: Vec<String>,
+    diags: Vec<Diagnostic>,
+) -> TestResult {
+    static_result(test, unit_hash, "effect-fail", declared_effects, diags)
+}
+
+fn error_result(
+    test: &PackageTest,
+    unit_hash: Option<String>,
+    declared_effects: Vec<String>,
+    diags: Vec<Diagnostic>,
+) -> TestResult {
+    static_result(test, unit_hash, "error", declared_effects, diags)
+}
+
+fn static_result(
+    test: &PackageTest,
+    unit_hash: Option<String>,
+    status: &str,
+    declared_effects: Vec<String>,
+    diags: Vec<Diagnostic>,
+) -> TestResult {
+    TestResult {
+        name: test.name.clone(),
+        definition_hash: prefixed(&test.target),
+        unit_hash: unit_hash.map(|hash| prefixed(&hash)),
+        status: status.to_string(),
+        declared_effects,
+        allowed_effects: effect_strings(&test.effects),
+        observed: TestObserved { bool: None },
+        diagnostics: DiagOutput::new(diags),
+    }
+}
+
+fn test_envelope(
+    package_hash: Option<String>,
+    package_name: Option<String>,
+    diagnostics: Vec<Diagnostic>,
+    results: Vec<TestResult>,
+) -> TestEnvelope {
+    let summary = summarize_tests(&results);
+    let outcome = if summary.compile_fail > 0
+        || summary.effect_fail > 0
+        || summary.error > 0
+        || diagnostics.iter().any(|diag| diag.severity == "error")
+    {
+        "error"
+    } else if summary.fail > 0 {
+        "fail"
+    } else {
+        "pass"
+    };
+    TestEnvelope {
+        schema_version: "tacit-test-v1",
+        package: TestPackageInfo {
+            hash: package_hash.map(|hash| prefixed(&hash)),
+            name: package_name,
+        },
+        outcome: outcome.to_string(),
+        summary,
+        diagnostics: DiagOutput::new(diagnostics),
+        results,
+    }
+}
+
+fn summarize_tests(results: &[TestResult]) -> TestSummary {
+    let mut summary = TestSummary {
+        total: results.len(),
+        ..Default::default()
+    };
+    for result in results {
+        match result.status.as_str() {
+            "pass" => summary.pass += 1,
+            "fail" => summary.fail += 1,
+            "compile-fail" => summary.compile_fail += 1,
+            "effect-fail" => summary.effect_fail += 1,
+            "error" => summary.error += 1,
+            _ => {}
+        }
+    }
+    summary
+}
+
+fn test_exit_code(envelope: &TestEnvelope) -> i32 {
+    if envelope.summary.compile_fail > 0
+        || envelope.summary.effect_fail > 0
+        || envelope.summary.error > 0
+        || envelope.diagnostics.has_errors()
+    {
+        2
+    } else if envelope.summary.fail > 0 {
+        1
+    } else {
+        0
+    }
+}
+
+fn print_test_text(envelope: &TestEnvelope) {
+    for result in &envelope.results {
+        println!("{} {}", result.status, result.name);
+    }
+    println!(
+        "{}: {} passed, {} failed, {} compile-fail, {} effect-fail, {} error",
+        envelope.outcome,
+        envelope.summary.pass,
+        envelope.summary.fail,
+        envelope.summary.compile_fail,
+        envelope.summary.effect_fail,
+        envelope.summary.error
+    );
+}
+
+fn write_test_results(tests_dir: Option<&Path>, envelope: &TestEnvelope) {
+    let Some(tests_dir) = tests_dir else {
+        return;
+    };
+    if let Ok(json) = serde_json::to_vec_pretty(envelope) {
+        let _ = std::fs::write(tests_dir.join("results.json"), json);
+    }
+}
+
+fn effect_strings(effects: &EffSet) -> Vec<String> {
+    effects.atoms.iter().map(ToString::to_string).collect()
+}
+
+fn test_diag(
+    kind: &str,
+    message: String,
+    package_hash: Option<&str>,
+    test: Option<&PackageTest>,
+    unit_hash: Option<&str>,
+) -> Diagnostic {
+    let mut details = serde_json::Map::new();
+    if let Some(package_hash) = package_hash {
+        details.insert(
+            "package_hash".to_string(),
+            serde_json::json!(prefixed(package_hash)),
+        );
+    }
+    if let Some(test) = test {
+        details.insert("test".to_string(), serde_json::json!(test.name));
+        details.insert(
+            "definition_hash".to_string(),
+            serde_json::json!(prefixed(&test.target)),
+        );
+    }
+    if let Some(unit_hash) = unit_hash {
+        details.insert(
+            "unit_hash".to_string(),
+            serde_json::json!(prefixed(unit_hash)),
+        );
+    }
+    Diagnostic::package_error(kind, message, serde_json::Value::Object(details))
+}
+
+fn prefixed(hash: &str) -> String {
+    if hash.starts_with("blake3:") {
+        hash.to_string()
+    } else {
+        format!("blake3:{hash}")
+    }
 }
 
 fn cmd_lock(input: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
@@ -681,8 +1305,7 @@ fn compile_with_llvm_node_in_dir(
             .status()
             .map_err(|e| format!("failed to invoke linker {}: {}", linker, e))?;
         if !status.success() {
-            eprintln!("error: linker {} exited with {}", linker, status);
-            std::process::exit(2);
+            return Err(format!("linker {} exited with {}", linker, status).into());
         }
     }
     Ok(())

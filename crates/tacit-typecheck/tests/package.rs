@@ -16,11 +16,28 @@ fn int_sig() -> Node {
     }
 }
 
+fn bool_sig() -> Node {
+    Node::Sig {
+        type_: Box::new(sym("Bool")),
+        eval_eff: Box::new(Node::EffSet { atoms: vec![] }),
+    }
+}
+
 fn const_int_def(value: &str) -> Node {
     Node::Def {
         sig: Box::new(int_sig()),
         body: Box::new(Node::Int {
             value: value.into(),
+        }),
+    }
+}
+
+fn const_bool_def(value: bool) -> Node {
+    Node::Def {
+        sig: Box::new(bool_sig()),
+        body: Box::new(Node::Ctor {
+            name: if value { "True" } else { "False" }.into(),
+            args: vec![],
         }),
     }
 }
@@ -286,4 +303,86 @@ fn manifest_schema_errors_use_reserved_diagnostic_kinds() {
     std::fs::write(dir.path().join("tacit.toml"), "[tool]\nname = \"x\"\n").unwrap();
     let unknown = load_package(dir.path()).expect_err("unknown manifest field");
     assert!(unknown.iter().any(|d| d.kind == "manifest-unknown-field"));
+}
+
+#[test]
+fn manifest_tests_parse_effect_policy_and_reject_div() {
+    let dir = tempfile::tempdir().unwrap();
+    let test_def = const_bool_def(true);
+    let test_hash = hash(&test_def);
+    let unit = Node::Unit {
+        imports: vec![],
+        exports: vec![],
+        defs: vec![test_def],
+    };
+    write_unit(dir.path(), "src/tests.tac", &unit);
+    std::fs::write(
+        dir.path().join("tacit.toml"),
+        format!(
+            r#"[[tests]]
+name = "effectful"
+target = "blake3:{}"
+effects = ["Alloc", "IO", "Mut"]
+"#,
+            test_hash
+        ),
+    )
+    .unwrap();
+
+    let package = load_package(dir.path()).expect("manifest tests parse");
+    assert_eq!(package.manifest.tests.len(), 1);
+    let atoms: Vec<_> = package.manifest.tests[0]
+        .effects
+        .atoms
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    assert_eq!(atoms, vec!["Alloc", "IO", "Mut"]);
+
+    std::fs::write(
+        dir.path().join("tacit.toml"),
+        format!(
+            r#"[[tests]]
+name = "div"
+target = "blake3:{}"
+effects = ["Div"]
+"#,
+            test_hash
+        ),
+    )
+    .unwrap();
+    let div = load_package(dir.path()).expect_err("Div is not manifest-allowed");
+    assert!(div.iter().any(|d| d.kind == "manifest-parse"));
+}
+
+#[test]
+fn duplicate_manifest_tests_use_reserved_diagnostics() {
+    let dir = tempfile::tempdir().unwrap();
+    let test_def = const_bool_def(true);
+    let test_hash = hash(&test_def);
+    let unit = Node::Unit {
+        imports: vec![],
+        exports: vec![],
+        defs: vec![test_def],
+    };
+    write_unit(dir.path(), "src/tests.tac", &unit);
+    std::fs::write(
+        dir.path().join("tacit.toml"),
+        format!(
+            r#"[[tests]]
+name = "same"
+target = "blake3:{0}"
+
+[[tests]]
+name = "same"
+target = "blake3:{0}"
+"#,
+            test_hash
+        ),
+    )
+    .unwrap();
+
+    let diags = load_package(dir.path()).expect_err("duplicate tests are invalid");
+    assert!(diags.iter().any(|d| d.kind == "duplicate-test-alias"));
+    assert!(diags.iter().any(|d| d.kind == "duplicate-test-target"));
 }
