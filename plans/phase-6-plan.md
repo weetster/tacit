@@ -134,7 +134,7 @@ remain host-owned capabilities during Phase 6.
 | Q-P6-8 | Are fixed-width integer operations primitives, source-library functions, or both? | Resolved by [ADR 0084](../decisions/0084-phase-6-fixed-width-integers.md) |
 | Q-P6-9 | What typed mutable-memory surface replaces or subsumes `Buf` and `I64Vec`? | Resolved by [ADR 0085](../decisions/0085-phase-6-typed-mutable-memory.md) |
 | Q-P6-10 | Are existing records, constructors, and `match` sufficient for decode shapes? | Resolved by [ADR 0086](../decisions/0086-phase-6-data-layout-and-decode.md) |
-| Q-P6-11 | Which compiler-recognized primitives move first into source-level stdlib packages? | Stage 9 ADR |
+| Q-P6-11 | Which compiler-recognized primitives move first into source-level stdlib packages? | Resolved by [ADR 0087](../decisions/0087-phase-6-source-level-stdlib-foundations.md) |
 | Q-P6-12 | What Tacit types are ABI-expressible at the host boundary? | Stage 10 ADR |
 | Q-P6-13 | What ownership, lifetime, allocation, and result/error rules govern host calls? | Stage 10 ADR |
 | Q-P6-14 | Does Phase 6 commit only to LLVM-native linkable artifacts, or also to WASM? | Stage 10 ADR |
@@ -162,7 +162,9 @@ ADRs must land before implementation that depends on them.
    [ADR 0085](../decisions/0085-phase-6-typed-mutable-memory.md).
 8. Data layout and decode support. Done:
    [ADR 0086](../decisions/0086-phase-6-data-layout-and-decode.md).
-9. Source-level stdlib migration path.
+9. Source-level stdlib migration path. Design accepted by
+   [ADR 0087](../decisions/0087-phase-6-source-level-stdlib-foundations.md);
+   implementation planned.
 10. Host-interface ABI, ABI-expressible type subset, ownership, allocation,
     result/error handling, and backend target decision.
 11. Phase 6 freeze.
@@ -693,14 +695,17 @@ Outcome:
 
 ## Stage 9: Source-Level Stdlib Foundations
 
-**Status:** Planned
+**Status:** Design accepted 2026-05-16 by
+[ADR 0087](../decisions/0087-phase-6-source-level-stdlib-foundations.md);
+implementation planned.
 
 **Purpose:** Start moving library logic out of compiler-recognized primitives
 once modules and packages make source libraries viable.
 
 Work items:
 
-- Write the source-stdlib ADR.
+- Write the source-stdlib ADR. Done:
+  [ADR 0087](../decisions/0087-phase-6-source-level-stdlib-foundations.md).
 - Define the source-level stdlib package structure.
 - Decide the initial prelude/import behavior, if any.
 - Move or wrap byte-order helpers in source-level packages.
@@ -712,6 +717,26 @@ Work items:
   operations without making networking a built-in primitive.
 - Preserve structured type/effect signatures for every public stdlib export.
 - Add tests that use stdlib packages through ordinary package imports.
+
+Design outcome:
+
+- Source-level stdlib packages are ordinary hash-pinned packages under
+  `stdlib/tacit/`, not compiler-magic packages.
+- Stage 9 adds no implicit prelude or name-based `std` resolver; stdlib use
+  remains explicit through ordinary manifests, lockfiles, imports, and hashes.
+- Initial packages are `tacit.core`, `tacit.bytes`, `tacit.array`,
+  `tacit.text`, `tacit.collections`, `tacit.io`, and a convention-only
+  `tacit.host` namespace for future Stage 10 capability wrappers.
+- The first migration set source-defines simple ASCII/text predicates and
+  range-table accessors where possible, while wrapping byte-order,
+  typed-vector, collection, and stream I/O primitives as compatibility-safe
+  source exports.
+- Low-level fixed-width arithmetic, typed-vector memory operations,
+  file-descriptor host calls, and higher-order combinators remain
+  compiler-recognized in Stage 9 where they still need codegen or checker
+  cooperation.
+- Networking and HTTP remain host-provided capability patterns for Stage 10,
+  not built-in primitives.
 
 Exit criteria:
 
