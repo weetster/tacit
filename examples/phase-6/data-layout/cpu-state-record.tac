@@ -1,0 +1,1 @@
+(let (record a (ann (int 18) (sym u8)) flags (record carry (app (app (sym eq) (int 1)) (int 1)) zero (app (app (sym eq) (int 0)) (int 1))) pc (ann (int 4660) (sym u16)) sp (ann (int 255) (sym u8)) x (ann (int 52) (sym u8)) y (ann (int 86) (sym u8))) (if (proj (proj (var 0) flags) carry) (app (sym u16-to-u8-trunc) (proj (var 0) pc)) (int 0)))

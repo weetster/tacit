@@ -133,7 +133,7 @@ remain host-owned capabilities during Phase 6.
 | Q-P6-7 | What is the minimum unit-test surface and structured result schema? | Resolved by [ADR 0083](../decisions/0083-phase-6-package-tests.md) |
 | Q-P6-8 | Are fixed-width integer operations primitives, source-library functions, or both? | Resolved by [ADR 0084](../decisions/0084-phase-6-fixed-width-integers.md) |
 | Q-P6-9 | What typed mutable-memory surface replaces or subsumes `Buf` and `I64Vec`? | Resolved by [ADR 0085](../decisions/0085-phase-6-typed-mutable-memory.md) |
-| Q-P6-10 | Are existing records, constructors, and `match` sufficient for decode shapes? | Stage 8 ADR |
+| Q-P6-10 | Are existing records, constructors, and `match` sufficient for decode shapes? | Resolved by [ADR 0086](../decisions/0086-phase-6-data-layout-and-decode.md) |
 | Q-P6-11 | Which compiler-recognized primitives move first into source-level stdlib packages? | Stage 9 ADR |
 | Q-P6-12 | What Tacit types are ABI-expressible at the host boundary? | Stage 10 ADR |
 | Q-P6-13 | What ownership, lifetime, allocation, and result/error rules govern host calls? | Stage 10 ADR |
@@ -160,7 +160,8 @@ ADRs must land before implementation that depends on them.
    [ADR 0084](../decisions/0084-phase-6-fixed-width-integers.md).
 7. Typed mutable memory and bounds behavior. Done:
    [ADR 0085](../decisions/0085-phase-6-typed-mutable-memory.md).
-8. Data layout and decode support.
+8. Data layout and decode support. Done:
+   [ADR 0086](../decisions/0086-phase-6-data-layout-and-decode.md).
 9. Source-level stdlib migration path.
 10. Host-interface ABI, ABI-expressible type subset, ownership, allocation,
     result/error handling, and backend target decision.
@@ -633,14 +634,17 @@ Outcome:
 
 ## Stage 8: Data Layout And Decode Support
 
-**Status:** Planned
+**Status:** Complete 2026-05-16. Design accepted by
+[ADR 0086](../decisions/0086-phase-6-data-layout-and-decode.md);
+implementation verified with CPU-state and opcode-decode record examples.
 
 **Purpose:** Decide whether the Phase 4 structural surface is enough for
 systems decode shapes, and add only the minimum missing surface.
 
 Work items:
 
-- Write the data-layout/decode ADR.
+- Write the data-layout/decode ADR. Done:
+  [ADR 0086](../decisions/0086-phase-6-data-layout-and-decode.md).
 - Evaluate records for CPU registers, flags, and device state.
 - Evaluate existing constructors and `match` for instruction and addressing
   mode decode.
@@ -662,6 +666,30 @@ Exit criteria:
   is introduced.
 - Performance-sensitive lowering choices are recorded for Phase 8 rather than
   pulled into Phase 6.
+
+Outcome:
+
+- Stage 8 adds no new syntax or canonical node. Existing structural records,
+  fixed-width integers, bit primitives, typed vectors, and `match` are
+  sufficient for the Phase 6 emulator-skeleton decode target.
+- CPU and device state use structural records with fixed-width integer fields,
+  `Bool` flags, nested status records, and typed-vector handles where mutable
+  storage is needed.
+- Instruction and addressing-mode decode use explicit fixed-width tag fields
+  in ordinary records, with `pat-int` match arms and wildcard fallback for
+  illegal or unknown opcodes.
+- User-defined constructor/ADT syntax is deferred. Existing constructors are
+  not promoted into a typed decode surface beyond `True`/`False`.
+- ABI-stable record layout and packed layout are deferred to Stage 10. During
+  Stage 8, records are language-level structural products and byte packing
+  remains `u8vec` plus typed byte-bus helper work.
+- No new structured diagnostics are added because no new accepted forms are
+  added. `non-abi-safe-layout`, `unsupported-packed-layout`, and static
+  exhaustiveness diagnostics remain tied to future ABI, packed-layout, or ADT
+  surfaces.
+- Durable examples live under `examples/phase-6/data-layout/`, with focused
+  typecheck and codegen tests covering CPU-state records and opcode-decode
+  records.
 
 ## Stage 9: Source-Level Stdlib Foundations
 

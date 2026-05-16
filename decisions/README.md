@@ -100,3 +100,5 @@ Keep ADRs short. They record the decision, not the full analysis that led to it.
 - [0082 — Phase 6 package manifest, lockfile, and dependency cache](0082-phase-6-package-manifest-lockfile-cache.md)
 - [0083 — Phase 6 package tests and structured test results](0083-phase-6-package-tests.md)
 - [0084 — Phase 6 fixed-width integers and bit primitives](0084-phase-6-fixed-width-integers.md)
+- [0085 — Phase 6 typed mutable memory](0085-phase-6-typed-mutable-memory.md)
+- [0086 — Phase 6 data layout and decode support](0086-phase-6-data-layout-and-decode.md)
