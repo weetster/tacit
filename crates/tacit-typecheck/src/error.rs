@@ -569,6 +569,7 @@ pub fn ty_to_json(ty: &Ty) -> Value {
         Ty::Buf => serde_json::json!({"sym": "Buf"}),
         Ty::I64Vec => serde_json::json!({"sym": "I64Vec"}),
         Ty::FixedInt(int_ty) => serde_json::json!({"sym": int_ty.to_string()}),
+        Ty::Vec(int_ty) => serde_json::json!({"sym": format!("{}vec", int_ty)}),
         Ty::Fn(a, b, eff) => serde_json::json!({
             "fn-ty": {
                 "arg": ty_to_json(a),

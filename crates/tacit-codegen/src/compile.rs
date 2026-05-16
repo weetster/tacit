@@ -70,6 +70,7 @@ const LLVM_C_CALL_CONV: u32 = 0;
 use tacit_canonical::ast::Node;
 use tacit_typecheck::primitives::{
     FixedArithMode, FixedArithOp, FixedBitOp, FixedCastKind, FixedEndian, FixedPrim, FixedShiftOp,
+    U8VecBusOp, U8VecOp, VecOp, VecPrim,
 };
 use tacit_typecheck::ty::{FixedIntTy, IntSign, Subst, Ty};
 use tacit_typecheck::type_from_node::type_from_node;
@@ -125,6 +126,14 @@ enum Binding<'ctx> {
     Ptr {
         ptr: PointerValue<'ctx>,
         kind: PtrKind,
+    },
+    /// A Stage 7 typed mutable vector handle (ADR 0085): pointer to the
+    /// element-typed storage plus the element count carried in the handle.
+    /// Anti-escape; not a first-class value.
+    VecHandle {
+        ptr: PointerValue<'ctx>,
+        len: IntValue<'ctx>,
+        ty: FixedIntTy,
     },
     /// Placeholder for an outer binding that was not captured into a closure
     /// environment. A correct free-variable analysis means this is never read.
@@ -372,6 +381,9 @@ impl<'ctx> Compiler<'ctx> {
                     Binding::Function(f) => self.reify_function_binding(f, cur_fn),
                     Binding::Ptr { .. } => Err(CodegenError::Unsupported(
                         "buffer-like handle used in integer-value position",
+                    )),
+                    Binding::VecHandle { .. } => Err(CodegenError::Unsupported(
+                        "typed vector handle used in integer-value position",
                     )),
                     Binding::Unavailable => Err(CodegenError::UnavailableCapture { index: *index }),
                 }
@@ -694,6 +706,53 @@ impl<'ctx> Compiler<'ctx> {
                     );
                     return self.compile_value_expr(body, &new_env, cur_fn);
                 }
+
+                // Stage 7 typed vec alloc (ADR 0085): `let v = @<ty>vec-alloc n in ...`.
+                if args.len() == 1 {
+                    if let Some(VecPrim::Vec {
+                        ty,
+                        op: VecOp::Alloc,
+                    }) = tacit_typecheck::primitives::parse_vec_prim(name)
+                    {
+                        let count_val = self.compile_expr(args[0], env, cur_fn)?;
+                        let elem_ty = self.llvm_int_type_for_width(ty.width);
+                        let ptr = self
+                            .builder
+                            .build_array_alloca(elem_ty, count_val, "vec_alloc")
+                            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+                        let mut new_env = env.to_vec();
+                        new_env.insert(
+                            0,
+                            Binding::VecHandle {
+                                ptr,
+                                len: count_val,
+                                ty,
+                            },
+                        );
+                        return self.compile_value_expr(body, &new_env, cur_fn);
+                    }
+                }
+
+                // Stage 7 u8vec slice (ADR 0085):
+                // `let s = @u8vec-slice v off len in ...` binds a sub-view.
+                if name == "u8vec-slice" && args.len() == 3 {
+                    let u8_ty = FixedIntTy::new(IntSign::Unsigned, 8);
+                    let (parent_ptr, parent_len) = self.resolve_vec_arg(args[0], env, u8_ty)?;
+                    let off = self.compile_expr(args[1], env, cur_fn)?;
+                    let slice_len = self.compile_expr(args[2], env, cur_fn)?;
+                    self.check_range(cur_fn, off, slice_len, parent_len, "u8vec_slice")?;
+                    let slice_ptr = self.ptr_at(parent_ptr, off, "u8vec_slice_ptr")?;
+                    let mut new_env = env.to_vec();
+                    new_env.insert(
+                        0,
+                        Binding::VecHandle {
+                            ptr: slice_ptr,
+                            len: slice_len,
+                            ty: u8_ty,
+                        },
+                    );
+                    return self.compile_value_expr(body, &new_env, cur_fn);
+                }
             }
         }
 
@@ -819,7 +878,9 @@ impl<'ctx> Compiler<'ctx> {
                         let arg_vals = self.compile_call_args(&args, env, cur_fn)?;
                         self.call_closure_spine(closure, &arg_vals)
                     }
-                    Binding::Ptr { .. } | Binding::Unavailable => Err(CodegenError::AppNonFunction),
+                    Binding::Ptr { .. } | Binding::VecHandle { .. } | Binding::Unavailable => {
+                        Err(CodegenError::AppNonFunction)
+                    }
                 }
             }
             _ => {
@@ -869,6 +930,9 @@ impl<'ctx> Compiler<'ctx> {
             match capture {
                 Binding::Value(v) => call_args.push(v.value.into()),
                 Binding::Ptr { ptr, .. } => {
+                    call_args.push(BasicMetadataValueEnum::PointerValue(*ptr))
+                }
+                Binding::VecHandle { ptr, .. } => {
                     call_args.push(BasicMetadataValueEnum::PointerValue(*ptr))
                 }
                 Binding::Function(_) | Binding::Unavailable => {}
@@ -966,6 +1030,7 @@ impl<'ctx> Compiler<'ctx> {
 
         match kind {
             PrimKind::Fixed(prim) => self.emit_fixed_primitive(prim, args, env, cur_fn),
+            PrimKind::Vec(prim) => self.emit_vec_primitive(prim, args, env, cur_fn),
             PrimKind::Arith(op) => {
                 let a = self.compile_expr(args[0], env, cur_fn)?;
                 let b = self.compile_expr(args[1], env, cur_fn)?;
@@ -2644,6 +2709,599 @@ impl<'ctx> Compiler<'ctx> {
                 "i64_memmove",
             )
             .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        Ok(i64_t.const_zero())
+    }
+
+    // ── Stage 7 typed mutable vector helpers (ADR 0085) ─────────────────────
+
+    fn llvm_int_type_for_width(&self, width: u16) -> inkwell::types::IntType<'ctx> {
+        match width {
+            8 => self.context.i8_type(),
+            16 => self.context.i16_type(),
+            32 => self.context.i32_type(),
+            64 => self.context.i64_type(),
+            _ => unreachable!("ADR 0084 fixed-width integer widths are 8/16/32/64"),
+        }
+    }
+
+    fn llvm_trap(&self) -> FunctionValue<'ctx> {
+        let name = "llvm.trap";
+        if let Some(f) = self.module.get_function(name) {
+            return f;
+        }
+        let void_t = self.context.void_type();
+        let ty = void_t.fn_type(&[], false);
+        self.module.add_function(name, ty, None)
+    }
+
+    /// Emit `if cond { llvm.trap(); unreachable; }` and continue at a fresh
+    /// "ok" block. `cond` is an `i1` that is true when the access is
+    /// out-of-bounds.
+    fn emit_bounds_trap(
+        &mut self,
+        cur_fn: FunctionValue<'ctx>,
+        cond: IntValue<'ctx>,
+        name: &str,
+    ) -> Result<()> {
+        let trap_bb = self
+            .context
+            .append_basic_block(cur_fn, &format!("{name}_trap"));
+        let ok_bb = self
+            .context
+            .append_basic_block(cur_fn, &format!("{name}_ok"));
+        self.builder
+            .build_conditional_branch(cond, trap_bb, ok_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder.position_at_end(trap_bb);
+        let trap = self.llvm_trap();
+        self.builder
+            .build_call(trap, &[], "vec_trap")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_unreachable()
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder.position_at_end(ok_bb);
+        Ok(())
+    }
+
+    /// Resolve a `<ty>vec` argument to its (pointer, length, type) triple
+    /// from the current binding stack. Anti-escape: the only legal source
+    /// of a vec handle is a `Var` bound to a `Binding::VecHandle`.
+    fn resolve_vec_arg(
+        &self,
+        node: &Node,
+        env: &[Binding<'ctx>],
+        expected: FixedIntTy,
+    ) -> Result<(PointerValue<'ctx>, IntValue<'ctx>)> {
+        match node {
+            Node::Var { index } => match lookup_var(env, *index)? {
+                Binding::VecHandle { ptr, len, ty } if *ty == expected => Ok((*ptr, *len)),
+                Binding::VecHandle { .. } => Err(CodegenError::Unsupported(
+                    "vec primitive received wrong vec element type",
+                )),
+                _ => Err(CodegenError::Unsupported(
+                    "typed vec argument must reference an @<ty>vec-alloc binding",
+                )),
+            },
+            _ => Err(CodegenError::Unsupported(
+                "typed vec argument must reference an @<ty>vec-alloc binding",
+            )),
+        }
+    }
+
+    /// GEP to `vec[index]` using the storage element type. Returns the
+    /// element pointer.
+    fn vec_element_ptr(
+        &mut self,
+        base: PointerValue<'ctx>,
+        index: IntValue<'ctx>,
+        elem_ty: FixedIntTy,
+        name: &str,
+    ) -> Result<PointerValue<'ctx>> {
+        let llvm_ty = self.llvm_int_type_for_width(elem_ty.width);
+        unsafe { self.builder.build_gep(llvm_ty, base, &[index], name) }
+            .map_err(|e| CodegenError::Llvm(e.to_string()))
+    }
+
+    fn emit_vec_primitive(
+        &mut self,
+        prim: VecPrim,
+        args: &[&Node],
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<CompiledValue<'ctx>> {
+        match prim {
+            VecPrim::Vec {
+                op: VecOp::Alloc, ..
+            } => Err(CodegenError::Unsupported(
+                "@<ty>vec-alloc must appear as the direct RHS of a `let` binding",
+            )),
+            VecPrim::Vec { ty, op: VecOp::Len } => {
+                let (_, len) = self.resolve_vec_arg(args[0], env, ty)?;
+                Ok(CompiledValue::int(len))
+            }
+            VecPrim::Vec { ty, op: VecOp::Get } => self
+                .emit_vec_get(ty, args, env, cur_fn)
+                .map(CompiledValue::int),
+            VecPrim::Vec { ty, op: VecOp::Set } => self
+                .emit_vec_set(ty, args, env, cur_fn)
+                .map(CompiledValue::int),
+            VecPrim::U8Vec(U8VecOp::Fill) => self
+                .emit_u8vec_fill(args, env, cur_fn)
+                .map(CompiledValue::int),
+            VecPrim::U8Vec(U8VecOp::Copy) => self
+                .emit_u8vec_copy(args, env, cur_fn)
+                .map(CompiledValue::int),
+            VecPrim::U8Vec(U8VecOp::Slice) => Err(CodegenError::Unsupported(
+                "@u8vec-slice must appear as the direct RHS of a `let` binding",
+            )),
+            VecPrim::U8Vec(U8VecOp::Eq) => self
+                .emit_u8vec_eq(args, env, cur_fn)
+                .map(CompiledValue::int),
+            VecPrim::U8Vec(U8VecOp::Scan) => self
+                .emit_u8vec_scan(args, env, cur_fn)
+                .map(CompiledValue::int),
+            VecPrim::U8VecBus(U8VecBusOp::Load { ty, endian }) => self
+                .emit_u8vec_load(ty, endian, args, env, cur_fn)
+                .map(CompiledValue::int),
+            VecPrim::U8VecBus(U8VecBusOp::Store { ty, endian }) => self
+                .emit_u8vec_store(ty, endian, args, env, cur_fn)
+                .map(CompiledValue::int),
+        }
+    }
+
+    /// `@<ty>vec-get v i` → bounds-check, load element, extend to i64.
+    fn emit_vec_get(
+        &mut self,
+        elem_ty: FixedIntTy,
+        args: &[&Node],
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<IntValue<'ctx>> {
+        let (ptr, len) = self.resolve_vec_arg(args[0], env, elem_ty)?;
+        let idx = self.compile_expr(args[1], env, cur_fn)?;
+        let oob = self
+            .builder
+            .build_int_compare(IntPredicate::UGE, idx, len, "vec_get_oob")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.emit_bounds_trap(cur_fn, oob, "vec_get")?;
+        let elem_ptr = self.vec_element_ptr(ptr, idx, elem_ty, "vec_get_ptr")?;
+        let llvm_ty = self.llvm_int_type_for_width(elem_ty.width);
+        let loaded = self
+            .builder
+            .build_load(llvm_ty, elem_ptr, "vec_get")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?
+            .into_int_value();
+        if elem_ty.width == 64 {
+            return Ok(loaded);
+        }
+        let i64_t = self.context.i64_type();
+        let widened = if elem_ty.sign == IntSign::Signed {
+            self.builder.build_int_s_extend(loaded, i64_t, "vec_get_sx")
+        } else {
+            self.builder.build_int_z_extend(loaded, i64_t, "vec_get_zx")
+        }
+        .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        Ok(widened)
+    }
+
+    /// `@<ty>vec-set v i x` → bounds-check, truncate, store; return 0.
+    fn emit_vec_set(
+        &mut self,
+        elem_ty: FixedIntTy,
+        args: &[&Node],
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<IntValue<'ctx>> {
+        let (ptr, len) = self.resolve_vec_arg(args[0], env, elem_ty)?;
+        let idx = self.compile_expr(args[1], env, cur_fn)?;
+        let val = self.compile_expr(args[2], env, cur_fn)?;
+        let oob = self
+            .builder
+            .build_int_compare(IntPredicate::UGE, idx, len, "vec_set_oob")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.emit_bounds_trap(cur_fn, oob, "vec_set")?;
+        let elem_ptr = self.vec_element_ptr(ptr, idx, elem_ty, "vec_set_ptr")?;
+        let llvm_ty = self.llvm_int_type_for_width(elem_ty.width);
+        let narrow = if elem_ty.width == 64 {
+            val
+        } else {
+            self.builder
+                .build_int_truncate(val, llvm_ty, "vec_set_tr")
+                .map_err(|e| CodegenError::Llvm(e.to_string()))?
+        };
+        self.builder
+            .build_store(elem_ptr, narrow)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        Ok(self.context.i64_type().const_zero())
+    }
+
+    /// `@u8vec-fill v off len byte` → bounds-check then `llvm.memset`.
+    fn emit_u8vec_fill(
+        &mut self,
+        args: &[&Node],
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<IntValue<'ctx>> {
+        let u8_ty = FixedIntTy::new(IntSign::Unsigned, 8);
+        let (ptr, vlen) = self.resolve_vec_arg(args[0], env, u8_ty)?;
+        let off = self.compile_expr(args[1], env, cur_fn)?;
+        let len = self.compile_expr(args[2], env, cur_fn)?;
+        let byte = self.compile_expr(args[3], env, cur_fn)?;
+        self.check_range(cur_fn, off, len, vlen, "u8vec_fill")?;
+        let dst = self.ptr_at(ptr, off, "u8vf_dst")?;
+        let i8_t = self.context.i8_type();
+        let byte_i8 = self
+            .builder
+            .build_int_truncate(byte, i8_t, "u8vf_byte")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let memset = self.llvm_memset();
+        let false_val = self.context.bool_type().const_int(0, false);
+        self.builder
+            .build_call(
+                memset,
+                &[
+                    BasicMetadataValueEnum::PointerValue(dst),
+                    BasicMetadataValueEnum::IntValue(byte_i8),
+                    BasicMetadataValueEnum::IntValue(len),
+                    BasicMetadataValueEnum::IntValue(false_val),
+                ],
+                "u8vf_memset",
+            )
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        Ok(self.context.i64_type().const_zero())
+    }
+
+    fn llvm_memset(&self) -> FunctionValue<'ctx> {
+        let name = "llvm.memset.p0.i64";
+        if let Some(f) = self.module.get_function(name) {
+            return f;
+        }
+        let ptr_t = self.context.ptr_type(AddressSpace::default());
+        let i8_t = self.context.i8_type();
+        let i64_t = self.context.i64_type();
+        let i1_t = self.context.bool_type();
+        let void_t = self.context.void_type();
+        let fn_ty = void_t.fn_type(
+            &[
+                BasicMetadataTypeEnum::PointerType(ptr_t),
+                BasicMetadataTypeEnum::IntType(i8_t),
+                BasicMetadataTypeEnum::IntType(i64_t),
+                BasicMetadataTypeEnum::IntType(i1_t),
+            ],
+            false,
+        );
+        self.module.add_function(name, fn_ty, None)
+    }
+
+    /// Bounds-check `off + len <= vec_len` (also rejects negative off and
+    /// negative len via unsigned comparison wrapping). Trap on failure.
+    fn check_range(
+        &mut self,
+        cur_fn: FunctionValue<'ctx>,
+        off: IntValue<'ctx>,
+        len: IntValue<'ctx>,
+        vec_len: IntValue<'ctx>,
+        name: &str,
+    ) -> Result<()> {
+        let end = self
+            .builder
+            .build_int_add(off, len, &format!("{name}_end"))
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        // off < 0 (as i64) becomes huge as unsigned, so `end u_gt vec_len`
+        // catches it. We also explicitly catch end < off (overflow wrap) by
+        // requiring end >= off.
+        let oob1 = self
+            .builder
+            .build_int_compare(IntPredicate::UGT, end, vec_len, &format!("{name}_oob"))
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let overflow = self
+            .builder
+            .build_int_compare(IntPredicate::ULT, end, off, &format!("{name}_ovf"))
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let cond = self
+            .builder
+            .build_or(oob1, overflow, &format!("{name}_bad"))
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.emit_bounds_trap(cur_fn, cond, name)
+    }
+
+    /// `@u8vec-copy dst dst-off src src-off len` → overlap-safe element copy.
+    fn emit_u8vec_copy(
+        &mut self,
+        args: &[&Node],
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<IntValue<'ctx>> {
+        let u8_ty = FixedIntTy::new(IntSign::Unsigned, 8);
+        let (dst_ptr, dst_len) = self.resolve_vec_arg(args[0], env, u8_ty)?;
+        let dst_off = self.compile_expr(args[1], env, cur_fn)?;
+        let (src_ptr, src_len) = self.resolve_vec_arg(args[2], env, u8_ty)?;
+        let src_off = self.compile_expr(args[3], env, cur_fn)?;
+        let len = self.compile_expr(args[4], env, cur_fn)?;
+        self.check_range(cur_fn, dst_off, len, dst_len, "u8vec_copy_dst")?;
+        self.check_range(cur_fn, src_off, len, src_len, "u8vec_copy_src")?;
+        let dst = self.ptr_at(dst_ptr, dst_off, "u8vc_dst")?;
+        let src = self.ptr_at(src_ptr, src_off, "u8vc_src")?;
+        let false_val = self.context.bool_type().const_int(0, false);
+        let memmove = self.llvm_memmove();
+        self.builder
+            .build_call(
+                memmove,
+                &[
+                    BasicMetadataValueEnum::PointerValue(dst),
+                    BasicMetadataValueEnum::PointerValue(src),
+                    BasicMetadataValueEnum::IntValue(len),
+                    BasicMetadataValueEnum::IntValue(false_val),
+                ],
+                "u8vc_memmove",
+            )
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        Ok(self.context.i64_type().const_zero())
+    }
+
+    /// `@u8vec-eq a a-off b b-off len` → byte-for-byte equality, returns
+    /// `1` if equal, `0` otherwise. Bounds-checked.
+    fn emit_u8vec_eq(
+        &mut self,
+        args: &[&Node],
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<IntValue<'ctx>> {
+        let u8_ty = FixedIntTy::new(IntSign::Unsigned, 8);
+        let (a_ptr, a_len) = self.resolve_vec_arg(args[0], env, u8_ty)?;
+        let a_off = self.compile_expr(args[1], env, cur_fn)?;
+        let (b_ptr, b_len) = self.resolve_vec_arg(args[2], env, u8_ty)?;
+        let b_off = self.compile_expr(args[3], env, cur_fn)?;
+        let len = self.compile_expr(args[4], env, cur_fn)?;
+        self.check_range(cur_fn, a_off, len, a_len, "u8vec_eq_a")?;
+        self.check_range(cur_fn, b_off, len, b_len, "u8vec_eq_b")?;
+
+        let i64_t = self.context.i64_type();
+        let zero64 = i64_t.const_zero();
+        let one64 = i64_t.const_int(1, false);
+
+        let entry_bb = self.builder.get_insert_block().unwrap();
+        let hdr_bb = self.context.append_basic_block(cur_fn, "u8eq_hdr");
+        let body_bb = self.context.append_basic_block(cur_fn, "u8eq_body");
+        let diff_bb = self.context.append_basic_block(cur_fn, "u8eq_diff");
+        let cont_bb = self.context.append_basic_block(cur_fn, "u8eq_cont");
+        let exit_bb = self.context.append_basic_block(cur_fn, "u8eq_exit");
+
+        self.builder
+            .build_unconditional_branch(hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder.position_at_end(hdr_bb);
+        let i_phi = self
+            .builder
+            .build_phi(i64_t, "u8eq_i")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let i_val = i_phi.as_basic_value().into_int_value();
+        let more = self
+            .builder
+            .build_int_compare(IntPredicate::SLT, i_val, len, "u8eq_more")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(more, body_bb, exit_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(body_bb);
+        let a_idx = self
+            .builder
+            .build_int_add(a_off, i_val, "u8eq_a_idx")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let b_idx = self
+            .builder
+            .build_int_add(b_off, i_val, "u8eq_b_idx")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let a_b = self.load_byte(a_ptr, a_idx, "u8eq_a_b")?;
+        let b_b = self.load_byte(b_ptr, b_idx, "u8eq_b_b")?;
+        let eq = self
+            .builder
+            .build_int_compare(IntPredicate::EQ, a_b, b_b, "u8eq_eq")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(eq, cont_bb, diff_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(diff_bb);
+        self.builder
+            .build_unconditional_branch(exit_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(cont_bb);
+        let next_i = self
+            .builder
+            .build_int_add(i_val, one64, "u8eq_next")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let cont_end = self.builder.get_insert_block().unwrap();
+        self.builder
+            .build_unconditional_branch(hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        i_phi.add_incoming(&[
+            (&zero64 as &dyn BasicValue<'ctx>, entry_bb),
+            (&next_i as &dyn BasicValue<'ctx>, cont_end),
+        ]);
+
+        self.builder.position_at_end(exit_bb);
+        let result = self
+            .builder
+            .build_phi(i64_t, "u8eq_res")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        result.add_incoming(&[
+            (&one64 as &dyn BasicValue<'ctx>, hdr_bb),
+            (&zero64 as &dyn BasicValue<'ctx>, diff_bb),
+        ]);
+        Ok(result.as_basic_value().into_int_value())
+    }
+
+    /// `@u8vec-scan v off len byte` → first index of `byte` in
+    /// `[off, off+len)` measured as an absolute index, or `off+len` if not
+    /// found. Bounds-checked.
+    fn emit_u8vec_scan(
+        &mut self,
+        args: &[&Node],
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<IntValue<'ctx>> {
+        let u8_ty = FixedIntTy::new(IntSign::Unsigned, 8);
+        let (ptr, vlen) = self.resolve_vec_arg(args[0], env, u8_ty)?;
+        let off = self.compile_expr(args[1], env, cur_fn)?;
+        let len = self.compile_expr(args[2], env, cur_fn)?;
+        let target = self.compile_expr(args[3], env, cur_fn)?;
+        self.check_range(cur_fn, off, len, vlen, "u8vec_scan")?;
+
+        let i64_t = self.context.i64_type();
+        let one64 = i64_t.const_int(1, false);
+        let end = self
+            .builder
+            .build_int_add(off, len, "u8sc_end")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        let entry_bb = self.builder.get_insert_block().unwrap();
+        let hdr_bb = self.context.append_basic_block(cur_fn, "u8sc_hdr");
+        let body_bb = self.context.append_basic_block(cur_fn, "u8sc_body");
+        let hit_bb = self.context.append_basic_block(cur_fn, "u8sc_hit");
+        let cont_bb = self.context.append_basic_block(cur_fn, "u8sc_cont");
+        let exit_bb = self.context.append_basic_block(cur_fn, "u8sc_exit");
+
+        self.builder
+            .build_unconditional_branch(hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder.position_at_end(hdr_bb);
+        let i_phi = self
+            .builder
+            .build_phi(i64_t, "u8sc_i")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let i_val = i_phi.as_basic_value().into_int_value();
+        let more = self
+            .builder
+            .build_int_compare(IntPredicate::SLT, i_val, end, "u8sc_more")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(more, body_bb, exit_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(body_bb);
+        let b = self.load_byte(ptr, i_val, "u8sc_b")?;
+        let eq = self
+            .builder
+            .build_int_compare(IntPredicate::EQ, b, target, "u8sc_eq")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(eq, hit_bb, cont_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(hit_bb);
+        self.builder
+            .build_unconditional_branch(exit_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(cont_bb);
+        let next_i = self
+            .builder
+            .build_int_add(i_val, one64, "u8sc_next")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let cont_end = self.builder.get_insert_block().unwrap();
+        self.builder
+            .build_unconditional_branch(hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        i_phi.add_incoming(&[
+            (&off as &dyn BasicValue<'ctx>, entry_bb),
+            (&next_i as &dyn BasicValue<'ctx>, cont_end),
+        ]);
+
+        self.builder.position_at_end(exit_bb);
+        let res = self
+            .builder
+            .build_phi(i64_t, "u8sc_res")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        res.add_incoming(&[
+            (&end as &dyn BasicValue<'ctx>, hdr_bb),
+            (&i_val as &dyn BasicValue<'ctx>, hit_bb),
+        ]);
+        Ok(res.as_basic_value().into_int_value())
+    }
+
+    /// `@u8vec-load-<W>-<endian> v off` → assemble W bytes from `v[off..]`
+    /// in the requested byte order into a zero-extended i64 value.
+    fn emit_u8vec_load(
+        &mut self,
+        ty: FixedIntTy,
+        endian: FixedEndian,
+        args: &[&Node],
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<IntValue<'ctx>> {
+        let u8_ty = FixedIntTy::new(IntSign::Unsigned, 8);
+        let (ptr, vlen) = self.resolve_vec_arg(args[0], env, u8_ty)?;
+        let off = self.compile_expr(args[1], env, cur_fn)?;
+        let i64_t = self.context.i64_type();
+        let width_bytes = i64_t.const_int(u64::from(ty.width / 8), false);
+        self.check_range(cur_fn, off, width_bytes, vlen, "u8vec_load")?;
+
+        let one64 = i64_t.const_int(1, false);
+        let mut acc = i64_t.const_zero();
+        let bytes = (ty.width / 8) as i64;
+        for i in 0..bytes {
+            let byte_off = self
+                .builder
+                .build_int_add(off, i64_t.const_int(i as u64, false), "u8vl_off")
+                .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+            let b = self.load_byte(ptr, byte_off, "u8vl_b")?;
+            let shift_amount = match endian {
+                FixedEndian::Little => i64_t.const_int((i as u64) * 8, false),
+                FixedEndian::Big => i64_t.const_int(((bytes - 1 - i) as u64) * 8, false),
+            };
+            let shifted = self
+                .builder
+                .build_left_shift(b, shift_amount, "u8vl_sh")
+                .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+            acc = self
+                .builder
+                .build_or(acc, shifted, "u8vl_acc")
+                .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        }
+        // Suppress unused-variable warning for one64 if the loop didn't use it.
+        let _ = one64;
+        // Result is already i64; for u16/u32 it's mask-low; for u64 it's all bits.
+        self.normalize_fixed_int(acc, ty)
+    }
+
+    /// `@u8vec-store-<W>-<endian> v off x` → decompose `x` into W bytes and
+    /// write them starting at `v[off]`.
+    fn emit_u8vec_store(
+        &mut self,
+        ty: FixedIntTy,
+        endian: FixedEndian,
+        args: &[&Node],
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<IntValue<'ctx>> {
+        let u8_ty = FixedIntTy::new(IntSign::Unsigned, 8);
+        let (ptr, vlen) = self.resolve_vec_arg(args[0], env, u8_ty)?;
+        let off = self.compile_expr(args[1], env, cur_fn)?;
+        let val = self.compile_expr(args[2], env, cur_fn)?;
+        let i64_t = self.context.i64_type();
+        let width_bytes = i64_t.const_int(u64::from(ty.width / 8), false);
+        self.check_range(cur_fn, off, width_bytes, vlen, "u8vec_store")?;
+
+        let bytes = (ty.width / 8) as i64;
+        for i in 0..bytes {
+            let shift_amount = match endian {
+                FixedEndian::Little => i64_t.const_int((i as u64) * 8, false),
+                FixedEndian::Big => i64_t.const_int(((bytes - 1 - i) as u64) * 8, false),
+            };
+            let byte_val = self
+                .builder
+                .build_right_shift(val, shift_amount, false, "u8vs_sh")
+                .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+            let byte_off = self
+                .builder
+                .build_int_add(off, i64_t.const_int(i as u64, false), "u8vs_off")
+                .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+            self.store_byte(ptr, byte_off, byte_val)?;
+        }
         Ok(i64_t.const_zero())
     }
 
@@ -6249,6 +6907,10 @@ impl<'ctx> Compiler<'ctx> {
                 index,
                 kind: "I64Vec",
             }),
+            Binding::VecHandle { .. } => Err(CodegenError::InvalidCapture {
+                index,
+                kind: "typed vec",
+            }),
             Binding::Unavailable => Err(CodegenError::UnavailableCapture { index }),
         }
     }
@@ -6468,6 +7130,7 @@ impl<'ctx> Compiler<'ctx> {
             Binding::Value(_) => Ok(Binding::Unavailable),
             Binding::Function(f) => Ok(Binding::Function(f.clone())),
             Binding::Ptr { .. } => Ok(Binding::Unavailable),
+            Binding::VecHandle { .. } => Ok(Binding::Unavailable),
             Binding::Unavailable => Ok(Binding::Unavailable),
         }
     }
@@ -6488,6 +7151,11 @@ impl<'ctx> Compiler<'ctx> {
             match capture {
                 Binding::Value(v) => params.push(self.llvm_type(&v.ty)?.into()),
                 Binding::Ptr { .. } => params.push(BasicMetadataTypeEnum::PointerType(ptr_t)),
+                Binding::VecHandle { .. } => {
+                    // VecHandle: pointer + i64 length, passed as two hidden params.
+                    params.push(BasicMetadataTypeEnum::PointerType(ptr_t));
+                    params.push(BasicMetadataTypeEnum::IntType(self.context.i64_type()));
+                }
                 Binding::Function(_) | Binding::Unavailable => {}
             }
         }
@@ -6746,6 +7414,33 @@ impl<'ctx> Compiler<'ctx> {
                     });
                     param_index += 1;
                 }
+                Binding::VecHandle { ty, .. } => {
+                    let ptr_param = fn_val
+                        .get_nth_param(param_index)
+                        .ok_or_else(|| {
+                            CodegenError::Llvm(format!(
+                                "lambda missing captured vec ptr param {}",
+                                param_index
+                            ))
+                        })?
+                        .into_pointer_value();
+                    param_index += 1;
+                    let len_param = fn_val
+                        .get_nth_param(param_index)
+                        .ok_or_else(|| {
+                            CodegenError::Llvm(format!(
+                                "lambda missing captured vec len param {}",
+                                param_index
+                            ))
+                        })?
+                        .into_int_value();
+                    param_index += 1;
+                    captured.push(Binding::VecHandle {
+                        ptr: ptr_param,
+                        len: len_param,
+                        ty: *ty,
+                    });
+                }
                 Binding::Function(f) => captured.push(Binding::Function(f.clone())),
                 Binding::Unavailable => captured.push(Binding::Unavailable),
             }
@@ -6948,6 +7643,7 @@ fn binding_tys_from_env(env: &[Binding<'_>]) -> Vec<BindingTy> {
                 ret_ty: f.ret_ty.clone(),
             },
             Binding::Ptr { .. } => BindingTy::Ptr,
+            Binding::VecHandle { .. } => BindingTy::Ptr,
             Binding::Unavailable => BindingTy::Ptr,
         })
         .collect()
@@ -7071,7 +7767,7 @@ fn value_ty_from_ty(ty: &Ty) -> Result<ValueTy> {
             .collect::<Result<Vec<_>>>()
             .map(ValueTy::Record),
         Ty::Unknown | Ty::Meta(_) => Err(CodegenError::UnsupportedValueType { ty: ty.to_string() }),
-        Ty::Str | Ty::Buf | Ty::I64Vec | Ty::App(_, _) => {
+        Ty::Str | Ty::Buf | Ty::I64Vec | Ty::Vec(_) | Ty::App(_, _) => {
             Err(CodegenError::UnsupportedValueType { ty: ty.to_string() })
         }
     }

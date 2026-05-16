@@ -189,6 +189,8 @@ pub enum Ty {
     I64Vec,
     /// Fixed-width signed or unsigned integer (ADR 0084).
     FixedInt(FixedIntTy),
+    /// Length-carrying typed mutable vector handle (ADR 0085).
+    Vec(FixedIntTy),
     /// Function type `arg → ret / eff`.
     Fn(Box<Ty>, Box<Ty>, FnEff),
     Record(BTreeMap<String, Ty>),
@@ -213,6 +215,7 @@ impl Ty {
             | Ty::Buf
             | Ty::I64Vec
             | Ty::FixedInt(_)
+            | Ty::Vec(_)
             | Ty::Unknown => true,
             Ty::Fn(a, b, _) => a.is_ground(subst) && b.is_ground(subst),
             Ty::Record(fields) => fields.values().all(|v| v.is_ground(subst)),
@@ -232,6 +235,7 @@ impl std::fmt::Display for Ty {
             Ty::Buf => write!(f, "Buf"),
             Ty::I64Vec => write!(f, "I64Vec"),
             Ty::FixedInt(int_ty) => write!(f, "{}", int_ty),
+            Ty::Vec(int_ty) => write!(f, "{}vec", int_ty),
             Ty::Fn(a, b, eff) => {
                 let parens = matches!(a.as_ref(), Ty::Fn(_, _, _));
                 if parens {
@@ -375,6 +379,7 @@ pub fn unify(t1: &Ty, t2: &Ty, subst: &mut Subst) -> bool {
         | (Ty::I64Vec, Ty::I64Vec) => true,
         (Ty::FixedInt(a), Ty::FixedInt(b)) => a == b,
         (Ty::Int, Ty::FixedInt(fixed)) | (Ty::FixedInt(fixed), Ty::Int) if fixed.is_i64() => true,
+        (Ty::Vec(a), Ty::Vec(b)) => a == b,
         (Ty::Meta(id1), Ty::Meta(id2)) if id1 == id2 => true,
         (Ty::Meta(id), other) => {
             if occurs(*id, other, subst) {

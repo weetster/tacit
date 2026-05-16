@@ -116,6 +116,13 @@ fn parse_atom_type(s: &str) -> Result<Ty, String> {
         "Str" => Ok(Ty::Str),
         "Buf" => Ok(Ty::Buf),
         "I64Vec" => Ok(Ty::I64Vec),
+        vec if vec.ends_with("vec")
+            && crate::ty::FixedIntTy::parse_name(&vec[..vec.len() - 3]).is_some() =>
+        {
+            Ok(Ty::Vec(
+                crate::ty::FixedIntTy::parse_name(&vec[..vec.len() - 3]).unwrap(),
+            ))
+        }
         fixed if crate::ty::FixedIntTy::parse_name(fixed).is_some() => Ok(Ty::FixedInt(
             crate::ty::FixedIntTy::parse_name(fixed).unwrap(),
         )),
@@ -165,6 +172,7 @@ fn types_match(inferred: &Ty, expected: &Ty) -> bool {
         | (Ty::Buf, Ty::Buf)
         | (Ty::I64Vec, Ty::I64Vec) => true,
         (Ty::FixedInt(a), Ty::FixedInt(b)) => a == b,
+        (Ty::Vec(a), Ty::Vec(b)) => a == b,
         (Ty::Int, Ty::FixedInt(fixed)) | (Ty::FixedInt(fixed), Ty::Int) if fixed.is_i64() => true,
         (Ty::Fn(a1, b1, _), Ty::Fn(a2, b2, _)) => types_match(a1, a2) && types_match(b1, b2),
         (Ty::Unknown, _) | (_, Ty::Unknown) => true,

@@ -20,7 +20,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::ty::{EffAtom, EffSet, FixedIntTy, FnEff, Ty};
+use crate::ty::{EffAtom, EffSet, FixedIntTy, FnEff, IntSign, Ty};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FixedCastKind {
@@ -65,6 +65,45 @@ pub enum FixedEndian {
     Little,
 }
 
+/// Operation kinds for the uniform per-width typed-vector primitives
+/// (ADR 0085). Every typed vector exposes `alloc`, `len`, `get`, `set`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VecOp {
+    Alloc,
+    Len,
+    Get,
+    Set,
+}
+
+/// `u8vec`-only byte-buffer extras (ADR 0085).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum U8VecOp {
+    Fill,
+    Copy,
+    Slice,
+    Eq,
+    Scan,
+}
+
+/// `u8vec` byte-bus cross-width helpers (ADR 0085). `ty` is one of
+/// `u16`, `u32`, `u64`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum U8VecBusOp {
+    Load { ty: FixedIntTy, endian: FixedEndian },
+    Store { ty: FixedIntTy, endian: FixedEndian },
+}
+
+/// Stage 7 typed mutable memory primitive (ADR 0085).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VecPrim {
+    /// Uniform per-width op.
+    Vec { ty: FixedIntTy, op: VecOp },
+    /// `u8vec`-only extras.
+    U8Vec(U8VecOp),
+    /// `u8vec` byte-bus typed load/store.
+    U8VecBus(U8VecBusOp),
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FixedPrim {
     FromIntWrap {
@@ -106,6 +145,9 @@ pub enum FixedPrim {
 /// IO effect sits at the innermost (final) application: partial applications
 /// are pure closures; IO is produced only when all args are supplied.
 pub fn prim_type(name: &str) -> Option<Ty> {
+    if let Some(prim) = parse_vec_prim(name) {
+        return Some(vec_prim_type(prim));
+    }
     if let Some(prim) = parse_fixed_prim(name) {
         return Some(fixed_prim_type(prim));
     }
@@ -345,6 +387,119 @@ pub fn fixed_prim_type(prim: FixedPrim) -> Ty {
     }
 }
 
+/// Parse a Stage 7 typed-vector primitive name.
+///
+/// Accepts:
+/// - `<intty>vec-alloc` | `-len` | `-get` | `-set` for the eight widths,
+/// - `u8vec-fill` | `-copy` | `-slice` | `-eq` | `-scan`,
+/// - `u8vec-load-<utype>-<le|be>` and `u8vec-store-<utype>-<le|be>`
+///   for `u16`, `u32`, `u64`.
+pub fn parse_vec_prim(name: &str) -> Option<VecPrim> {
+    let dash = name.find('-')?;
+    let (head, tail) = name.split_at(dash);
+    let rest = &tail[1..]; // skip the '-'
+
+    if !head.ends_with("vec") {
+        return None;
+    }
+    let int_name = &head[..head.len() - 3];
+    let ty = FixedIntTy::parse_name(int_name)?;
+
+    // Uniform per-width ops.
+    let op = match rest {
+        "alloc" => Some(VecOp::Alloc),
+        "len" => Some(VecOp::Len),
+        "get" => Some(VecOp::Get),
+        "set" => Some(VecOp::Set),
+        _ => None,
+    };
+    if let Some(op) = op {
+        return Some(VecPrim::Vec { ty, op });
+    }
+
+    // u8vec-specific extras and byte-bus helpers.
+    if head != "u8vec" {
+        return None;
+    }
+    match rest {
+        "fill" => return Some(VecPrim::U8Vec(U8VecOp::Fill)),
+        "copy" => return Some(VecPrim::U8Vec(U8VecOp::Copy)),
+        "slice" => return Some(VecPrim::U8Vec(U8VecOp::Slice)),
+        "eq" => return Some(VecPrim::U8Vec(U8VecOp::Eq)),
+        "scan" => return Some(VecPrim::U8Vec(U8VecOp::Scan)),
+        _ => {}
+    }
+
+    // u8vec-load-<utype>-<endian>, u8vec-store-<utype>-<endian>.
+    let parts: Vec<&str> = rest.split('-').collect();
+    if parts.len() == 3 {
+        let dir = parts[0];
+        let bus_ty = FixedIntTy::parse_name(parts[1])?;
+        if bus_ty.sign != IntSign::Unsigned || !matches!(bus_ty.width, 16 | 32 | 64) {
+            return None;
+        }
+        let endian = match parts[2] {
+            "le" => FixedEndian::Little,
+            "be" => FixedEndian::Big,
+            _ => return None,
+        };
+        match dir {
+            "load" => return Some(VecPrim::U8VecBus(U8VecBusOp::Load { ty: bus_ty, endian })),
+            "store" => return Some(VecPrim::U8VecBus(U8VecBusOp::Store { ty: bus_ty, endian })),
+            _ => return None,
+        }
+    }
+
+    None
+}
+
+/// Type of a Stage 7 typed-vector primitive (ADR 0085).
+pub fn vec_prim_type(prim: VecPrim) -> Ty {
+    match prim {
+        VecPrim::Vec { ty, op } => {
+            let vec_ty = Ty::Vec(ty);
+            let elem_ty = Ty::FixedInt(ty);
+            match op {
+                // alloc(count: Int) -> <ty>vec / {Alloc}
+                VecOp::Alloc => Ty::Fn(Box::new(Ty::Int), Box::new(vec_ty), alloc_eff()),
+                // len(v: <ty>vec) -> Int  (pure)
+                VecOp::Len => Ty::Fn(Box::new(vec_ty), Box::new(Ty::Int), FnEff::pure_()),
+                // get(v, i) -> <ty>  (pure)
+                VecOp::Get => fn2_pure(vec_ty, Ty::Int, elem_ty),
+                // set(v, i, x) -> Int / {Mut}
+                VecOp::Set => fn3_mut(vec_ty, Ty::Int, elem_ty, Ty::Int),
+            }
+        }
+        VecPrim::U8Vec(op) => {
+            let u8vec = || Ty::Vec(FixedIntTy::new(IntSign::Unsigned, 8));
+            let u8 = || Ty::FixedInt(FixedIntTy::new(IntSign::Unsigned, 8));
+            match op {
+                // fill(v, off, len, byte) -> Int / {Mut}
+                U8VecOp::Fill => fn4_mut(u8vec(), Ty::Int, Ty::Int, u8(), Ty::Int),
+                // copy(dst, dst-off, src, src-off, len) -> Int / {Mut}
+                U8VecOp::Copy => fn5_mut(u8vec(), Ty::Int, u8vec(), Ty::Int, Ty::Int, Ty::Int),
+                // slice(v, off, len) -> u8vec  (pure; aliasing sub-view)
+                U8VecOp::Slice => fn3_pure(u8vec(), Ty::Int, Ty::Int, u8vec()),
+                // eq(a, a-off, b, b-off, len) -> Bool  (pure)
+                U8VecOp::Eq => fn5_pure(u8vec(), Ty::Int, u8vec(), Ty::Int, Ty::Int, Ty::Bool),
+                // scan(v, off, len, byte) -> Int  (pure)
+                U8VecOp::Scan => fn4_pure(u8vec(), Ty::Int, Ty::Int, u8(), Ty::Int),
+            }
+        }
+        VecPrim::U8VecBus(op) => {
+            let u8vec = || Ty::Vec(FixedIntTy::new(IntSign::Unsigned, 8));
+            match op {
+                // load(v, off) -> <bus-ty>  (pure)
+                U8VecBusOp::Load { ty, .. } => fn2_pure(u8vec(), Ty::Int, Ty::FixedInt(ty)),
+                // store(v, off, x) -> Int / {Mut}
+                U8VecBusOp::Store { ty, .. } => {
+                    fn3_mut(u8vec(), Ty::Int, Ty::FixedInt(ty), Ty::Int)
+                }
+            }
+        }
+    }
+}
+
 fn checked_result_ty(int_ty: FixedIntTy) -> Ty {
     let mut fields = BTreeMap::new();
     fields.insert("ok".to_string(), Ty::Bool);
@@ -378,11 +533,25 @@ pub fn is_io_prim(name: &str) -> bool {
 
 /// True if `name` is an Alloc-producing primitive.
 pub fn is_alloc_prim(name: &str) -> bool {
+    if let Some(VecPrim::Vec {
+        op: VecOp::Alloc, ..
+    }) = parse_vec_prim(name)
+    {
+        return true;
+    }
     matches!(name, "buf-alloc" | "buf-alloc-dyn" | "i64-alloc")
 }
 
-/// True if `name` is a Mut-producing primitive (ADR 0047).
+/// True if `name` is a Mut-producing primitive (ADR 0047, 0085).
 pub fn is_mut_prim(name: &str) -> bool {
+    if let Some(prim) = parse_vec_prim(name) {
+        return matches!(
+            prim,
+            VecPrim::Vec { op: VecOp::Set, .. }
+                | VecPrim::U8Vec(U8VecOp::Fill | U8VecOp::Copy)
+                | VecPrim::U8VecBus(U8VecBusOp::Store { .. })
+        );
+    }
     matches!(
         name,
         "buf-set"

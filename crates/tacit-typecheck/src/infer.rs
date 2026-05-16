@@ -391,7 +391,7 @@ fn validate_lambda_captures(
 
 fn is_capturable_type(ty: &Ty) -> bool {
     match ty {
-        Ty::Buf | Ty::I64Vec => false,
+        Ty::Buf | Ty::I64Vec | Ty::Vec(_) => false,
         Ty::Record(fields) => fields.values().all(is_capturable_type),
         Ty::Fn(_, _, _)
         | Ty::IntLit

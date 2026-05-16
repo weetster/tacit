@@ -132,7 +132,7 @@ remain host-owned capabilities during Phase 6.
 | Q-P6-6 | What local object-store layout and cache invalidation rules are required? | Resolved by [ADR 0082](../decisions/0082-phase-6-package-manifest-lockfile-cache.md) |
 | Q-P6-7 | What is the minimum unit-test surface and structured result schema? | Resolved by [ADR 0083](../decisions/0083-phase-6-package-tests.md) |
 | Q-P6-8 | Are fixed-width integer operations primitives, source-library functions, or both? | Resolved by [ADR 0084](../decisions/0084-phase-6-fixed-width-integers.md) |
-| Q-P6-9 | What typed mutable-memory surface replaces or subsumes `Buf` and `I64Vec`? | Stage 7 ADR |
+| Q-P6-9 | What typed mutable-memory surface replaces or subsumes `Buf` and `I64Vec`? | Resolved by [ADR 0085](../decisions/0085-phase-6-typed-mutable-memory.md) |
 | Q-P6-10 | Are existing records, constructors, and `match` sufficient for decode shapes? | Stage 8 ADR |
 | Q-P6-11 | Which compiler-recognized primitives move first into source-level stdlib packages? | Stage 9 ADR |
 | Q-P6-12 | What Tacit types are ABI-expressible at the host boundary? | Stage 10 ADR |
@@ -158,7 +158,8 @@ ADRs must land before implementation that depends on them.
    implementation complete.
 6. Fixed-width integer and bit-operation surface. Done:
    [ADR 0084](../decisions/0084-phase-6-fixed-width-integers.md).
-7. Typed mutable memory and bounds behavior.
+7. Typed mutable memory and bounds behavior. Done:
+   [ADR 0085](../decisions/0085-phase-6-typed-mutable-memory.md).
 8. Data layout and decode support.
 9. Source-level stdlib migration path.
 10. Host-interface ABI, ABI-expressible type subset, ownership, allocation,
@@ -566,14 +567,19 @@ Outcome:
 
 ## Stage 7: Typed Mutable Memory
 
-**Status:** Planned
+**Status:** Complete 2026-05-16. Design accepted by
+[ADR 0085](../decisions/0085-phase-6-typed-mutable-memory.md); implementation
+verified for the eight typed-vector types, uniform alloc/len/get/set surface,
+`u8vec` fill/copy/slice/eq/scan, byte-bus typed loads and stores, bounds-trap
+semantics, anti-escape diagnostics, and end-to-end smoke executables.
 
 **Purpose:** Replace the ad hoc `Buf` and `I64Vec` era with a clear typed
 mutable-memory story suitable for package and host-facing code.
 
 Work items:
 
-- Write the typed-memory ADR.
+- Write the typed-memory ADR. Done:
+  [ADR 0085](../decisions/0085-phase-6-typed-mutable-memory.md).
 - Define byte-addressable arrays and slices.
 - Define typed arrays where required by systems examples.
 - Define ownership and aliasing restrictions for mutable memory handles.
@@ -593,6 +599,37 @@ Exit criteria:
 - Bounds behavior is deterministic and documented.
 - Existing smoke and Phase 4 examples continue to pass.
 - Emulator-style memory-bus examples do not need unsafe unchecked access.
+
+Outcome:
+
+- Tacit gains eight typed-vector handle types `i8vec`, `u8vec`, `i16vec`,
+  `u16vec`, `i32vec`, `u32vec`, `i64vec`, `u64vec`, length-carrying in the
+  runtime handle with no type-level length parameter.
+- Every typed vector exposes a uniform pure/Alloc/Mut surface:
+  `@<ty>vec-alloc` (`{Alloc}`), `@<ty>vec-len` (pure), `@<ty>vec-get`
+  (pure), `@<ty>vec-set` (`{Mut}`). `u8vec` adds `@u8vec-fill`,
+  `@u8vec-copy`, `@u8vec-slice`, `@u8vec-eq`, and `@u8vec-scan`.
+- `u8vec` carries twelve byte-bus typed load/store helpers covering
+  `u16`/`u32`/`u64` × little-/big-endian.
+- All accesses are bounds-checked; out-of-range access invokes
+  `llvm.trap` rather than producing undefined behavior. Bounds violation is
+  not represented in the effect lattice, matching Stage 6's stance on
+  overflow.
+- Vec handles are non-escapable: typecheck `invalid-capture` diagnostics
+  generalize to all eight new types, and codegen rejects the handle in
+  first-class value position. Slices are themselves `u8vec` handles and
+  inherit the anti-escape rule.
+- All `@<ty>vec-alloc` and `@u8vec-slice` lower as direct `let`-RHS
+  stack allocations / sub-views; codegen rejects use outside that position.
+- `Buf` and `I64Vec` and their legacy primitives remain unchanged for
+  backward compatibility; Phase 1–5 examples continue to compile and run.
+- Typecheck fixtures (`crates/tacit-typecheck/tests/stdlib_typed_memory.rs`)
+  cover positive cases, byte-bus loads, slice typing, and the two new
+  diagnostics. Codegen smoke fixtures
+  (`crates/tacit-codegen/tests/p6_typed_memory.rs` plus
+  `examples/smoke/p6-u8vec-*.tac` and `examples/smoke/p6-u32vec-*.tac`)
+  exercise the round-trip end-to-end.
+- Durable Stage 7 examples live under `examples/phase-6/typed-memory/`.
 
 ## Stage 8: Data Layout And Decode Support
 

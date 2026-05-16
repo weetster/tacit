@@ -28,12 +28,16 @@
 //! Codegen pattern-matches an `App` left-spine whose head is `Sym(name)`,
 //! looks up `name` here, collects right-spine args, and emits accordingly.
 
-use tacit_typecheck::primitives::{parse_fixed_prim, FixedPrim};
+use tacit_typecheck::primitives::{
+    parse_fixed_prim, parse_vec_prim, FixedPrim, U8VecBusOp, U8VecOp, VecOp, VecPrim,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PrimKind {
     /// Fixed-width integer primitive (ADR 0084).
     Fixed(FixedPrim),
+    /// Typed mutable memory primitive (ADR 0085).
+    Vec(VecPrim),
     /// libc `write(fd: i32, buf: i8*, len: i64) -> i64`
     Write,
     /// libc `read(fd: i32, buf: i8*, len: i64) -> i64`
@@ -148,6 +152,9 @@ pub enum CmpOp {
 
 impl PrimKind {
     pub fn lookup(name: &str) -> Option<PrimKind> {
+        if let Some(prim) = parse_vec_prim(name) {
+            return Some(PrimKind::Vec(prim));
+        }
         if let Some(prim) = parse_fixed_prim(name) {
             return Some(PrimKind::Fixed(prim));
         }
@@ -214,6 +221,7 @@ impl PrimKind {
     pub fn arity(self) -> usize {
         match self {
             PrimKind::Fixed(prim) => fixed_prim_arity(prim),
+            PrimKind::Vec(prim) => vec_prim_arity(prim),
             PrimKind::Write | PrimKind::Read => 3,
             PrimKind::Exit
             | PrimKind::BufAlloc
@@ -249,6 +257,28 @@ impl PrimKind {
             PrimKind::ForEach => 3,
             PrimKind::Arith(_) | PrimKind::Cmp(_) => 2,
         }
+    }
+}
+
+fn vec_prim_arity(prim: VecPrim) -> usize {
+    match prim {
+        VecPrim::Vec { op, .. } => match op {
+            VecOp::Alloc => 1,
+            VecOp::Len => 1,
+            VecOp::Get => 2,
+            VecOp::Set => 3,
+        },
+        VecPrim::U8Vec(op) => match op {
+            U8VecOp::Slice => 3,
+            U8VecOp::Scan => 4,
+            U8VecOp::Fill => 4,
+            U8VecOp::Eq => 5,
+            U8VecOp::Copy => 5,
+        },
+        VecPrim::U8VecBus(op) => match op {
+            U8VecBusOp::Load { .. } => 2,
+            U8VecBusOp::Store { .. } => 3,
+        },
     }
 }
 

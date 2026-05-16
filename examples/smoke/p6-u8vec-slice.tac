@@ -1,0 +1,1 @@
+(let (app (sym u8vec-alloc) (int 8)) (let (app (app (app (sym u8vec-set) (var 0)) (int 3)) (int 99)) (let (app (app (app (sym u8vec-slice) (var 1)) (int 2)) (int 4)) (app (sym u8-to-u64-zext) (app (app (sym u8vec-get) (var 0)) (int 1))))))

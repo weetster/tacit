@@ -1,0 +1,1 @@
+(let (app (sym u8vec-alloc) (int 16)) (let (app (app (app (sym u8vec-store-u32-le) (var 0)) (int 4)) (int 3405691582)) (app (sym u32-to-u8-trunc) (app (app (sym u8vec-load-u32-le) (var 1)) (int 4)))))

@@ -91,7 +91,7 @@ pub fn type_from_node(
             let a_ty = type_from_node(arg, ty_vars, eff_vars, subst, &child_path(path, 1), diags);
             if matches!(
                 f_ty,
-                Ty::Int | Ty::Bool | Ty::Str | Ty::Buf | Ty::I64Vec | Ty::FixedInt(_)
+                Ty::Int | Ty::Bool | Ty::Str | Ty::Buf | Ty::I64Vec | Ty::FixedInt(_) | Ty::Vec(_)
             ) {
                 let name = match fn_.as_ref() {
                     Node::Sym { name } => name.as_str(),
@@ -188,6 +188,13 @@ fn sym_to_ty(name: &str, path: &[usize], diags: &mut Vec<Diagnostic>) -> Ty {
         "Str" => Ty::Str,
         "Buf" => Ty::Buf,
         "I64Vec" => Ty::I64Vec,
+        vec if vec.ends_with("vec")
+            && crate::ty::FixedIntTy::parse_name(&vec[..vec.len() - 3]).is_some() =>
+        {
+            Ty::Vec(
+                crate::ty::FixedIntTy::parse_name(&vec[..vec.len() - 3]).expect("checked above"),
+            )
+        }
         fixed if crate::ty::FixedIntTy::parse_name(fixed).is_some() => {
             Ty::FixedInt(crate::ty::FixedIntTy::parse_name(fixed).expect("checked above"))
         }
