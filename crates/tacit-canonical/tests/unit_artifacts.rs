@@ -86,3 +86,48 @@ fn rejects_bad_hash_width() {
     let src = b"(ref \"abc\")";
     assert!(parse(src).is_err());
 }
+
+#[test]
+fn parses_emits_and_hash_sorts_host_imports() {
+    let host = Node::HostImport {
+        capability: "tacit.host.log".into(),
+        operation: "write-byte".into(),
+        sig: Box::new(Node::Sig {
+            type_: Box::new(Node::FnTy {
+                arg: Box::new(Node::Sym { name: "u8".into() }),
+                ret: Box::new(Node::Sym { name: "Int".into() }),
+                eff: Box::new(Node::EffSet {
+                    atoms: vec!["IO".into()],
+                }),
+            }),
+            eval_eff: Box::new(Node::EffSet { atoms: vec![] }),
+        }),
+    };
+    let host_hash: String = hash_node(&host)
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect();
+    let unit = Node::Unit {
+        imports: vec![
+            Node::Import {
+                hash: h('f'),
+                sig: Box::new(sig()),
+            },
+            host,
+        ],
+        exports: vec![],
+        defs: vec![Node::Def {
+            sig: Box::new(Node::Sig {
+                type_: Box::new(Node::Sym { name: "Int".into() }),
+                eval_eff: Box::new(Node::EffSet { atoms: vec![] }),
+            }),
+            body: Box::new(Node::Int { value: "0".into() }),
+        }],
+    };
+
+    let emitted = emit(&unit);
+    let text = String::from_utf8(emitted.clone()).unwrap();
+    assert!(text.contains("(host-imp \"tacit.host.log\" \"write-byte\""));
+    assert_eq!(emit(&parse(&emitted).expect("host import parses")), emitted);
+    assert_eq!(host_hash.len(), 64);
+}

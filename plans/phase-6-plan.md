@@ -765,9 +765,10 @@ Exit criteria:
 
 ## Stage 10: Host-Interface ABI
 
-**Status:** Design accepted 2026-05-16 by
+**Status:** Complete 2026-05-16. Design accepted by
 [ADR 0088](../decisions/0088-phase-6-host-interface-abi.md);
-implementation planned.
+implementation verified in canonical, view, typechecker, interface, CLI, and
+LLVM-feature regression tests.
 
 **Purpose:** Specify and implement the constrained embedding ABI once modules,
 packages, systems primitives, and typed memory are stable enough to define the
@@ -777,24 +778,24 @@ Work items:
 
 - Write the host-interface ABI ADR. Done:
   [ADR 0088](../decisions/0088-phase-6-host-interface-abi.md).
-- Define the ABI-expressible Tacit type subset.
+- Define the ABI-expressible Tacit type subset. Done.
 - Decide whether captured closures, effect-polymorphic functions, and mutable
-  handles can cross the host boundary or are rejected.
-- Specify stable C ABI naming, calling convention, and symbol generation.
-- Generate machine-readable interface metadata from canonical artifacts.
-- Generate C headers from interface metadata.
-- Generate Rust host bindings from interface metadata.
-- Define host-provided imports with explicit type/effect signatures.
-- Define ownership and lifetime rules for values crossing the boundary.
-- Define allocator-boundary rules.
-- Define result/error ABI.
-- Define capability/effect declarations for host-backed operations.
+  handles can cross the host boundary or are rejected. Done.
+- Specify stable C ABI naming, calling convention, and symbol generation. Done.
+- Generate machine-readable interface metadata from canonical artifacts. Done.
+- Generate C headers from interface metadata. Done.
+- Generate Rust host bindings from interface metadata. Done.
+- Define host-provided imports with explicit type/effect signatures. Done.
+- Define ownership and lifetime rules for values crossing the boundary. Done.
+- Define allocator-boundary rules. Done.
+- Define result/error ABI. Done.
+- Define capability/effect declarations for host-backed operations. Done.
 - Decide compile targets for Phase 6: LLVM-native linkable artifacts only, or
   LLVM-native plus an initial WASM target. WASM remains optional unless this
-  ADR explicitly accepts it.
-- Add diagnostics for ABI-inexpressible exports/imports.
+  ADR explicitly accepts it. Done.
+- Add diagnostics for ABI-inexpressible exports/imports. Done.
 - Add tests for generated headers, generated Rust bindings, and host import
-  satisfaction.
+  satisfaction. Done.
 
 Design outcome:
 
@@ -829,6 +830,24 @@ Design outcome:
 - Phase 6 commits to LLVM-native linkable artifacts only. WASM remains
   deferred and must be rejected as an unsupported host target during Stage 10
   implementation.
+
+Implementation outcome:
+
+- Canonical `host-imp` declarations parse, emit, hash, and sort inside unit
+  import tables, with authoring and inspection rendering for host imports.
+- Unit checking resolves `ref` nodes to declared host imports by
+  `host_import_hash`, checks declared host import signatures, and rejects host
+  imports whose flattened function effects omit `IO`.
+- `tacit interface` checks a package and writes deterministic
+  `.tacit/cache/packages/<package-hash>/interface.json`, plus generated C
+  headers and Rust bindings under `.tacit/derived/package-<package-hash>/host/`.
+- Interface generation rejects unsupported WASM targets, non-function public
+  exports, function-value boundary types, effect variables, legacy handles, and
+  invalid typed-vector positions with the Stage 10 diagnostic kinds.
+- Regression coverage includes canonical host import round trips, authoring and
+  inspection host import rendering, host import type/effect satisfaction,
+  interface metadata/header/Rust binding generation, CLI output paths, and
+  unsupported WASM rejection.
 
 Exit criteria:
 

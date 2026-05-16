@@ -159,6 +159,24 @@ impl<'f> Ctx<'f> {
                     hash_text(hash, self.flags.hashes)
                 ))
             }
+            Node::HostImport {
+                capability,
+                operation,
+                sig,
+            } => {
+                let hash = hash_hex(node);
+                let alias = self
+                    .import_alias(&hash)
+                    .unwrap_or_else(|| synthetic_hash_name("host_import", &hash));
+                Rendered::leaf(format!(
+                    "host {} : {} from capability {} operation {} = {}",
+                    alias,
+                    format_signature(sig),
+                    render_string_inline(capability),
+                    render_string_inline(operation),
+                    hash_text(&hash, self.flags.hashes)
+                ))
+            }
             Node::Exports { entries } => self.render_exports(entries, sc, indent),
             Node::Export { visibility, hash } => {
                 let alias = self
@@ -890,7 +908,7 @@ impl<'f> Ctx<'f> {
             text.push_str("<none>");
         } else {
             let mut ordered: Vec<&Node> = imports.iter().collect();
-            ordered.sort_by(|a, b| unit_entry_hash(a).cmp(unit_entry_hash(b)));
+            ordered.sort_by_key(|entry| unit_entry_hash(entry));
             for entry in ordered {
                 if let Node::Import { hash, sig } = entry {
                     let alias = self
@@ -903,6 +921,26 @@ impl<'f> Ctx<'f> {
                         alias,
                         format_signature(sig),
                         hash_text(hash, self.flags.hashes)
+                    ));
+                } else if let Node::HostImport {
+                    capability,
+                    operation,
+                    sig,
+                } = entry
+                {
+                    let hash = hash_hex(entry);
+                    let alias = self
+                        .import_alias(&hash)
+                        .unwrap_or_else(|| synthetic_hash_name("host_import", &hash));
+                    text.push('\n');
+                    text.push_str(&Self::pad(indent + 2));
+                    text.push_str(&format!(
+                        "host {} : {} from capability {} operation {} = {}",
+                        alias,
+                        format_signature(sig),
+                        render_string_inline(capability),
+                        render_string_inline(operation),
+                        hash_text(&hash, self.flags.hashes)
                     ));
                 }
             }
@@ -917,7 +955,7 @@ impl<'f> Ctx<'f> {
             text.push_str("<none>");
         } else {
             let mut ordered: Vec<&Node> = exports.iter().collect();
-            ordered.sort_by(|a, b| unit_entry_hash(a).cmp(unit_entry_hash(b)));
+            ordered.sort_by_key(|entry| unit_entry_hash(entry));
             for entry in ordered {
                 if let Node::Export { visibility, hash } = entry {
                     let alias = self
@@ -1013,7 +1051,7 @@ impl<'f> Ctx<'f> {
     ) -> Rendered {
         let mut text = String::from("imports");
         let mut ordered: Vec<&Node> = entries.iter().collect();
-        ordered.sort_by(|a, b| unit_entry_hash(a).cmp(unit_entry_hash(b)));
+        ordered.sort_by_key(|entry| unit_entry_hash(entry));
         for entry in ordered {
             let r = self.render(entry, sc, indent + 2);
             text.push('\n');
@@ -1031,7 +1069,7 @@ impl<'f> Ctx<'f> {
     ) -> Rendered {
         let mut text = String::from("exports");
         let mut ordered: Vec<&Node> = entries.iter().collect();
-        ordered.sort_by(|a, b| unit_entry_hash(a).cmp(unit_entry_hash(b)));
+        ordered.sort_by_key(|entry| unit_entry_hash(entry));
         for entry in ordered {
             let r = self.render(entry, sc, indent + 2);
             text.push('\n');
@@ -1514,11 +1552,37 @@ fn synthetic_hash_name(prefix: &str, hash: &str) -> String {
     format!("{}_{}", prefix, short)
 }
 
-fn unit_entry_hash(node: &Node) -> &str {
+fn unit_entry_hash(node: &Node) -> String {
     match node {
-        Node::Import { hash, .. } | Node::Export { hash, .. } | Node::Ref { hash } => hash,
-        _ => "",
+        Node::Import { hash, .. } | Node::Export { hash, .. } | Node::Ref { hash } => hash.clone(),
+        Node::HostImport { .. } => hash_hex(node),
+        _ => String::new(),
     }
+}
+
+fn hash_hex(node: &Node) -> String {
+    hash_node(node)
+        .iter()
+        .map(|byte| format!("{:02x}", byte))
+        .collect()
+}
+
+fn render_string_inline(value: &str) -> String {
+    let mut out = String::from('"');
+    for ch in value.chars() {
+        let cp = ch as u32;
+        match cp {
+            0x22 => out.push_str("\\\""),
+            0x5C => out.push_str("\\\\"),
+            0x09 => out.push_str("\\t"),
+            0x0A => out.push_str("\\n"),
+            0x0D => out.push_str("\\r"),
+            0x20..=0x7E => out.push(ch),
+            _ => out.push_str(&format!("\\u{{{:x}}}", cp)),
+        }
+    }
+    out.push('"');
+    out
 }
 
 fn def_map_by_hash(defs: &[Node]) -> BTreeMap<String, &Node> {
@@ -1731,6 +1795,7 @@ fn collect_free_outer_indices(node: &Node, depth: u64, out: &mut BTreeSet<usize>
         | Node::Hole { .. }
         | Node::Imports { .. }
         | Node::Import { .. }
+        | Node::HostImport { .. }
         | Node::Exports { .. }
         | Node::Export { .. }
         | Node::Sig { .. }

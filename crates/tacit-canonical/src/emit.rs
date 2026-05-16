@@ -73,6 +73,11 @@ fn emit_into(node: &Node, out: &mut String) {
         }
         Node::Imports { entries } => emit_imports(entries, out),
         Node::Import { hash, sig } => emit_import(hash, sig, out),
+        Node::HostImport {
+            capability,
+            operation,
+            sig,
+        } => emit_host_import(capability, operation, sig, out),
         Node::Exports { entries } => emit_exports(entries, out),
         Node::Export { visibility, hash } => emit_export(visibility, hash, out),
         Node::Defs { defs } => emit_defs(defs, out),
@@ -250,7 +255,7 @@ fn emit_imports(entries: &[Node], out: &mut String) {
         return;
     }
     let mut ordered: Vec<&Node> = entries.iter().collect();
-    ordered.sort_by(|a, b| import_hash(a).cmp(import_hash(b)));
+    ordered.sort_by_key(|entry| import_hash_key(entry));
     out.push_str("(imports");
     for entry in ordered {
         out.push(' ');
@@ -262,6 +267,16 @@ fn emit_imports(entries: &[Node], out: &mut String) {
 fn emit_import(hash: &str, sig: &Node, out: &mut String) {
     out.push_str("(imp ");
     emit_string(hash, out);
+    out.push(' ');
+    emit_into(sig, out);
+    out.push(')');
+}
+
+fn emit_host_import(capability: &str, operation: &str, sig: &Node, out: &mut String) {
+    out.push_str("(host-imp ");
+    emit_string(capability, out);
+    out.push(' ');
+    emit_string(operation, out);
     out.push(' ');
     emit_into(sig, out);
     out.push(')');
@@ -309,10 +324,11 @@ fn emit_def(sig: &Node, body: &Node, out: &mut String) {
     out.push(')');
 }
 
-fn import_hash(node: &Node) -> &str {
+fn import_hash_key(node: &Node) -> [u8; 32] {
     match node {
-        Node::Import { hash, .. } => hash.as_str(),
-        _ => "",
+        Node::Import { hash, .. } => hex_hash_key(hash),
+        Node::HostImport { .. } => definition_hash_key(node),
+        _ => [0; 32],
     }
 }
 
@@ -326,6 +342,27 @@ fn export_hash(node: &Node) -> &str {
 fn definition_hash_key(node: &Node) -> [u8; 32] {
     let bytes = emit(node);
     *blake3::hash(&bytes).as_bytes()
+}
+
+fn hex_hash_key(hash: &str) -> [u8; 32] {
+    let mut out = [0u8; 32];
+    if hash.len() != 64 {
+        return out;
+    }
+    for (i, byte) in out.iter_mut().enumerate() {
+        let hi = hex_nibble(hash.as_bytes()[i * 2]).unwrap_or(0);
+        let lo = hex_nibble(hash.as_bytes()[i * 2 + 1]).unwrap_or(0);
+        *byte = (hi << 4) | lo;
+    }
+    out
+}
+
+fn hex_nibble(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        _ => None,
+    }
 }
 
 /// Emit a canonical string literal (including surrounding quotes).

@@ -426,6 +426,7 @@ impl<'ctx> Compiler<'ctx> {
             )),
             Node::Imports { .. }
             | Node::Import { .. }
+            | Node::HostImport { .. }
             | Node::Exports { .. }
             | Node::Export { .. }
             | Node::Defs { .. }
@@ -7729,6 +7730,7 @@ fn collect_free_outer_indices(node: &Node, depth: u64, out: &mut BTreeSet<usize>
         | Node::EffVar { .. }
         | Node::Imports { .. }
         | Node::Import { .. }
+        | Node::HostImport { .. }
         | Node::Exports { .. }
         | Node::Export { .. }
         | Node::Sig { .. }
@@ -7954,6 +7956,7 @@ fn infer_value_ty(node: &Node, env: &[BindingTy]) -> Result<ValueTy> {
         )),
         Node::Imports { .. }
         | Node::Import { .. }
+        | Node::HostImport { .. }
         | Node::Exports { .. }
         | Node::Export { .. }
         | Node::Defs { .. }

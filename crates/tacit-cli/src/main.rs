@@ -11,7 +11,8 @@ use tacit_typecheck::{
     check_package, check_unit_with_sidecar, clear_package_cache, emit_project_inspection,
     evict_package_cache, infer_module, load_package, load_project, lock_package,
     materialize_package_derived, package_entry_expression, package_test_entry_expression,
-    CheckedUnit, DefinitionEnv, DiagOutput, Diagnostic, EffSet, PackageTest, Ty,
+    write_host_interface, CheckedUnit, DefinitionEnv, DiagOutput, Diagnostic, EffSet, HostTarget,
+    PackageTest, Ty,
 };
 use tacit_views::authoring::{emit_authoring, parse_authoring};
 use tacit_views::sidecar::{Sidecar, SidecarNode};
@@ -64,6 +65,17 @@ enum Cmd {
         /// Output format: human-readable text (default) or stable JSON.
         #[arg(long, value_enum, value_name = "FORMAT", default_value = "text")]
         format: TestFormat,
+    },
+
+    /// Generate Phase 6 constrained host-interface metadata and bindings.
+    Interface {
+        /// Package root directory.
+        #[arg(default_value = ".")]
+        input: PathBuf,
+
+        /// Host target. Phase 6 supports native; wasm is rejected.
+        #[arg(long, value_enum, value_name = "TARGET", default_value = "native")]
+        target: InterfaceTarget,
     },
 
     /// Regenerate tacit.lock for a package root.
@@ -175,6 +187,12 @@ enum TestFormat {
     Json,
 }
 
+#[derive(ValueEnum, Clone)]
+enum InterfaceTarget {
+    Native,
+    Wasm,
+}
+
 #[derive(Subcommand)]
 enum CacheCmd {
     /// Remove the package cache under ROOT/.tacit/cache.
@@ -219,6 +237,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         } => cmd_compile(input, output, entry, emit_llvm_ir),
         Cmd::Check { input, format } => cmd_check(input, format),
         Cmd::Test { input, format } => cmd_test(input, format),
+        Cmd::Interface { input, target } => cmd_interface(input, target),
         Cmd::Lock { input } => cmd_lock(input),
         Cmd::Cache { command } => cmd_cache(command),
         Cmd::Canonicalize {
@@ -996,6 +1015,35 @@ fn write_test_results(tests_dir: Option<&Path>, envelope: &TestEnvelope) {
     }
 }
 
+fn cmd_interface(
+    input: PathBuf,
+    target: InterfaceTarget,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let target = match target {
+        InterfaceTarget::Native => HostTarget::Native,
+        InterfaceTarget::Wasm => HostTarget::Wasm,
+    };
+    let package = match load_package(&input) {
+        Ok(package) => package,
+        Err(diags) => {
+            eprintln!("{}", DiagOutput::new(diags).to_json_string());
+            std::process::exit(1);
+        }
+    };
+    match write_host_interface(&package, target) {
+        Ok((_interface, outputs)) => {
+            println!("{}", outputs.metadata_path.display());
+            println!("{}", outputs.c_header_path.display());
+            println!("{}", outputs.rust_bindings_path.display());
+        }
+        Err(diags) => {
+            eprintln!("{}", DiagOutput::new(diags).to_json_string());
+            std::process::exit(1);
+        }
+    }
+    Ok(())
+}
+
 fn effect_strings(effects: &EffSet) -> Vec<String> {
     effects.atoms.iter().map(ToString::to_string).collect()
 }
@@ -1092,6 +1140,7 @@ fn contains_hole(node: &tacit_canonical::ast::Node) -> bool {
         }
         Node::Imports { entries } => entries.iter().any(contains_hole),
         Node::Import { sig, .. } => contains_hole(sig),
+        Node::HostImport { sig, .. } => contains_hole(sig),
         Node::Exports { entries } => entries.iter().any(contains_hole),
         Node::Export { .. } => false,
         Node::Defs { defs } => defs.iter().any(contains_hole),

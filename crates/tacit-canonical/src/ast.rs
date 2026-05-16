@@ -40,6 +40,11 @@ pub enum Node {
         hash: String,
         sig: Box<Node>,
     },
+    HostImport {
+        capability: String,
+        operation: String,
+        sig: Box<Node>,
+    },
     Exports {
         entries: Vec<Node>,
     },

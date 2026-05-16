@@ -6,6 +6,7 @@
 use std::collections::BTreeMap;
 
 use tacit_canonical::ast::Node;
+use tacit_canonical::hash_node;
 
 use crate::sidecar::SidecarNode;
 
@@ -193,7 +194,7 @@ impl EmitCtx {
 
         let mut first = true;
         let mut ordered_imports: Vec<&Node> = imports.iter().collect();
-        ordered_imports.sort_by(|a, b| unit_entry_hash(a).cmp(unit_entry_hash(b)));
+        ordered_imports.sort_by_key(|entry| unit_entry_hash(entry));
         for import in ordered_imports {
             if let Node::Import { hash, sig } = import {
                 if !first {
@@ -209,6 +210,28 @@ impl EmitCtx {
                 emit_sig_type(sig, out);
                 out.push_str(" from blake3:");
                 out.push_str(hash);
+            } else if let Node::HostImport {
+                capability,
+                operation,
+                sig,
+            } = import
+            {
+                let hash = hash_hex(import);
+                if !first {
+                    out.push_str("; ");
+                }
+                first = false;
+                let alias = self
+                    .import_alias(&hash)
+                    .unwrap_or_else(|| synthetic_hash_name("host_import", &hash));
+                out.push_str("import host ");
+                out.push_str(&alias);
+                out.push_str(" : ");
+                emit_sig_type(sig, out);
+                out.push_str(" from capability ");
+                emit_string_literal(capability, out);
+                out.push_str(" operation ");
+                emit_string_literal(operation, out);
             }
         }
 
@@ -450,6 +473,7 @@ impl EmitCtx {
             | Node::EffVar { .. }
             | Node::Imports { .. }
             | Node::Import { .. }
+            | Node::HostImport { .. }
             | Node::Exports { .. }
             | Node::Export { .. }
             | Node::Defs { .. }
@@ -600,11 +624,37 @@ fn needs_parens_as_arg(node: &Node) -> bool {
     }
 }
 
-fn unit_entry_hash(node: &Node) -> &str {
+fn unit_entry_hash(node: &Node) -> String {
     match node {
-        Node::Import { hash, .. } | Node::Export { hash, .. } | Node::Ref { hash } => hash,
-        _ => "",
+        Node::Import { hash, .. } | Node::Export { hash, .. } | Node::Ref { hash } => hash.clone(),
+        Node::HostImport { .. } => hash_hex(node),
+        _ => String::new(),
     }
+}
+
+fn hash_hex(node: &Node) -> String {
+    hash_node(node)
+        .iter()
+        .map(|byte| format!("{:02x}", byte))
+        .collect()
+}
+
+fn emit_string_literal(value: &str, out: &mut String) {
+    out.push('"');
+    for ch in value.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\t' => out.push_str("\\t"),
+            '\r' => out.push_str("\\r"),
+            c if (c as u32) < 0x20 || c as u32 == 0x7F => {
+                out.push_str(&format!("\\u{{{:x}}}", c as u32));
+            }
+            c => out.push(c),
+        }
+    }
+    out.push('"');
 }
 
 fn def_map_by_hash(defs: &[Node]) -> BTreeMap<String, &Node> {

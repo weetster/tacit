@@ -257,6 +257,17 @@ impl Parser {
         }
     }
 
+    fn consume_string(&mut self, what: &str) -> Result<String, ParseError> {
+        match self.peek().cloned() {
+            Some(Token::Str(value)) => {
+                self.advance();
+                Ok(value)
+            }
+            Some(t) => err(format!("expected {} but got {:?}", what, t)),
+            None => err(format!("expected {} but got end of input", what)),
+        }
+    }
+
     fn scan_unit_decls(
         &mut self,
     ) -> Result<(BTreeSet<String>, BTreeMap<String, String>), ParseError> {
@@ -266,17 +277,39 @@ impl Parser {
 
         while !matches!(self.peek(), Some(Token::RBrace) | None) {
             if self.consume_ident_keyword("import") {
-                let alias = self.consume_ident("import alias")?;
+                let (alias, hash) = if self.consume_ident_keyword("host") {
+                    let alias = self.consume_ident("host import alias")?;
+                    self.consume(&Token::Colon, "':'")?;
+                    let sig_type = self.parse_type_expr()?;
+                    self.consume_ident_exact("from")?;
+                    self.consume_ident_exact("capability")?;
+                    let capability = self.consume_string("capability string")?;
+                    self.consume_ident_exact("operation")?;
+                    let operation = self.consume_string("operation string")?;
+                    validate_host_import_labels(&capability, &operation)?;
+                    let sig = Node::Sig {
+                        type_: Box::new(sig_type),
+                        eval_eff: Box::new(Node::EffSet { atoms: vec![] }),
+                    };
+                    let host_import = Node::HostImport {
+                        capability,
+                        operation,
+                        sig: Box::new(sig),
+                    };
+                    (alias, hash_hex(&host_import))
+                } else {
+                    let alias = self.consume_ident("import alias")?;
+                    while !matches!(self.peek(), Some(Token::Hash(_))) {
+                        if matches!(self.peek(), Some(Token::Semicolon | Token::RBrace) | None) {
+                            return err("import declaration is missing blake3 hash");
+                        }
+                        self.advance();
+                    }
+                    (alias, self.consume_hash("definition hash")?)
+                };
                 if !seen_value_aliases.insert(alias.clone()) {
                     return err(format!("duplicate unit alias '{}'", alias));
                 }
-                while !matches!(self.peek(), Some(Token::Hash(_))) {
-                    if matches!(self.peek(), Some(Token::Semicolon | Token::RBrace) | None) {
-                        return err("import declaration is missing blake3 hash");
-                    }
-                    self.advance();
-                }
-                let hash = self.consume_hash("definition hash")?;
                 import_aliases.insert(alias, hash);
                 self.skip_to_decl_end()?;
             } else if self.consume_ident_keyword("private") {
@@ -512,19 +545,47 @@ impl Parser {
 
         while !matches!(self.peek(), Some(Token::RBrace) | None) {
             if self.consume_ident_keyword("import") {
-                let alias = self.consume_ident("import alias")?;
-                self.consume(&Token::Colon, "':'")?;
-                let sig_type = self.parse_type_expr()?;
-                self.consume_ident_exact("from")?;
-                let hash = self.consume_hash("definition hash")?;
-                let sig = Node::Sig {
-                    type_: Box::new(sig_type),
-                    eval_eff: Box::new(Node::EffSet { atoms: vec![] }),
+                let (hash, alias, import) = if self.consume_ident_keyword("host") {
+                    let alias = self.consume_ident("host import alias")?;
+                    self.consume(&Token::Colon, "':'")?;
+                    let sig_type = self.parse_type_expr()?;
+                    self.consume_ident_exact("from")?;
+                    self.consume_ident_exact("capability")?;
+                    let capability = self.consume_string("capability string")?;
+                    self.consume_ident_exact("operation")?;
+                    let operation = self.consume_string("operation string")?;
+                    validate_host_import_labels(&capability, &operation)?;
+                    let sig = Node::Sig {
+                        type_: Box::new(sig_type),
+                        eval_eff: Box::new(Node::EffSet { atoms: vec![] }),
+                    };
+                    let import = Node::HostImport {
+                        capability,
+                        operation,
+                        sig: Box::new(sig),
+                    };
+                    let hash = hash_hex(&import);
+                    (hash, alias, import)
+                } else {
+                    let alias = self.consume_ident("import alias")?;
+                    self.consume(&Token::Colon, "':'")?;
+                    let sig_type = self.parse_type_expr()?;
+                    self.consume_ident_exact("from")?;
+                    let hash = self.consume_hash("definition hash")?;
+                    let sig = Node::Sig {
+                        type_: Box::new(sig_type),
+                        eval_eff: Box::new(Node::EffSet { atoms: vec![] }),
+                    };
+                    (
+                        hash.clone(),
+                        alias,
+                        Node::Import {
+                            hash,
+                            sig: Box::new(sig),
+                        },
+                    )
                 };
-                imports.push(Node::Import {
-                    hash: hash.clone(),
-                    sig: Box::new(sig),
-                });
+                imports.push(import);
                 import_alias_map.insert(hash, alias);
             } else if self.consume_ident_keyword("private") {
                 let draft = self.parse_unit_def_decl(None)?;
@@ -1582,4 +1643,39 @@ fn for_each_unit_ref_child(node: &Node, mut f: impl FnMut(&Node)) {
         Node::Ann { expr, .. } => f(expr),
         _ => {}
     }
+}
+
+fn hash_hex(node: &Node) -> String {
+    hash_node(node)
+        .iter()
+        .map(|byte| format!("{:02x}", byte))
+        .collect()
+}
+
+fn validate_host_import_labels(capability: &str, operation: &str) -> Result<(), ParseError> {
+    if !is_capability_label(capability) {
+        return err("host import capability must be a dotted lowercase ASCII label");
+    }
+    if !is_operation_label(operation) {
+        return err("host import operation must be a lowercase ASCII operation label");
+    }
+    Ok(())
+}
+
+fn is_capability_label(s: &str) -> bool {
+    !s.is_empty()
+        && s.split('.').all(|part| {
+            !part.is_empty()
+                && part
+                    .bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+                && part.bytes().next().is_some_and(|b| b.is_ascii_lowercase())
+        })
+}
+
+fn is_operation_label(s: &str) -> bool {
+    !s.is_empty()
+        && s.bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+        && s.bytes().next().is_some_and(|b| b.is_ascii_lowercase())
 }

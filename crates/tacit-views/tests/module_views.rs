@@ -186,6 +186,26 @@ fn parses_function_call_effect_in_boundary_type() {
 }
 
 #[test]
+fn parses_and_renders_host_imports() {
+    let src = "unit Host { import host log_byte : u8 -> Int / {IO} from capability \"tacit.host.log\" operation \"write-byte\"; export public call_log : u8 -> Int / {IO} = lambda x. log_byte x }";
+    let (node, sidecar) = parse_authoring(src.as_bytes()).expect("parse host import unit");
+    let canonical = String::from_utf8(emit(&node)).unwrap();
+    assert!(canonical.contains("(host-imp \"tacit.host.log\" \"write-byte\""));
+    let authoring = emit_authoring(&node, Some(&sidecar));
+    assert!(authoring.contains("import host log_byte : u8 -> Int / {IO}"));
+    let inspection = emit_inspection(
+        &node,
+        Some(&sidecar),
+        &InspectFlags {
+            types: true,
+            effects: true,
+            ..Default::default()
+        },
+    );
+    assert!(inspection.contains("host log_byte : u8 -> Int / {IO}"));
+}
+
+#[test]
 fn rejects_empty_module_binding_group() {
     let err = parse_authoring(b"module {}").expect_err("empty module binding group is invalid");
     assert!(err

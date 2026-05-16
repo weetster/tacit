@@ -272,6 +272,42 @@ impl Diagnostic {
         )
     }
 
+    pub fn duplicate_host_import(path: &[usize], hash: &str, alias: Option<&str>) -> Self {
+        Self::new(
+            "duplicate-host-import",
+            "error",
+            path,
+            format!(
+                "unit declares host import {} more than once",
+                hash_display(hash, alias)
+            ),
+        )
+    }
+
+    pub fn host_import_signature_mismatch(
+        path: &[usize],
+        hash: &str,
+        capability: &str,
+        operation: &str,
+        message: &str,
+    ) -> Self {
+        let mut d = Self::new(
+            "host-import-signature-mismatch",
+            "error",
+            path,
+            format!(
+                "host import blake3:{} ({}::{}) signature is invalid: {}",
+                hash, capability, operation, message
+            ),
+        );
+        d.actual = Some(serde_json::json!({
+            "hash": hash,
+            "capability": capability,
+            "operation": operation,
+        }));
+        d
+    }
+
     pub fn duplicate_export(path: &[usize], hash: &str, alias: Option<&str>) -> Self {
         Self::new(
             "duplicate-export",
@@ -497,6 +533,73 @@ impl Diagnostic {
     pub fn package_error(kind: &str, message: String, details: Value) -> Self {
         let mut d = Self::new(kind, "error", &[], message);
         d.actual = Some(details);
+        d
+    }
+
+    pub fn abi_unsupported_target(target: &str, message: &str) -> Self {
+        let mut d = Self::new(
+            "abi-unsupported-target",
+            "error",
+            &[],
+            format!("unsupported host ABI target '{}': {}", target, message),
+        );
+        d.actual = Some(serde_json::json!({"target": target}));
+        d
+    }
+
+    pub fn abi_inexpressible_export(hash: &str, message: &str) -> Self {
+        let mut d = Self::new(
+            "abi-inexpressible-export",
+            "error",
+            &[],
+            format!(
+                "public export blake3:{} is not host ABI-expressible: {}",
+                hash, message
+            ),
+        );
+        d.actual = Some(serde_json::json!({"hash": hash}));
+        d
+    }
+
+    pub fn abi_inexpressible_type(hash: &str, message: &str) -> Self {
+        let mut d = Self::new(
+            "abi-inexpressible-type",
+            "error",
+            &[],
+            format!(
+                "boundary type for blake3:{} is not host ABI-expressible: {}",
+                hash, message
+            ),
+        );
+        d.actual = Some(serde_json::json!({"hash": hash}));
+        d
+    }
+
+    pub fn abi_inexpressible_effect(hash: &str, message: &str) -> Self {
+        let mut d = Self::new(
+            "abi-inexpressible-effect",
+            "error",
+            &[],
+            format!(
+                "boundary effects for blake3:{} are not host ABI-expressible: {}",
+                hash, message
+            ),
+        );
+        d.actual = Some(serde_json::json!({"hash": hash}));
+        d
+    }
+
+    pub fn abi_vector_position(hash: &str, message: &str) -> Self {
+        let mut d = Self::new(
+            "abi-vector-position",
+            "error",
+            &[],
+            format!(
+                "typed vector position for blake3:{} is invalid: {}",
+                hash, message
+            ),
+        );
+        d.actual = Some(serde_json::json!({"hash": hash}));
         d
     }
 }

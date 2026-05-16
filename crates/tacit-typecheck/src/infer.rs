@@ -295,6 +295,7 @@ pub fn infer(
         | Node::Unit { .. }
         | Node::Imports { .. }
         | Node::Import { .. }
+        | Node::HostImport { .. }
         | Node::Exports { .. }
         | Node::Export { .. }
         | Node::Defs { .. }
@@ -477,6 +478,7 @@ fn collect_free_outer_indices(node: &Node, depth: u64, out: &mut BTreeSet<usize>
         | Node::Hole { .. }
         | Node::Imports { .. }
         | Node::Import { .. }
+        | Node::HostImport { .. }
         | Node::Exports { .. }
         | Node::Export { .. }
         | Node::Sig { .. }

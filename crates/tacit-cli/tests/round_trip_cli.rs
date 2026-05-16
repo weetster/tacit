@@ -305,6 +305,55 @@ fn lock_and_check_package_path_dependency_cli() {
     assert!(stdout.contains(r#""errors": []"#), "{stdout}");
 }
 
+#[test]
+fn interface_command_writes_metadata_header_and_rust_bindings() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let d = dir.path();
+    std::fs::create_dir_all(d.join("src")).unwrap();
+
+    let host_import = Node::HostImport {
+        capability: "tacit.host.log".into(),
+        operation: "write-byte".into(),
+        sig: Box::new(cli_u8_to_int_io_sig()),
+    };
+    let host_hash = cli_hash(&host_import);
+    let export = Node::Def {
+        sig: Box::new(cli_u8_to_int_io_sig()),
+        body: Box::new(Node::Lam {
+            body: Box::new(Node::App {
+                fn_: Box::new(Node::Ref { hash: host_hash }),
+                arg: Box::new(Node::Var { index: 0 }),
+            }),
+        }),
+    };
+    let export_hash = cli_hash(&export);
+    let unit = Node::Unit {
+        imports: vec![host_import],
+        exports: vec![Node::Export {
+            visibility: "public".into(),
+            hash: export_hash,
+        }],
+        defs: vec![export],
+    };
+    std::fs::write(d.join("src/lib.tac"), emit(&unit)).unwrap();
+
+    let out = tacit(&["interface", "."], d);
+    assert!(
+        out.status.success(),
+        "interface failed\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("interface.json"), "{stdout}");
+    assert!(d.join(".tacit/cache").exists());
+    assert!(d.join(".tacit/derived").exists());
+
+    let wasm = tacit(&["interface", ".", "--target", "wasm"], d);
+    assert!(!wasm.status.success(), "wasm target should fail");
+    assert!(String::from_utf8_lossy(&wasm.stderr).contains("abi-unsupported-target"));
+}
+
 #[cfg(feature = "llvm")]
 #[test]
 fn test_package_json_passes_multimodule_private_test() {
@@ -557,6 +606,19 @@ fn cli_int_to_int_sig() -> Node {
             arg: Box::new(cli_sym("Int")),
             ret: Box::new(cli_sym("Int")),
             eff: Box::new(Node::EffSet { atoms: vec![] }),
+        }),
+        eval_eff: Box::new(Node::EffSet { atoms: vec![] }),
+    }
+}
+
+fn cli_u8_to_int_io_sig() -> Node {
+    Node::Sig {
+        type_: Box::new(Node::FnTy {
+            arg: Box::new(cli_sym("u8")),
+            ret: Box::new(cli_sym("Int")),
+            eff: Box::new(Node::EffSet {
+                atoms: vec!["IO".to_string()],
+            }),
         }),
         eval_eff: Box::new(Node::EffSet { atoms: vec![] }),
     }

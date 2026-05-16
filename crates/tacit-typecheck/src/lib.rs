@@ -11,6 +11,7 @@
 
 pub mod error;
 pub mod infer;
+pub mod interface;
 pub mod package;
 pub mod primitives;
 pub mod project;
@@ -21,6 +22,10 @@ pub mod units;
 
 pub use error::{DiagOutput, Diagnostic};
 pub use infer::infer;
+pub use interface::{
+    emit_c_header, emit_rust_bindings, generate_host_interface, write_host_interface,
+    HostInterface, HostInterfaceOutputs, HostTarget,
+};
 pub use package::{
     check_package, clear_package_cache, evict_package_cache, load_package, lock_package,
     materialize_package_derived, package_entry_expression, package_hash_for_project,

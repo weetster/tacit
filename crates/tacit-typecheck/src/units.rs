@@ -203,65 +203,100 @@ fn check_unit_with_path(
     let local_defs = local_def_map(parts.defs);
 
     let mut seen_imports = BTreeSet::new();
+    let mut seen_host_imports = BTreeSet::new();
     let mut import_sigs: BTreeMap<String, Node> = BTreeMap::new();
     for (i, import) in parts.imports.iter().enumerate() {
-        let Node::Import { hash, sig } = import else {
-            continue;
-        };
         let imp_path = child_path(path, &[0, i]);
-        if !seen_imports.insert(hash.clone()) {
-            diags.push(Diagnostic::duplicate_import(
-                &imp_path,
-                hash,
-                aliases.import_alias(hash),
-            ));
-        }
-        import_sigs.insert(hash.clone(), sig.as_ref().clone());
+        match import {
+            Node::Import { hash, sig } => {
+                if !seen_imports.insert(hash.clone()) {
+                    diags.push(Diagnostic::duplicate_import(
+                        &imp_path,
+                        hash,
+                        aliases.import_alias(hash),
+                    ));
+                }
+                import_sigs.insert(hash.clone(), sig.as_ref().clone());
 
-        let Some(provider) = providers.get(hash) else {
-            diags.push(Diagnostic::missing_import(
-                &imp_path,
-                hash,
-                aliases.import_alias(hash),
-            ));
-            continue;
-        };
+                let Some(provider) = providers.get(hash) else {
+                    diags.push(Diagnostic::missing_import(
+                        &imp_path,
+                        hash,
+                        aliases.import_alias(hash),
+                    ));
+                    continue;
+                };
 
-        let actual_hash = hex_hash(&provider.def);
-        if actual_hash != *hash {
-            diags.push(Diagnostic::hash_mismatch(
-                &imp_path,
-                hash,
-                &actual_hash,
-                aliases.import_alias(hash),
-            ));
-        }
+                let actual_hash = hex_hash(&provider.def);
+                if actual_hash != *hash {
+                    diags.push(Diagnostic::hash_mismatch(
+                        &imp_path,
+                        hash,
+                        &actual_hash,
+                        aliases.import_alias(hash),
+                    ));
+                }
 
-        match provider.visibility {
-            DefinitionVisibility::Public => {}
-            DefinitionVisibility::Package if provider.same_package => {}
-            other => diags.push(Diagnostic::visibility_violation(
-                &imp_path,
-                hash,
-                other.as_str(),
-                aliases.import_alias(hash),
-            )),
-        }
+                match provider.visibility {
+                    DefinitionVisibility::Public => {}
+                    DefinitionVisibility::Package if provider.same_package => {}
+                    other => diags.push(Diagnostic::visibility_violation(
+                        &imp_path,
+                        hash,
+                        other.as_str(),
+                        aliases.import_alias(hash),
+                    )),
+                }
 
-        let provider_sig = definition_sig(&provider.def);
-        let expected = canonical_text(sig);
-        let actual = canonical_text(provider_sig);
-        if expected != actual {
-            let subject = format!(
-                "import {}",
-                aliases
-                    .import_alias(hash)
-                    .map(|alias| format!("{} (blake3:{})", alias, hash))
-                    .unwrap_or_else(|| format!("blake3:{}", hash))
-            );
-            diags.push(Diagnostic::signature_mismatch(
-                &imp_path, &subject, &expected, &actual,
-            ));
+                let provider_sig = definition_sig(&provider.def);
+                let expected = canonical_text(sig);
+                let actual = canonical_text(provider_sig);
+                if expected != actual {
+                    let subject = format!(
+                        "import {}",
+                        aliases
+                            .import_alias(hash)
+                            .map(|alias| format!("{} (blake3:{})", alias, hash))
+                            .unwrap_or_else(|| format!("blake3:{}", hash))
+                    );
+                    diags.push(Diagnostic::signature_mismatch(
+                        &imp_path, &subject, &expected, &actual,
+                    ));
+                }
+            }
+            Node::HostImport {
+                capability,
+                operation,
+                sig,
+            } => {
+                let hash = hex_hash(import);
+                if !seen_host_imports.insert(hash.clone()) {
+                    diags.push(Diagnostic::duplicate_host_import(
+                        &imp_path,
+                        &hash,
+                        aliases.import_alias(&hash),
+                    ));
+                }
+                import_sigs.insert(hash.clone(), sig.as_ref().clone());
+
+                let mut subst = Subst::default();
+                let mut local_diags = Vec::new();
+                let ty = signature_type(sig, &mut subst, &mut local_diags);
+                let _eval_eff = signature_eval_eff(sig, &mut subst, &mut local_diags);
+                let flattened = flatten_host_import_effects(&subst.apply(&ty), &subst);
+                match flattened {
+                    Some(effects) if effects.atoms.contains(&crate::ty::EffAtom::IO) => {}
+                    _ => diags.push(Diagnostic::host_import_signature_mismatch(
+                        &imp_path,
+                        &hash,
+                        capability,
+                        operation,
+                        "host import function effects must include IO",
+                    )),
+                }
+                diags.extend(local_diags.into_iter().filter(|d| d.severity == "error"));
+            }
+            _ => {}
         }
     }
 
@@ -402,7 +437,7 @@ fn unit_artifact_parts(node: &Node) -> Option<UnitArtifactParts<'_>> {
         } => {
             let valid_imports = imports
                 .iter()
-                .all(|entry| matches!(entry, Node::Import { .. }));
+                .all(|entry| matches!(entry, Node::Import { .. } | Node::HostImport { .. }));
             let valid_exports = exports.iter().all(|entry| {
                 matches!(
                     entry,
@@ -472,6 +507,23 @@ fn signature_eval_eff(sig: &Node, subst: &mut Subst, diags: &mut Vec<Diagnostic>
             FnEff::Meta(_) => EffSet::empty(),
         },
         _ => EffSet::empty(),
+    }
+}
+
+fn flatten_host_import_effects(ty: &Ty, subst: &Subst) -> Option<EffSet> {
+    let mut cur = subst.apply(ty);
+    let mut out = EffSet::empty();
+    let mut saw_function = false;
+    loop {
+        match cur {
+            Ty::Fn(_, ret, FnEff::Concrete(effects)) => {
+                saw_function = true;
+                out = out.join(&effects);
+                cur = subst.apply(&ret);
+            }
+            Ty::Fn(_, _, FnEff::Meta(_)) => return None,
+            _ => return saw_function.then_some(out),
+        }
     }
 }
 

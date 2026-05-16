@@ -155,6 +155,24 @@ fn is_hash_str(s: &str) -> bool {
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
+fn is_capability_label(s: &str) -> bool {
+    !s.is_empty()
+        && s.split('.').all(|part| {
+            !part.is_empty()
+                && part
+                    .bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+                && part.bytes().next().is_some_and(|b| b.is_ascii_lowercase())
+        })
+}
+
+fn is_operation_label(s: &str) -> bool {
+    !s.is_empty()
+        && s.bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+        && s.bytes().next().is_some_and(|b| b.is_ascii_lowercase())
+}
+
 fn build_form(tag: &str, args: &[SItem]) -> Result<Node, ParseError> {
     match tag {
         "lam" => {
@@ -225,8 +243,8 @@ fn build_form(tag: &str, args: &[SItem]) -> Result<Node, ParseError> {
             let mut entries = Vec::with_capacity(args.len());
             for a in args {
                 let entry = build(a)?;
-                if !matches!(entry, Node::Import { .. }) {
-                    return err("imports children must be imp nodes");
+                if !matches!(entry, Node::Import { .. } | Node::HostImport { .. }) {
+                    return err("imports children must be imp or host-imp nodes");
                 }
                 entries.push(entry);
             }
@@ -241,6 +259,26 @@ fn build_form(tag: &str, args: &[SItem]) -> Result<Node, ParseError> {
             }
             Ok(Node::Import {
                 hash,
+                sig: Box::new(sig),
+            })
+        }
+        "host-imp" => {
+            check_arity(tag, args, 3)?;
+            let capability = bare_str(&args[0], "host-imp capability")?;
+            let operation = bare_str(&args[1], "host-imp operation")?;
+            if !is_capability_label(&capability) {
+                return err("host-imp capability must be a dotted lowercase ASCII label");
+            }
+            if !is_operation_label(&operation) {
+                return err("host-imp operation must be a lowercase ASCII operation label");
+            }
+            let sig = build(&args[2])?;
+            if !matches!(sig, Node::Sig { .. }) {
+                return err("host-imp child 2 must be a sig node");
+            }
+            Ok(Node::HostImport {
+                capability,
+                operation,
                 sig: Box::new(sig),
             })
         }

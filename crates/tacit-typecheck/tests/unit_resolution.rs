@@ -23,6 +23,19 @@ fn int_to_int_sig() -> Node {
     }
 }
 
+fn io_int_to_int_sig() -> Node {
+    Node::Sig {
+        type_: Box::new(Node::FnTy {
+            arg: Box::new(sym("Int")),
+            ret: Box::new(sym("Int")),
+            eff: Box::new(Node::EffSet {
+                atoms: vec!["IO".into()],
+            }),
+        }),
+        eval_eff: Box::new(Node::EffSet { atoms: vec![] }),
+    }
+}
+
 fn bool_to_int_sig() -> Node {
     Node::Sig {
         type_: Box::new(Node::FnTy {
@@ -104,6 +117,64 @@ fn imported_hash_signature_checks() {
 
     let typed = check_unit(&unit, &env).expect("unit checks");
     assert_eq!(typed.definition_types.len(), 1);
+}
+
+#[test]
+fn host_import_ref_typechecks_without_definition_provider() {
+    let host_import = Node::HostImport {
+        capability: "tacit.host.log".into(),
+        operation: "write-byte".into(),
+        sig: Box::new(io_int_to_int_sig()),
+    };
+    let host_hash = hash(&host_import);
+    let consumer_def = Node::Def {
+        sig: Box::new(io_int_to_int_sig()),
+        body: Box::new(Node::Lam {
+            body: Box::new(Node::App {
+                fn_: Box::new(Node::Ref {
+                    hash: host_hash.clone(),
+                }),
+                arg: Box::new(Node::Var { index: 0 }),
+            }),
+        }),
+    };
+    let consumer_hash = hash(&consumer_def);
+    let unit = Node::Unit {
+        imports: vec![host_import],
+        exports: vec![Node::Export {
+            visibility: "public".into(),
+            hash: consumer_hash,
+        }],
+        defs: vec![consumer_def],
+    };
+
+    let typed = check_unit(&unit, &DefinitionEnv::new()).expect("host import checks");
+    assert_eq!(typed.definition_types.len(), 1);
+}
+
+#[test]
+fn host_import_requires_io_effect() {
+    let host_import = Node::HostImport {
+        capability: "tacit.host.log".into(),
+        operation: "write-byte".into(),
+        sig: Box::new(int_to_int_sig()),
+    };
+    let host_hash = hash(&host_import);
+    let consumer_def = apply_import_def(&host_hash);
+    let consumer_hash = hash(&consumer_def);
+    let unit = Node::Unit {
+        imports: vec![host_import],
+        exports: vec![Node::Export {
+            visibility: "public".into(),
+            hash: consumer_hash,
+        }],
+        defs: vec![consumer_def],
+    };
+
+    let diags = check_unit(&unit, &DefinitionEnv::new()).expect_err("host import lacks IO");
+    assert!(diags
+        .iter()
+        .any(|diag| diag.kind == "host-import-signature-mismatch"));
 }
 
 #[test]
