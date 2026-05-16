@@ -102,3 +102,5 @@ Keep ADRs short. They record the decision, not the full analysis that led to it.
 - [0084 — Phase 6 fixed-width integers and bit primitives](0084-phase-6-fixed-width-integers.md)
 - [0085 — Phase 6 typed mutable memory](0085-phase-6-typed-mutable-memory.md)
 - [0086 — Phase 6 data layout and decode support](0086-phase-6-data-layout-and-decode.md)
+- [0087 — Phase 6 source-level stdlib foundations](0087-phase-6-source-level-stdlib-foundations.md)
+- [0088 — Phase 6 constrained host-interface ABI](0088-phase-6-host-interface-abi.md)

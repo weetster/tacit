@@ -135,9 +135,9 @@ remain host-owned capabilities during Phase 6.
 | Q-P6-9 | What typed mutable-memory surface replaces or subsumes `Buf` and `I64Vec`? | Resolved by [ADR 0085](../decisions/0085-phase-6-typed-mutable-memory.md) |
 | Q-P6-10 | Are existing records, constructors, and `match` sufficient for decode shapes? | Resolved by [ADR 0086](../decisions/0086-phase-6-data-layout-and-decode.md) |
 | Q-P6-11 | Which compiler-recognized primitives move first into source-level stdlib packages? | Resolved by [ADR 0087](../decisions/0087-phase-6-source-level-stdlib-foundations.md) |
-| Q-P6-12 | What Tacit types are ABI-expressible at the host boundary? | Stage 10 ADR |
-| Q-P6-13 | What ownership, lifetime, allocation, and result/error rules govern host calls? | Stage 10 ADR |
-| Q-P6-14 | Does Phase 6 commit only to LLVM-native linkable artifacts, or also to WASM? | Stage 10 ADR |
+| Q-P6-12 | What Tacit types are ABI-expressible at the host boundary? | Resolved by [ADR 0088](../decisions/0088-phase-6-host-interface-abi.md) |
+| Q-P6-13 | What ownership, lifetime, allocation, and result/error rules govern host calls? | Resolved by [ADR 0088](../decisions/0088-phase-6-host-interface-abi.md) |
+| Q-P6-14 | Does Phase 6 commit only to LLVM-native linkable artifacts, or also to WASM? | Resolved by [ADR 0088](../decisions/0088-phase-6-host-interface-abi.md) |
 | Q-P6-15 | What examples and benchmarks prove emulator-style expressiveness without becoming a full emulator? | Stage 12 freeze ADR |
 
 ## Required ADR Sequence
@@ -164,9 +164,11 @@ ADRs must land before implementation that depends on them.
    [ADR 0086](../decisions/0086-phase-6-data-layout-and-decode.md).
 9. Source-level stdlib migration path. Design accepted by
    [ADR 0087](../decisions/0087-phase-6-source-level-stdlib-foundations.md);
-   implementation planned.
+   implementation complete.
 10. Host-interface ABI, ABI-expressible type subset, ownership, allocation,
-    result/error handling, and backend target decision.
+    result/error handling, and backend target decision. Design accepted by
+    [ADR 0088](../decisions/0088-phase-6-host-interface-abi.md);
+    implementation planned.
 11. Phase 6 freeze.
 
 ## Stage 0: Scope Lock
@@ -763,7 +765,9 @@ Exit criteria:
 
 ## Stage 10: Host-Interface ABI
 
-**Status:** Planned
+**Status:** Design accepted 2026-05-16 by
+[ADR 0088](../decisions/0088-phase-6-host-interface-abi.md);
+implementation planned.
 
 **Purpose:** Specify and implement the constrained embedding ABI once modules,
 packages, systems primitives, and typed memory are stable enough to define the
@@ -771,7 +775,8 @@ boundary honestly.
 
 Work items:
 
-- Write the host-interface ABI ADR.
+- Write the host-interface ABI ADR. Done:
+  [ADR 0088](../decisions/0088-phase-6-host-interface-abi.md).
 - Define the ABI-expressible Tacit type subset.
 - Decide whether captured closures, effect-polymorphic functions, and mutable
   handles can cross the host boundary or are rejected.
@@ -790,6 +795,40 @@ Work items:
 - Add diagnostics for ABI-inexpressible exports/imports.
 - Add tests for generated headers, generated Rust bindings, and host import
   satisfaction.
+
+Design outcome:
+
+- Host-provided imports are canonical `host-imp` declarations inside unit
+  import tables. Their identity is the BLAKE3 hash of the canonical
+  capability, operation, and signature declaration; Tacit bodies refer to them
+  through ordinary `ref` hashes.
+- Interface metadata is generated deterministically at
+  `.tacit/cache/packages/<package-hash>/interface.json` from public package
+  exports and reachable host imports. Manifest-only host export selection is
+  rejected for Stage 10 because manifest bytes are not package identity.
+- The ABI-expressible value subset is monomorphic fixed-width scalars,
+  `Bool`, legacy `Int`, unit-like empty records, ABI-records whose fields are
+  expressible, and typed vector handles only as host-owned borrowed function
+  parameters.
+- Function values, captured closure values, type/effect-polymorphic
+  functions, legacy `Buf`/`I64Vec`, typed vector results, vector fields,
+  strings, owned arrays, opaque pointers, and raw addresses are rejected at
+  the host boundary.
+- C ABI symbols are hash-based. Generated exports and host callbacks use a
+  package-specific context and callback table rather than arbitrary external
+  linker symbols.
+- Scalars and records cross by value. Borrowed vectors are valid only for the
+  dynamic extent of a call. No owned heap value crosses the boundary, and
+  Stage 10 exposes no allocator hooks.
+- Source-level failures remain ordinary Tacit return values. ABI status covers
+  invalid host arguments, missing host callbacks, and host callback errors;
+  existing runtime traps remain non-recoverable process aborts in Phase 6.
+- Host import effects use the existing Tacit-Lite effect atoms, and every host
+  import includes `IO`. No new user-defined effects, capability tokens,
+  handlers, or row-polymorphic effects are added.
+- Phase 6 commits to LLVM-native linkable artifacts only. WASM remains
+  deferred and must be rejected as an unsupported host target during Stage 10
+  implementation.
 
 Exit criteria:
 
