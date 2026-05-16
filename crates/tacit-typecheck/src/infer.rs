@@ -24,8 +24,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use tacit_canonical::ast::Node;
 
 use crate::error::Diagnostic;
-use crate::primitives::{is_arith, is_cmp, prim_type};
-use crate::ty::{join_fn_eff, unify, EffAtom, EffSet, FnEff, Subst, Ty};
+use crate::primitives::{
+    fixed_prim_type, is_arith, is_cmp, parse_fixed_prim, prim_type, FixedPrim, FixedShiftOp,
+};
+use crate::ty::{join_fn_eff, unify, EffAtom, EffSet, FixedIntTy, FnEff, IntSign, Subst, Ty};
 use crate::type_from_node::{child_path, type_from_node};
 
 /// Infer the type and eval-effect of a node given a variable context.
@@ -40,7 +42,7 @@ pub fn infer(
     diags: &mut Vec<Diagnostic>,
 ) -> (Ty, FnEff) {
     match node {
-        Node::Int { .. } => (Ty::Int, FnEff::pure_()),
+        Node::Int { .. } => (Ty::IntLit, FnEff::pure_()),
         Node::Str { .. } => (Ty::Str, FnEff::pure_()),
 
         Node::Var { index } => {
@@ -90,7 +92,7 @@ pub fn infer(
             let cond_resolved = subst.apply(&cond_ty);
             if !matches!(
                 cond_resolved,
-                Ty::Int | Ty::Bool | Ty::Unknown | Ty::Meta(_)
+                Ty::Int | Ty::IntLit | Ty::Bool | Ty::FixedInt(_) | Ty::Unknown | Ty::Meta(_)
             ) {
                 diags.push(Diagnostic::type_mismatch(
                     &child_path(path, 0),
@@ -195,6 +197,7 @@ pub fn infer(
 
         Node::Ann { expr, type_ } => {
             let declared = type_from_node(type_, &[], &[], subst, &child_path(path, 1), diags);
+            validate_integer_literal_annotation(expr, &declared, subst, path, diags);
 
             if let Some((arity, lam_body)) = collect_lam_chain(expr) {
                 validate_lambda_captures(
@@ -390,7 +393,14 @@ fn is_capturable_type(ty: &Ty) -> bool {
     match ty {
         Ty::Buf | Ty::I64Vec => false,
         Ty::Record(fields) => fields.values().all(is_capturable_type),
-        Ty::Fn(_, _, _) | Ty::Int | Ty::Bool | Ty::Str | Ty::Unknown | Ty::Meta(_) => true,
+        Ty::Fn(_, _, _)
+        | Ty::IntLit
+        | Ty::Int
+        | Ty::Bool
+        | Ty::Str
+        | Ty::FixedInt(_)
+        | Ty::Unknown
+        | Ty::Meta(_) => true,
         Ty::App(_, _) => true,
     }
 }
@@ -611,6 +621,10 @@ fn infer_full_primitive_app(
         return None;
     };
 
+    if let Some(result) = infer_fixed_int_primitive_app(ctx, name, &args, subst, path, diags) {
+        return Some(result);
+    }
+
     match name.as_str() {
         "write" if args.len() == 3 => Some(infer_write_app(ctx, &args, subst, path, diags)),
         "read" if args.len() == 3 => Some(infer_read_app(ctx, &args, subst, path, diags)),
@@ -726,6 +740,63 @@ fn infer_token_index_any_app(
         subst,
     );
     (Ty::Int, eval_eff)
+}
+
+fn infer_fixed_int_primitive_app(
+    ctx: &[Ty],
+    name: &str,
+    args: &[&Node],
+    subst: &mut Subst,
+    path: &[usize],
+    diags: &mut Vec<Diagnostic>,
+) -> Option<(Ty, FnEff)> {
+    let prim = parse_fixed_prim(name)?;
+    let prim_ty = fixed_prim_type(prim);
+    let (param_tys, ret_ty, _) = flatten_fn_type(&prim_ty, subst)?;
+    if args.len() != param_tys.len() {
+        return None;
+    }
+
+    let mut eval_eff = FnEff::pure_();
+    for (i, (arg, expected)) in args.iter().zip(param_tys.iter()).enumerate() {
+        let (arg_ty, arg_eff) = infer(ctx, arg, subst, &child_path(path, i), diags);
+        if let Ty::FixedInt(int_ty) = expected {
+            if let Node::Int { value } = arg {
+                if !literal_fits_fixed(value, *int_ty) {
+                    diags.push(Diagnostic::integer_literal_out_of_range(
+                        &child_path(path, i),
+                        value,
+                        *int_ty,
+                    ));
+                }
+            }
+        }
+        expect_type(&child_path(path, i), expected, &arg_ty, subst, diags);
+        eval_eff = join_fn_eff(&eval_eff, &arg_eff, subst);
+    }
+
+    if let FixedPrim::Shift { ty, op } = prim {
+        if matches!(op, FixedShiftOp::Shl | FixedShiftOp::Shr) {
+            if let Some(count) = args.get(1).and_then(|node| static_int_literal(node)) {
+                if count < 0 || count >= i128::from(ty.width) {
+                    diags.push(Diagnostic::invalid_shift_width(
+                        &child_path(path, 1),
+                        ty.width,
+                        count,
+                    ));
+                }
+            }
+        }
+    }
+
+    Some((ret_ty, eval_eff))
+}
+
+fn static_int_literal(node: &Node) -> Option<i128> {
+    match node {
+        Node::Int { value } => value.parse().ok(),
+        _ => None,
+    }
 }
 
 fn infer_map_app(
@@ -947,6 +1018,50 @@ fn expect_token_delims_arg(
     }
 }
 
+fn validate_integer_literal_annotation(
+    expr: &Node,
+    declared: &Ty,
+    subst: &Subst,
+    path: &[usize],
+    diags: &mut Vec<Diagnostic>,
+) {
+    let Node::Int { value } = expr else {
+        return;
+    };
+    let Ty::FixedInt(int_ty) = subst.apply(declared) else {
+        return;
+    };
+    if !literal_fits_fixed(value, int_ty) {
+        diags.push(Diagnostic::integer_literal_out_of_range(
+            path, value, int_ty,
+        ));
+    }
+}
+
+fn literal_fits_fixed(value: &str, int_ty: FixedIntTy) -> bool {
+    let Ok(n) = value.parse::<i128>() else {
+        return false;
+    };
+    match int_ty.sign {
+        IntSign::Signed => {
+            let min = -(1i128 << (int_ty.width - 1));
+            let max = (1i128 << (int_ty.width - 1)) - 1;
+            n >= min && n <= max
+        }
+        IntSign::Unsigned => {
+            if n < 0 {
+                return false;
+            }
+            let max = if int_ty.width == 64 {
+                u64::MAX as i128
+            } else {
+                (1i128 << int_ty.width) - 1
+            };
+            n <= max
+        }
+    }
+}
+
 /// Infer a binary operator: `(app (app (sym op) e1) e2)`.
 fn infer_binary_op(
     ctx: &[Ty],
@@ -969,9 +1084,43 @@ fn infer_binary_op(
         return (Ty::Unknown, join_fn_eff(&eff1, &eff2, subst));
     }
 
+    let operand_ty = subst.apply(&t1);
+    if is_arith(op) {
+        match operand_ty {
+            Ty::Int | Ty::IntLit | Ty::Unknown | Ty::Meta(_) => {}
+            Ty::FixedInt(_) => {
+                diags.push(Diagnostic::operator_overload_failure(
+                    path,
+                    op,
+                    &operand_ty,
+                    &operand_ty,
+                ));
+                return (Ty::Unknown, join_fn_eff(&eff1, &eff2, subst));
+            }
+            other => {
+                diags.push(Diagnostic::operator_overload_failure(
+                    path, op, &other, &other,
+                ));
+                return (Ty::Unknown, join_fn_eff(&eff1, &eff2, subst));
+            }
+        }
+    }
+
+    if matches!(operand_ty, Ty::FixedInt(_)) && !matches!(op, "eq" | "ne") {
+        diags.push(Diagnostic::operator_overload_failure(
+            path,
+            op,
+            &operand_ty,
+            &operand_ty,
+        ));
+        return (Ty::Unknown, join_fn_eff(&eff1, &eff2, subst));
+    }
+
     // Arithmetic and comparison operators are pure; their operand eval-effects propagate.
     let result_ty = if is_cmp(op) {
         Ty::Bool
+    } else if matches!(subst.apply(&t1), Ty::IntLit) {
+        Ty::Int
     } else {
         subst.apply(&t1)
     };
@@ -1096,7 +1245,10 @@ fn check_pattern(
         Node::PatWild | Node::PatVar => {}
         Node::PatInt { .. } => {
             let resolved = subst.apply(scrut_ty);
-            if !matches!(resolved, Ty::Int | Ty::Unknown) {
+            if !matches!(
+                resolved,
+                Ty::Int | Ty::IntLit | Ty::FixedInt(_) | Ty::Unknown
+            ) {
                 diags.push(Diagnostic::type_mismatch(path, &Ty::Int, &resolved));
             }
         }
@@ -1222,7 +1374,10 @@ mod tests {
         let mut subst = Subst::default();
         let mut diags = Vec::new();
         let (ty, eff_fn) = infer(&[], node, &mut subst, &[], &mut diags);
-        let ty = subst.apply(&ty);
+        let ty = match subst.apply(&ty) {
+            Ty::IntLit => Ty::Int,
+            other => other,
+        };
         let eff = subst.resolve_eff(&eff_fn);
         (ty, eff, diags)
     }

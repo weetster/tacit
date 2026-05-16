@@ -442,7 +442,7 @@ impl Parser {
             let type_ann: Option<(Node, SidecarNode)> = if matches!(self.peek(), Some(Token::Colon))
             {
                 self.advance();
-                Some(self.parse_expr()?)
+                Some((self.parse_type_expr()?, SidecarNode::default()))
             } else {
                 None
             };
@@ -663,6 +663,11 @@ impl Parser {
                 self.advance();
                 Ok(Node::Sym { name })
             }
+            Some(Token::At) => {
+                self.advance();
+                let name = self.consume_ident("type symbol")?;
+                Ok(Node::Sym { name })
+            }
             Some(Token::LParen) => {
                 self.advance();
                 let ty = self.parse_type_expr()?;
@@ -723,7 +728,7 @@ impl Parser {
         // Optional type annotation: let x: T = ...
         let type_ann = if matches!(self.peek(), Some(Token::Colon)) {
             self.advance();
-            Some(self.parse_expr()?)
+            Some((self.parse_type_expr()?, SidecarNode::default()))
         } else {
             None
         };
@@ -821,7 +826,7 @@ impl Parser {
             let type_ann: Option<(Node, SidecarNode)> = if matches!(self.peek(), Some(Token::Colon))
             {
                 self.advance();
-                Some(self.parse_expr()?)
+                Some((self.parse_type_expr()?, SidecarNode::default()))
             } else {
                 None
             };
@@ -1106,10 +1111,10 @@ impl Parser {
                 // Check for standalone ann: (E : T)
                 if matches!(self.peek(), Some(Token::Colon)) {
                     self.advance();
-                    let (t, t_sc) = self.parse_expr()?;
+                    let t = self.parse_type_expr()?;
                     self.consume(&Token::RParen, "')'")?;
                     let sc = SidecarNode {
-                        children: Some(vec![Some(e_sc), Some(t_sc)]),
+                        children: Some(vec![Some(e_sc), Some(SidecarNode::default())]),
                         ..Default::default()
                     };
                     return Ok((

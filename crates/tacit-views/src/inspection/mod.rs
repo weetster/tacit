@@ -645,8 +645,8 @@ impl<'f> Ctx<'f> {
         let (header, rhs_inline, rhs_annots) = if let Node::Ann { expr, type_ } = rhs {
             let ann_sc = sc.and_then(|s| s.child(0));
             let inner_rhs_sc = ann_sc.and_then(|s| s.child(0));
-            let type_sc = ann_sc.and_then(|s| s.child(1));
-            let type_r = self.render(type_, type_sc, indent + 2);
+            let _type_sc = ann_sc.and_then(|s| s.child(1));
+            let type_r = Rendered::leaf(format_type_node_nice(type_));
             let val_r = self.render(expr, inner_rhs_sc, indent + 2);
             let inline = type_r.inline && val_r.inline;
             let header = if inline {
@@ -1477,9 +1477,8 @@ impl<'f> Ctx<'f> {
         indent: usize,
     ) -> Rendered {
         let expr_sc = sc.and_then(|s| s.child(0));
-        let type_sc = sc.and_then(|s| s.child(1));
         let expr_r = self.render(expr, expr_sc, indent + 1);
-        let type_r = self.render(type_, type_sc, indent + 1);
+        let type_r = Rendered::leaf(format_type_node_nice(type_));
 
         let result = if expr_r.inline && type_r.inline {
             let text = format!("({} : {})", expr_r.text, type_r.text);

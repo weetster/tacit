@@ -131,7 +131,7 @@ remain host-owned capabilities during Phase 6.
 | Q-P6-5 | What manifest and lockfile formats represent hash-based dependencies? | Resolved by [ADR 0082](../decisions/0082-phase-6-package-manifest-lockfile-cache.md) |
 | Q-P6-6 | What local object-store layout and cache invalidation rules are required? | Resolved by [ADR 0082](../decisions/0082-phase-6-package-manifest-lockfile-cache.md) |
 | Q-P6-7 | What is the minimum unit-test surface and structured result schema? | Resolved by [ADR 0083](../decisions/0083-phase-6-package-tests.md) |
-| Q-P6-8 | Are fixed-width integer operations primitives, source-library functions, or both? | Stage 6 ADR |
+| Q-P6-8 | Are fixed-width integer operations primitives, source-library functions, or both? | Resolved by [ADR 0084](../decisions/0084-phase-6-fixed-width-integers.md) |
 | Q-P6-9 | What typed mutable-memory surface replaces or subsumes `Buf` and `I64Vec`? | Stage 7 ADR |
 | Q-P6-10 | Are existing records, constructors, and `match` sufficient for decode shapes? | Stage 8 ADR |
 | Q-P6-11 | Which compiler-recognized primitives move first into source-level stdlib packages? | Stage 9 ADR |
@@ -156,7 +156,8 @@ ADRs must land before implementation that depends on them.
 5. Package-level test surface and structured test-result schema. Design
    accepted by [ADR 0083](../decisions/0083-phase-6-package-tests.md);
    implementation complete.
-6. Fixed-width integer and bit-operation surface.
+6. Fixed-width integer and bit-operation surface. Done:
+   [ADR 0084](../decisions/0084-phase-6-fixed-width-integers.md).
 7. Typed mutable memory and bounds behavior.
 8. Data layout and decode support.
 9. Source-level stdlib migration path.
@@ -503,14 +504,20 @@ Outcome:
 
 ## Stage 6: Fixed-Width Integer And Bit Primitive Surface
 
-**Status:** Planned
+**Status:** Complete 2026-05-16. Design accepted by
+[ADR 0084](../decisions/0084-phase-6-fixed-width-integers.md);
+implementation verified for fixed-width types, casts, wrapping arithmetic,
+checked and saturating add/sub, bit operations, shifts, rotates, masks,
+byte-order helpers, inspection rendering through existing symbol paths, and
+opcode-style examples.
 
 **Purpose:** Add the numeric surface needed for systems-style Tacit programs
 without introducing untyped low-level escapes.
 
 Work items:
 
-- Write the fixed-width integer ADR.
+- Write the fixed-width integer ADR. Done:
+  [ADR 0084](../decisions/0084-phase-6-fixed-width-integers.md).
 - Add signed and unsigned integer types: `i8`, `u8`, `i16`, `u16`, `i32`,
   `u32`, `i64`, and `u64`.
 - Define literal typing and defaulting rules.
@@ -531,6 +538,31 @@ Exit criteria:
 - Checked operations expose success/failure explicitly.
 - No operation requires untyped pointer or unchecked memory access.
 - At least one instruction-decode-style example uses the new numeric surface.
+
+Outcome:
+
+- Fixed-width integer types `i8`, `u8`, `i16`, `u16`, `i32`, `u32`,
+  `i64`, and `u64` are accepted in type position through existing canonical
+  `sym` nodes; `Int` remains the legacy default signed scalar for existing
+  programs.
+- Integer literals are contextually typed: they may default to a fixed-width
+  type only when they fit, otherwise the checker emits
+  `integer-literal-out-of-range`; explicit wrapping uses
+  `@<ty>-from-int-wrap`.
+- Compiler-recognized pure primitives cover explicit truncation, sign
+  extension, zero extension, wrapping add/sub/mul, checked add/sub with
+  `{ok: Bool, value: <ty>}`, saturating add/sub, bitwise and/or/xor/not,
+  shifts, rotates, low-bit masks, byte assembly, and byte swap.
+- Typechecking rejects silent use of legacy arithmetic on fixed-width values
+  and emits `invalid-shift-width` for statically invalid shift counts.
+- Codegen lowers fixed-width values through normalized `i64` representations:
+  signed values are sign-extended and unsigned values are zero-extended.
+  Dynamic out-of-range shifts have deterministic lowering rather than LLVM
+  undefined behavior.
+- Authoring and inspection views render fixed-width type names and primitive
+  symbols through the existing type and `@name` paths.
+- `examples/phase-6/fixed-int/opcode-decode.tac` demonstrates an
+  instruction-decode-style low/high nibble kernel with the new numeric surface.
 
 ## Stage 7: Typed Mutable Memory
 

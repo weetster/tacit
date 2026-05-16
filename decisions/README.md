@@ -98,3 +98,5 @@ Keep ADRs short. They record the decision, not the full analysis that led to it.
 - [0080 — Phase 6 module imports, exports, visibility, and hash semantics](0080-phase-6-module-semantics.md)
 - [0081 — Phase 6 whole-project graph and deterministic derived layout](0081-phase-6-project-graph.md)
 - [0082 — Phase 6 package manifest, lockfile, and dependency cache](0082-phase-6-package-manifest-lockfile-cache.md)
+- [0083 — Phase 6 package tests and structured test results](0083-phase-6-package-tests.md)
+- [0084 — Phase 6 fixed-width integers and bit primitives](0084-phase-6-fixed-width-integers.md)

@@ -1,4 +1,4 @@
-//! `@name` primitive allowlist and classification (ADR 0028, 0030, 0038, 0047, 0061, 0062, 0063, 0064, 0067, 0068, 0069, 0074).
+//! `@name` primitive allowlist and classification (ADR 0028, 0030, 0038, 0047, 0061, 0062, 0063, 0064, 0067, 0068, 0069, 0074, 0084).
 //!
 //! Categories per ADR 0028 + 0030 + 0038 + 0047:
 //! - LIBC: external libc call (`write`, `read`, `exit`).
@@ -22,12 +22,18 @@
 //! - ASCII-CLASS: pure ASCII character classification predicates (ADR 0068).
 //! - UTF8: codepoint decode/encode/length helpers (ADR 0069).
 //! - COMBINATOR: higher-order I64Vec traversal forms (ADR 0074).
+//! - FIXED-INT: fixed-width casts, arithmetic, bits, shifts, masks, and
+//!   byte-order helpers (ADR 0084).
 //!
 //! Codegen pattern-matches an `App` left-spine whose head is `Sym(name)`,
 //! looks up `name` here, collects right-spine args, and emits accordingly.
 
+use tacit_typecheck::primitives::{parse_fixed_prim, FixedPrim};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PrimKind {
+    /// Fixed-width integer primitive (ADR 0084).
+    Fixed(FixedPrim),
     /// libc `write(fd: i32, buf: i8*, len: i64) -> i64`
     Write,
     /// libc `read(fd: i32, buf: i8*, len: i64) -> i64`
@@ -142,6 +148,10 @@ pub enum CmpOp {
 
 impl PrimKind {
     pub fn lookup(name: &str) -> Option<PrimKind> {
+        if let Some(prim) = parse_fixed_prim(name) {
+            return Some(PrimKind::Fixed(prim));
+        }
+
         Some(match name {
             "write" => PrimKind::Write,
             "read" => PrimKind::Read,
@@ -203,6 +213,7 @@ impl PrimKind {
     /// Required arity of the primitive's right-spine argument list.
     pub fn arity(self) -> usize {
         match self {
+            PrimKind::Fixed(prim) => fixed_prim_arity(prim),
             PrimKind::Write | PrimKind::Read => 3,
             PrimKind::Exit
             | PrimKind::BufAlloc
@@ -238,6 +249,23 @@ impl PrimKind {
             PrimKind::ForEach => 3,
             PrimKind::Arith(_) | PrimKind::Cmp(_) => 2,
         }
+    }
+}
+
+fn fixed_prim_arity(prim: FixedPrim) -> usize {
+    match prim {
+        FixedPrim::FromIntWrap { .. } | FixedPrim::Cast { .. } => 1,
+        FixedPrim::Arith { .. } => 2,
+        FixedPrim::Bit { op, .. } => match op {
+            tacit_typecheck::primitives::FixedBitOp::Not => 1,
+            tacit_typecheck::primitives::FixedBitOp::And
+            | tacit_typecheck::primitives::FixedBitOp::Or
+            | tacit_typecheck::primitives::FixedBitOp::Xor => 2,
+        },
+        FixedPrim::Shift { .. } => 2,
+        FixedPrim::MaskLow { .. } => 1,
+        FixedPrim::Bytes { ty, .. } => (ty.width / 8) as usize,
+        FixedPrim::ByteSwap { .. } => 1,
     }
 }
 

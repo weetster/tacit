@@ -14,6 +14,7 @@ use std::process::Command;
 
 use tacit_canonical::parse as parse_canonical;
 use tacit_codegen::compile::compile_to_object;
+use tacit_views::authoring::parse_authoring;
 
 fn examples_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -49,10 +50,13 @@ struct Built {
 fn build(program_path: &Path, name: &str) -> Built {
     let src = std::fs::read(program_path).expect("read program");
     let node = parse_canonical(&src).expect("parse canonical");
+    build_node(&node, name)
+}
 
+fn build_node(node: &tacit_canonical::ast::Node, name: &str) -> Built {
     let tmp = tempfile::tempdir().expect("tempdir");
     let obj = tmp.path().join(format!("{}.o", name));
-    compile_to_object(&node, name, &obj).expect("emit object");
+    compile_to_object(node, name, &obj).expect("emit object");
 
     let exe = tmp.path().join(name);
     let linker = pick_linker()
@@ -77,6 +81,12 @@ fn run(built: &Built) -> (Vec<u8>, i32) {
 fn run_smoke(file_stem: &str) -> (Vec<u8>, i32) {
     let path = examples_root().join(format!("{}.tac", file_stem));
     let built = build(&path, file_stem);
+    run(&built)
+}
+
+fn run_authoring(src: &str, name: &str) -> (Vec<u8>, i32) {
+    let (node, _) = parse_authoring(src.as_bytes()).expect("parse authoring");
+    let built = build_node(&node, name);
     run(&built)
 }
 
@@ -165,6 +175,38 @@ fn echo() {
     let (out, code) = run_with_stdin(&built, b"hi\n");
     assert_eq!(code, 0);
     assert_eq!(out, b"hi\n");
+}
+
+#[test]
+fn p6_fixed_width_opcode_low_nibble() {
+    let src = "let opcode: u8 = 173 in let low = @u8-and opcode 15 in @u8-to-u64-zext low";
+    let (out, code) = run_authoring(src, "p6_fixed_low_nibble");
+    assert!(out.is_empty());
+    assert_eq!(code, 13);
+}
+
+#[test]
+fn p6_fixed_width_checked_overflow_record() {
+    let src = "let r = @u8-add-check 255 1 in if r.ok then r.value else 42";
+    let (out, code) = run_authoring(src, "p6_fixed_checked");
+    assert!(out.is_empty());
+    assert_eq!(code, 42);
+}
+
+#[test]
+fn p6_fixed_width_byte_order_and_bswap() {
+    let src = "let word = @u16-from-be 18 52 in let swapped = @u16-bswap word in @u16-to-u64-zext (@u16-and swapped 255)";
+    let (out, code) = run_authoring(src, "p6_fixed_byte_order");
+    assert!(out.is_empty());
+    assert_eq!(code, 18);
+}
+
+#[test]
+fn p6_fixed_width_saturating_and_rotate() {
+    let src = "let sat = @u8-add-sat 250 10 in @u8-to-u64-zext (@u8-rotr sat 4)";
+    let (out, code) = run_authoring(src, "p6_fixed_sat_rotate");
+    assert!(out.is_empty());
+    assert_eq!(code, 255);
 }
 
 #[test]

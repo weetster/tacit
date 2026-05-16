@@ -120,9 +120,66 @@ pub fn join_fn_eff(e1: &FnEff, e2: &FnEff, subst: &Subst) -> FnEff {
 
 // ── Value types ───────────────────────────────────────────────────────────────
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum IntSign {
+    Signed,
+    Unsigned,
+}
+
+impl IntSign {
+    pub fn prefix(self) -> &'static str {
+        match self {
+            IntSign::Signed => "i",
+            IntSign::Unsigned => "u",
+        }
+    }
+
+    pub fn is_signed(self) -> bool {
+        matches!(self, IntSign::Signed)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct FixedIntTy {
+    pub sign: IntSign,
+    pub width: u16,
+}
+
+impl FixedIntTy {
+    pub const fn new(sign: IntSign, width: u16) -> Self {
+        Self { sign, width }
+    }
+
+    pub fn parse_name(name: &str) -> Option<Self> {
+        let (sign, width_text) = match name.as_bytes().first().copied()? {
+            b'i' => (IntSign::Signed, &name[1..]),
+            b'u' => (IntSign::Unsigned, &name[1..]),
+            _ => return None,
+        };
+        let width: u16 = width_text.parse().ok()?;
+        matches!(width, 8 | 16 | 32 | 64).then_some(Self { sign, width })
+    }
+
+    pub fn name(self) -> String {
+        format!("{}{}", self.sign.prefix(), self.width)
+    }
+
+    pub fn is_i64(self) -> bool {
+        self.sign == IntSign::Signed && self.width == 64
+    }
+}
+
+impl std::fmt::Display for FixedIntTy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}{}", self.sign.prefix(), self.width)
+    }
+}
+
 /// A Tacit-Lite type.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Ty {
+    /// Untyped integer literal before contextual defaulting.
+    IntLit,
     Int,
     Bool,
     Str,
@@ -130,6 +187,8 @@ pub enum Ty {
     Buf,
     /// Opaque i64 vector handle (ADR 0061).
     I64Vec,
+    /// Fixed-width signed or unsigned integer (ADR 0084).
+    FixedInt(FixedIntTy),
     /// Function type `arg → ret / eff`.
     Fn(Box<Ty>, Box<Ty>, FnEff),
     Record(BTreeMap<String, Ty>),
@@ -147,7 +206,14 @@ impl Ty {
 
     pub fn is_ground(&self, subst: &Subst) -> bool {
         match subst.apply(self) {
-            Ty::Int | Ty::Bool | Ty::Str | Ty::Buf | Ty::I64Vec | Ty::Unknown => true,
+            Ty::IntLit
+            | Ty::Int
+            | Ty::Bool
+            | Ty::Str
+            | Ty::Buf
+            | Ty::I64Vec
+            | Ty::FixedInt(_)
+            | Ty::Unknown => true,
             Ty::Fn(a, b, _) => a.is_ground(subst) && b.is_ground(subst),
             Ty::Record(fields) => fields.values().all(|v| v.is_ground(subst)),
             Ty::App(f, a) => f.is_ground(subst) && a.is_ground(subst),
@@ -159,11 +225,13 @@ impl Ty {
 impl std::fmt::Display for Ty {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Ty::IntLit => write!(f, "Int"),
             Ty::Int => write!(f, "Int"),
             Ty::Bool => write!(f, "Bool"),
             Ty::Str => write!(f, "Str"),
             Ty::Buf => write!(f, "Buf"),
             Ty::I64Vec => write!(f, "I64Vec"),
+            Ty::FixedInt(int_ty) => write!(f, "{}", int_ty),
             Ty::Fn(a, b, eff) => {
                 let parens = matches!(a.as_ref(), Ty::Fn(_, _, _));
                 if parens {
@@ -295,11 +363,18 @@ pub fn unify(t1: &Ty, t2: &Ty, subst: &mut Subst) -> bool {
 
     match (&t1, &t2) {
         (Ty::Unknown, _) | (_, Ty::Unknown) => true,
-        (Ty::Int, Ty::Int)
+        (Ty::IntLit, Ty::IntLit)
+        | (Ty::IntLit, Ty::Int)
+        | (Ty::Int, Ty::IntLit)
+        | (Ty::IntLit, Ty::FixedInt(_))
+        | (Ty::FixedInt(_), Ty::IntLit)
+        | (Ty::Int, Ty::Int)
         | (Ty::Bool, Ty::Bool)
         | (Ty::Str, Ty::Str)
         | (Ty::Buf, Ty::Buf)
         | (Ty::I64Vec, Ty::I64Vec) => true,
+        (Ty::FixedInt(a), Ty::FixedInt(b)) => a == b,
+        (Ty::Int, Ty::FixedInt(fixed)) | (Ty::FixedInt(fixed), Ty::Int) if fixed.is_i64() => true,
         (Ty::Meta(id1), Ty::Meta(id2)) if id1 == id2 => true,
         (Ty::Meta(id), other) => {
             if occurs(*id, other, subst) {

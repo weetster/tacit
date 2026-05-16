@@ -51,6 +51,23 @@ fn primitive_lookup_smoke() {
     assert_eq!(PrimKind::lookup("map").map(PrimKind::arity), Some(4));
     assert_eq!(PrimKind::lookup("fold").map(PrimKind::arity), Some(4));
     assert_eq!(PrimKind::lookup("for-each").map(PrimKind::arity), Some(3));
+    assert_eq!(
+        PrimKind::lookup("u8-add-wrap").map(PrimKind::arity),
+        Some(2)
+    );
+    assert_eq!(
+        PrimKind::lookup("u8-add-check").map(PrimKind::arity),
+        Some(2)
+    );
+    assert_eq!(
+        PrimKind::lookup("u16-from-le").map(PrimKind::arity),
+        Some(2)
+    );
+    assert_eq!(
+        PrimKind::lookup("u32-from-be").map(PrimKind::arity),
+        Some(4)
+    );
+    assert_eq!(PrimKind::lookup("u64-bswap").map(PrimKind::arity), Some(1));
     assert!(PrimKind::lookup("frobnicate").is_none());
 }
 

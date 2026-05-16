@@ -74,7 +74,7 @@ pub fn infer_module(node: &Node) -> Result<TypedModule, Vec<Diagnostic>> {
     let mut diags: Vec<Diagnostic> = Vec::new();
 
     let (ty, effects_fn) = infer(&[], node, &mut subst, &[], &mut diags);
-    let ty = subst.apply(&ty);
+    let ty = default_int_literal_ty(subst.apply(&ty));
     let effects = subst.resolve_eff(&effects_fn);
 
     let binding_types = match node {
@@ -107,7 +107,10 @@ fn infer_rec_bindings(bindings: &[Node], subst: &mut Subst) -> Vec<Ty> {
     for (i, binding) in bindings.iter().enumerate() {
         let (_, _) = infer(&ctx, binding, subst, &[i], &mut dummy_diags);
     }
-    metas.iter().map(|m| subst.apply(m)).collect()
+    metas
+        .iter()
+        .map(|m| default_int_literal_ty(subst.apply(m)))
+        .collect()
 }
 
 fn infer_module_bindings(bindings: &[Node], subst: &mut Subst) -> Vec<Ty> {
@@ -118,5 +121,26 @@ fn infer_module_bindings(bindings: &[Node], subst: &mut Subst) -> Vec<Ty> {
     for (i, binding) in bindings.iter().enumerate() {
         let (_, _) = infer(&ctx, binding, subst, &[i], &mut dummy_diags);
     }
-    metas.iter().map(|m| subst.apply(m)).collect()
+    metas
+        .iter()
+        .map(|m| default_int_literal_ty(subst.apply(m)))
+        .collect()
+}
+
+fn default_int_literal_ty(ty: Ty) -> Ty {
+    match ty {
+        Ty::IntLit => Ty::Int,
+        Ty::Fn(arg, ret, eff) => Ty::Fn(
+            Box::new(default_int_literal_ty(*arg)),
+            Box::new(default_int_literal_ty(*ret)),
+            eff,
+        ),
+        Ty::Record(fields) => Ty::Record(
+            fields
+                .into_iter()
+                .map(|(name, ty)| (name, default_int_literal_ty(ty)))
+                .collect(),
+        ),
+        other => other,
+    }
 }

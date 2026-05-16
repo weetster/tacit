@@ -370,7 +370,7 @@ pub fn project_definition_expression(
         .ok_or_else(|| ProjectEntryError::MissingDefinition(hash.to_string()))?;
 
     let ty = definition_value_type(hash, &definition.def)?;
-    if !matches!(ty, Ty::Int | Ty::Bool) {
+    if !matches!(ty, Ty::Int | Ty::Bool | Ty::FixedInt(_)) {
         return Err(ProjectEntryError::NonExecutableEntry {
             hash: hash.to_string(),
             ty: ty.to_string(),

@@ -3,7 +3,7 @@
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::ty::{EffSet, FnEff, Ty};
+use crate::ty::{EffSet, FixedIntTy, FnEff, Ty};
 
 /// Top-level diagnostic output envelope.
 #[derive(Debug, Serialize)]
@@ -420,6 +420,34 @@ impl Diagnostic {
         d
     }
 
+    pub fn integer_literal_out_of_range(path: &[usize], value: &str, target: FixedIntTy) -> Self {
+        let mut d = Self::new(
+            "integer-literal-out-of-range",
+            "error",
+            path,
+            format!("integer literal {} does not fit in {}", value, target),
+        );
+        d.expected = Some(serde_json::json!({"type": target.to_string()}));
+        d.actual = Some(serde_json::json!({"literal": value}));
+        d
+    }
+
+    pub fn invalid_shift_width(path: &[usize], width: u16, count: i128) -> Self {
+        let mut d = Self::new(
+            "invalid-shift-width",
+            "error",
+            path,
+            format!(
+                "shift count {} is outside the valid range 0..{}",
+                count,
+                width - 1
+            ),
+        );
+        d.expected = Some(serde_json::json!({"min": 0, "max": width - 1}));
+        d.actual = Some(serde_json::json!({"count": count}));
+        d
+    }
+
     pub fn buf_escape(path: &[usize]) -> Self {
         Self::new(
             "buf-escape",
@@ -534,11 +562,13 @@ pub struct Edit {
 /// Convert a `Ty` to the JSON representation specified by ADR 0041.
 pub fn ty_to_json(ty: &Ty) -> Value {
     match ty {
+        Ty::IntLit => serde_json::json!({"sym": "Int"}),
         Ty::Int => serde_json::json!({"sym": "Int"}),
         Ty::Bool => serde_json::json!({"sym": "Bool"}),
         Ty::Str => serde_json::json!({"sym": "Str"}),
         Ty::Buf => serde_json::json!({"sym": "Buf"}),
         Ty::I64Vec => serde_json::json!({"sym": "I64Vec"}),
+        Ty::FixedInt(int_ty) => serde_json::json!({"sym": int_ty.to_string()}),
         Ty::Fn(a, b, eff) => serde_json::json!({
             "fn-ty": {
                 "arg": ty_to_json(a),

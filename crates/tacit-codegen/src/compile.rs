@@ -68,7 +68,10 @@ use inkwell::{AddressSpace, IntPredicate, OptimizationLevel};
 const LLVM_C_CALL_CONV: u32 = 0;
 
 use tacit_canonical::ast::Node;
-use tacit_typecheck::ty::{Subst, Ty};
+use tacit_typecheck::primitives::{
+    FixedArithMode, FixedArithOp, FixedBitOp, FixedCastKind, FixedEndian, FixedPrim, FixedShiftOp,
+};
+use tacit_typecheck::ty::{FixedIntTy, IntSign, Subst, Ty};
 use tacit_typecheck::type_from_node::type_from_node;
 
 use crate::analysis::{
@@ -774,9 +777,7 @@ impl<'ctx> Compiler<'ctx> {
         let (head, args) = unfold_app(node);
 
         match head {
-            Node::Sym { name } => Ok(CompiledValue::int(
-                self.compile_primitive_call(name, &args, env, cur_fn)?,
-            )),
+            Node::Sym { name } => self.compile_primitive_call(name, &args, env, cur_fn),
             Node::Lam { .. } | Node::Ann { .. } => {
                 let (arity, lam_body, ann_ty) =
                     collect_annotated_lam_chain(head).ok_or(CodegenError::AppNonFunction)?;
@@ -951,7 +952,7 @@ impl<'ctx> Compiler<'ctx> {
         args: &[&Node],
         env: &[Binding<'ctx>],
         cur_fn: FunctionValue<'ctx>,
-    ) -> Result<IntValue<'ctx>> {
+    ) -> Result<CompiledValue<'ctx>> {
         let kind = PrimKind::lookup(name)
             .ok_or_else(|| CodegenError::UnknownPrimitive { name: name.into() })?;
 
@@ -964,19 +965,20 @@ impl<'ctx> Compiler<'ctx> {
         }
 
         match kind {
+            PrimKind::Fixed(prim) => self.emit_fixed_primitive(prim, args, env, cur_fn),
             PrimKind::Arith(op) => {
                 let a = self.compile_expr(args[0], env, cur_fn)?;
                 let b = self.compile_expr(args[1], env, cur_fn)?;
-                self.emit_arith(op, a, b)
+                self.emit_arith(op, a, b).map(CompiledValue::int)
             }
             PrimKind::Cmp(op) => {
                 let a = self.compile_expr(args[0], env, cur_fn)?;
                 let b = self.compile_expr(args[1], env, cur_fn)?;
-                self.emit_cmp(op, a, b)
+                self.emit_cmp(op, a, b).map(CompiledValue::int)
             }
-            PrimKind::Write => self.emit_write(args, env, cur_fn),
-            PrimKind::Read => self.emit_read(args, env, cur_fn),
-            PrimKind::Exit => self.emit_exit(args, env, cur_fn),
+            PrimKind::Write => self.emit_write(args, env, cur_fn).map(CompiledValue::int),
+            PrimKind::Read => self.emit_read(args, env, cur_fn).map(CompiledValue::int),
+            PrimKind::Exit => self.emit_exit(args, env, cur_fn).map(CompiledValue::int),
             PrimKind::BufAlloc => Err(CodegenError::Unsupported(
                 "@buf-alloc must appear as the direct RHS of a `let` binding",
             )),
@@ -986,47 +988,641 @@ impl<'ctx> Compiler<'ctx> {
             PrimKind::I64Alloc => Err(CodegenError::Unsupported(
                 "@i64-alloc must appear as the direct RHS of a `let` binding",
             )),
-            PrimKind::BufGet => self.emit_buf_get(args, env, cur_fn),
-            PrimKind::BufSet => self.emit_buf_set(args, env, cur_fn),
-            PrimKind::BufCopy => self.emit_buf_copy(args, env, cur_fn),
-            PrimKind::BufEq => self.emit_buf_eq(args, env, cur_fn),
-            PrimKind::ScanByte => self.emit_scan_byte(args, env, cur_fn),
-            PrimKind::ParseI64 => self.emit_parse_i64(args, env, cur_fn),
-            PrimKind::FmtI64 => self.emit_fmt_i64(args, env, cur_fn),
-            PrimKind::I64Get => self.emit_i64_get(args, env, cur_fn),
-            PrimKind::I64Set => self.emit_i64_set(args, env, cur_fn),
-            PrimKind::I64Swap => self.emit_i64_swap(args, env, cur_fn),
-            PrimKind::I64Copy => self.emit_i64_copy(args, env, cur_fn),
-            PrimKind::LineIndex => self.emit_line_index(args, env, cur_fn),
-            PrimKind::TokenIndex => self.emit_token_index(args, env, cur_fn),
-            PrimKind::TokenIndexAny => self.emit_token_index_any(args, env, cur_fn),
-            PrimKind::RangeStart => self.emit_range_start(args, env, cur_fn),
-            PrimKind::RangeLen => self.emit_range_len(args, env, cur_fn),
-            PrimKind::SortI64 => self.emit_sort_i64(args, env, cur_fn),
-            PrimKind::SortRangesByBytes => self.emit_sort_ranges_by_bytes(args, env, cur_fn),
-            PrimKind::StableSortPairsI64 => self.emit_stable_sort_pairs_i64(args, env, cur_fn),
-            PrimKind::LowerBoundI64 => self.emit_lower_bound_i64(args, env, cur_fn),
-            PrimKind::CountEqualRanges => self.emit_count_equal_ranges(args, env, cur_fn),
-            PrimKind::DedupAdjacentRanges => self.emit_dedup_adjacent_ranges(args, env, cur_fn),
-            PrimKind::StdinSlurp => self.emit_stdin_slurp(args, env, cur_fn),
-            PrimKind::WriteRange => self.emit_write_range(args, env, cur_fn),
-            PrimKind::BufRev => self.emit_buf_rev(args, env, cur_fn),
-            PrimKind::AsciiTolower => {
-                self.emit_ascii_case_shift(args, env, cur_fn, AsciiCase::Lower)
-            }
-            PrimKind::AsciiToupper => {
-                self.emit_ascii_case_shift(args, env, cur_fn, AsciiCase::Upper)
-            }
-            PrimKind::AsciiIsAlpha => self.emit_ascii_is_alpha(args, env, cur_fn),
-            PrimKind::AsciiIsDigit => self.emit_ascii_is_digit(args, env, cur_fn),
-            PrimKind::AsciiIsSpace => self.emit_ascii_is_space(args, env, cur_fn),
-            PrimKind::Utf8Decode => self.emit_utf8_decode(args, env, cur_fn),
-            PrimKind::Utf8Encode => self.emit_utf8_encode(args, env, cur_fn),
-            PrimKind::Utf8Len => self.emit_utf8_len(args, env, cur_fn),
-            PrimKind::Map => self.emit_map_i64(args, env, cur_fn),
-            PrimKind::Fold => self.emit_fold_i64(args, env, cur_fn),
-            PrimKind::ForEach => self.emit_for_each_i64(args, env, cur_fn),
+            PrimKind::BufGet => self.emit_buf_get(args, env, cur_fn).map(CompiledValue::int),
+            PrimKind::BufSet => self.emit_buf_set(args, env, cur_fn).map(CompiledValue::int),
+            PrimKind::BufCopy => self
+                .emit_buf_copy(args, env, cur_fn)
+                .map(CompiledValue::int),
+            PrimKind::BufEq => self.emit_buf_eq(args, env, cur_fn).map(CompiledValue::int),
+            PrimKind::ScanByte => self
+                .emit_scan_byte(args, env, cur_fn)
+                .map(CompiledValue::int),
+            PrimKind::ParseI64 => self
+                .emit_parse_i64(args, env, cur_fn)
+                .map(CompiledValue::int),
+            PrimKind::FmtI64 => self.emit_fmt_i64(args, env, cur_fn).map(CompiledValue::int),
+            PrimKind::I64Get => self.emit_i64_get(args, env, cur_fn).map(CompiledValue::int),
+            PrimKind::I64Set => self.emit_i64_set(args, env, cur_fn).map(CompiledValue::int),
+            PrimKind::I64Swap => self
+                .emit_i64_swap(args, env, cur_fn)
+                .map(CompiledValue::int),
+            PrimKind::I64Copy => self
+                .emit_i64_copy(args, env, cur_fn)
+                .map(CompiledValue::int),
+            PrimKind::LineIndex => self
+                .emit_line_index(args, env, cur_fn)
+                .map(CompiledValue::int),
+            PrimKind::TokenIndex => self
+                .emit_token_index(args, env, cur_fn)
+                .map(CompiledValue::int),
+            PrimKind::TokenIndexAny => self
+                .emit_token_index_any(args, env, cur_fn)
+                .map(CompiledValue::int),
+            PrimKind::RangeStart => self
+                .emit_range_start(args, env, cur_fn)
+                .map(CompiledValue::int),
+            PrimKind::RangeLen => self
+                .emit_range_len(args, env, cur_fn)
+                .map(CompiledValue::int),
+            PrimKind::SortI64 => self
+                .emit_sort_i64(args, env, cur_fn)
+                .map(CompiledValue::int),
+            PrimKind::SortRangesByBytes => self
+                .emit_sort_ranges_by_bytes(args, env, cur_fn)
+                .map(CompiledValue::int),
+            PrimKind::StableSortPairsI64 => self
+                .emit_stable_sort_pairs_i64(args, env, cur_fn)
+                .map(CompiledValue::int),
+            PrimKind::LowerBoundI64 => self
+                .emit_lower_bound_i64(args, env, cur_fn)
+                .map(CompiledValue::int),
+            PrimKind::CountEqualRanges => self
+                .emit_count_equal_ranges(args, env, cur_fn)
+                .map(CompiledValue::int),
+            PrimKind::DedupAdjacentRanges => self
+                .emit_dedup_adjacent_ranges(args, env, cur_fn)
+                .map(CompiledValue::int),
+            PrimKind::StdinSlurp => self
+                .emit_stdin_slurp(args, env, cur_fn)
+                .map(CompiledValue::int),
+            PrimKind::WriteRange => self
+                .emit_write_range(args, env, cur_fn)
+                .map(CompiledValue::int),
+            PrimKind::BufRev => self.emit_buf_rev(args, env, cur_fn).map(CompiledValue::int),
+            PrimKind::AsciiTolower => self
+                .emit_ascii_case_shift(args, env, cur_fn, AsciiCase::Lower)
+                .map(CompiledValue::int),
+            PrimKind::AsciiToupper => self
+                .emit_ascii_case_shift(args, env, cur_fn, AsciiCase::Upper)
+                .map(CompiledValue::int),
+            PrimKind::AsciiIsAlpha => self
+                .emit_ascii_is_alpha(args, env, cur_fn)
+                .map(CompiledValue::int),
+            PrimKind::AsciiIsDigit => self
+                .emit_ascii_is_digit(args, env, cur_fn)
+                .map(CompiledValue::int),
+            PrimKind::AsciiIsSpace => self
+                .emit_ascii_is_space(args, env, cur_fn)
+                .map(CompiledValue::int),
+            PrimKind::Utf8Decode => self
+                .emit_utf8_decode(args, env, cur_fn)
+                .map(CompiledValue::int),
+            PrimKind::Utf8Encode => self
+                .emit_utf8_encode(args, env, cur_fn)
+                .map(CompiledValue::int),
+            PrimKind::Utf8Len => self
+                .emit_utf8_len(args, env, cur_fn)
+                .map(CompiledValue::int),
+            PrimKind::Map => self.emit_map_i64(args, env, cur_fn).map(CompiledValue::int),
+            PrimKind::Fold => self
+                .emit_fold_i64(args, env, cur_fn)
+                .map(CompiledValue::int),
+            PrimKind::ForEach => self
+                .emit_for_each_i64(args, env, cur_fn)
+                .map(CompiledValue::int),
         }
+    }
+
+    fn emit_fixed_primitive(
+        &mut self,
+        prim: FixedPrim,
+        args: &[&Node],
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<CompiledValue<'ctx>> {
+        match prim {
+            FixedPrim::FromIntWrap { dst } => {
+                let value = self.compile_expr(args[0], env, cur_fn)?;
+                self.normalize_fixed_int(value, dst).map(CompiledValue::int)
+            }
+            FixedPrim::Cast { src, dst, kind } => {
+                let value = self.compile_expr(args[0], env, cur_fn)?;
+                let value = match kind {
+                    FixedCastKind::Trunc => value,
+                    FixedCastKind::SignExtend => self.normalize_fixed_int(value, src)?,
+                    FixedCastKind::ZeroExtend => self.mask_to_width(value, src.width)?,
+                };
+                self.normalize_fixed_int(value, dst).map(CompiledValue::int)
+            }
+            FixedPrim::Arith { ty, op, mode } => {
+                let a = self.compile_expr(args[0], env, cur_fn)?;
+                let b = self.compile_expr(args[1], env, cur_fn)?;
+                match mode {
+                    FixedArithMode::Wrap => self
+                        .emit_fixed_arith_wrap(ty, op, a, b)
+                        .map(CompiledValue::int),
+                    FixedArithMode::Check => {
+                        let (value, overflow) = self.emit_fixed_arith_checked(ty, op, a, b)?;
+                        let ok = self.bool_not(overflow, "fixed_ok")?;
+                        self.fixed_checked_record(ok, value)
+                    }
+                    FixedArithMode::Saturate => self
+                        .emit_fixed_arith_saturating(ty, op, a, b)
+                        .map(CompiledValue::int),
+                }
+            }
+            FixedPrim::Bit { ty, op } => match op {
+                FixedBitOp::Not => {
+                    let value = self.compile_expr(args[0], env, cur_fn)?;
+                    let masked = self.mask_to_width(value, ty.width)?;
+                    let inverted = self
+                        .builder
+                        .build_not(masked, "fixed_not")
+                        .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+                    self.normalize_fixed_int(inverted, ty)
+                        .map(CompiledValue::int)
+                }
+                FixedBitOp::And | FixedBitOp::Or | FixedBitOp::Xor => {
+                    let a_raw = self.compile_expr(args[0], env, cur_fn)?;
+                    let b_raw = self.compile_expr(args[1], env, cur_fn)?;
+                    let a = self.mask_to_width(a_raw, ty.width)?;
+                    let b = self.mask_to_width(b_raw, ty.width)?;
+                    let value = match op {
+                        FixedBitOp::And => self.builder.build_and(a, b, "fixed_and"),
+                        FixedBitOp::Or => self.builder.build_or(a, b, "fixed_or"),
+                        FixedBitOp::Xor => self.builder.build_xor(a, b, "fixed_xor"),
+                        FixedBitOp::Not => unreachable!(),
+                    }
+                    .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+                    self.normalize_fixed_int(value, ty).map(CompiledValue::int)
+                }
+            },
+            FixedPrim::Shift { ty, op } => {
+                let value = self.compile_expr(args[0], env, cur_fn)?;
+                let count = self.compile_expr(args[1], env, cur_fn)?;
+                let shifted = match op {
+                    FixedShiftOp::Shl => self.emit_fixed_shift(ty, value, count, false)?,
+                    FixedShiftOp::Shr => self.emit_fixed_shift(ty, value, count, true)?,
+                    FixedShiftOp::Rotl => self.emit_fixed_rotate(ty, value, count, true)?,
+                    FixedShiftOp::Rotr => self.emit_fixed_rotate(ty, value, count, false)?,
+                };
+                Ok(CompiledValue::int(shifted))
+            }
+            FixedPrim::MaskLow { ty } => {
+                let count = self.compile_expr(args[0], env, cur_fn)?;
+                self.emit_fixed_mask_low(ty, count).map(CompiledValue::int)
+            }
+            FixedPrim::Bytes { ty, endian } => {
+                let mut bytes = Vec::with_capacity(args.len());
+                for arg in args {
+                    bytes.push(self.compile_expr(arg, env, cur_fn)?);
+                }
+                self.emit_fixed_from_bytes(ty, endian, &bytes)
+                    .map(CompiledValue::int)
+            }
+            FixedPrim::ByteSwap { ty } => {
+                let value = self.compile_expr(args[0], env, cur_fn)?;
+                self.emit_fixed_bswap(ty, value).map(CompiledValue::int)
+            }
+        }
+    }
+
+    fn fixed_checked_record(
+        &mut self,
+        ok: IntValue<'ctx>,
+        value: IntValue<'ctx>,
+    ) -> Result<CompiledValue<'ctx>> {
+        let ty = ValueTy::Record(vec![
+            ("ok".to_string(), ValueTy::Int),
+            ("value".to_string(), ValueTy::Int),
+        ]);
+        let struct_ty = self.llvm_struct_type(&ty)?;
+        let mut aggregate = struct_ty.get_undef();
+        aggregate = self
+            .builder
+            .build_insert_value(aggregate, ok, 0, "checked_ok")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?
+            .into_struct_value();
+        aggregate = self
+            .builder
+            .build_insert_value(aggregate, value, 1, "checked_value")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?
+            .into_struct_value();
+        Ok(CompiledValue {
+            ty,
+            value: aggregate.into(),
+        })
+    }
+
+    fn emit_fixed_arith_wrap(
+        &mut self,
+        ty: FixedIntTy,
+        op: FixedArithOp,
+        a: IntValue<'ctx>,
+        b: IntValue<'ctx>,
+    ) -> Result<IntValue<'ctx>> {
+        let a = self.normalize_fixed_int(a, ty)?;
+        let b = self.normalize_fixed_int(b, ty)?;
+        let raw = match op {
+            FixedArithOp::Add => self.builder.build_int_add(a, b, "fixed_add"),
+            FixedArithOp::Sub => self.builder.build_int_sub(a, b, "fixed_sub"),
+            FixedArithOp::Mul => self.builder.build_int_mul(a, b, "fixed_mul"),
+        }
+        .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.normalize_fixed_int(raw, ty)
+    }
+
+    fn emit_fixed_arith_checked(
+        &mut self,
+        ty: FixedIntTy,
+        op: FixedArithOp,
+        a: IntValue<'ctx>,
+        b: IntValue<'ctx>,
+    ) -> Result<(IntValue<'ctx>, IntValue<'ctx>)> {
+        if matches!(op, FixedArithOp::Mul) {
+            return Err(CodegenError::Unsupported(
+                "checked fixed-width multiplication",
+            ));
+        }
+        let a = self.normalize_fixed_int(a, ty)?;
+        let b = self.normalize_fixed_int(b, ty)?;
+        let raw = match op {
+            FixedArithOp::Add => self.builder.build_int_add(a, b, "fixed_add_check"),
+            FixedArithOp::Sub => self.builder.build_int_sub(a, b, "fixed_sub_check"),
+            FixedArithOp::Mul => unreachable!(),
+        }
+        .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let value = self.normalize_fixed_int(raw, ty)?;
+        let overflow = if ty.sign == IntSign::Unsigned {
+            match op {
+                FixedArithOp::Add => {
+                    if ty.width == 64 {
+                        self.builder
+                            .build_int_compare(IntPredicate::ULT, value, a, "uadd_overflow")
+                    } else {
+                        let max = self.i64_const(fixed_mask(ty.width));
+                        self.builder
+                            .build_int_compare(IntPredicate::UGT, raw, max, "uadd_overflow")
+                    }
+                }
+                FixedArithOp::Sub => {
+                    self.builder
+                        .build_int_compare(IntPredicate::ULT, a, b, "usub_overflow")
+                }
+                FixedArithOp::Mul => unreachable!(),
+            }
+            .map_err(|e| CodegenError::Llvm(e.to_string()))
+        } else {
+            let sign_bits = match op {
+                FixedArithOp::Add => {
+                    let a_xor_result = self
+                        .builder
+                        .build_xor(a, value, "sadd_axr")
+                        .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+                    let b_xor_result = self
+                        .builder
+                        .build_xor(b, value, "sadd_bxr")
+                        .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+                    self.builder
+                        .build_and(a_xor_result, b_xor_result, "sadd_over_bits")
+                }
+                FixedArithOp::Sub => {
+                    let a_xor_b = self
+                        .builder
+                        .build_xor(a, b, "ssub_axb")
+                        .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+                    let a_xor_result = self
+                        .builder
+                        .build_xor(a, value, "ssub_axr")
+                        .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+                    self.builder
+                        .build_and(a_xor_b, a_xor_result, "ssub_over_bits")
+                }
+                FixedArithOp::Mul => unreachable!(),
+            }
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+            self.sign_bit_set(sign_bits, ty.width, "signed_overflow")
+        }?;
+        Ok((value, overflow))
+    }
+
+    fn emit_fixed_arith_saturating(
+        &mut self,
+        ty: FixedIntTy,
+        op: FixedArithOp,
+        a: IntValue<'ctx>,
+        b: IntValue<'ctx>,
+    ) -> Result<IntValue<'ctx>> {
+        let (wrapped, overflow) = self.emit_fixed_arith_checked(ty, op, a, b)?;
+        let saturation = if ty.sign == IntSign::Unsigned {
+            match op {
+                FixedArithOp::Add => self.i64_const(fixed_mask(ty.width)),
+                FixedArithOp::Sub => self.context.i64_type().const_zero(),
+                FixedArithOp::Mul => unreachable!(),
+            }
+        } else {
+            let a_norm = self.normalize_fixed_int(a, ty)?;
+            let zero = self.context.i64_type().const_zero();
+            let a_nonnegative = self
+                .builder
+                .build_int_compare(IntPredicate::SGE, a_norm, zero, "sat_pos")
+                .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+            let max = self.i64_signed_const(fixed_signed_max(ty.width));
+            let min = self.i64_signed_const(fixed_signed_min(ty.width));
+            self.builder
+                .build_select(a_nonnegative, max, min, "sat_bound")
+                .map_err(|e| CodegenError::Llvm(e.to_string()))?
+                .into_int_value()
+        };
+        Ok(self
+            .builder
+            .build_select(overflow, saturation, wrapped, "fixed_sat")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?
+            .into_int_value())
+    }
+
+    fn emit_fixed_shift(
+        &mut self,
+        ty: FixedIntTy,
+        value: IntValue<'ctx>,
+        count: IntValue<'ctx>,
+        right: bool,
+    ) -> Result<IntValue<'ctx>> {
+        let value = self.normalize_fixed_int(value, ty)?;
+        let zero = self.context.i64_type().const_zero();
+        let width = self.i64_const(u64::from(ty.width));
+        let count_neg = self
+            .builder
+            .build_int_compare(IntPredicate::SLT, count, zero, "shift_neg")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let count_ge_width = self
+            .builder
+            .build_int_compare(IntPredicate::SGE, count, width, "shift_too_wide")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let invalid = self
+            .builder
+            .build_or(count_neg, count_ge_width, "shift_invalid")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let safe_count = self
+            .builder
+            .build_select(invalid, zero, count, "shift_count")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?
+            .into_int_value();
+        let shifted = if right {
+            self.builder.build_right_shift(
+                value,
+                safe_count,
+                ty.sign == IntSign::Signed,
+                "fixed_shr",
+            )
+        } else {
+            self.builder
+                .build_left_shift(value, safe_count, "fixed_shl")
+        }
+        .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let fallback = if right && ty.sign == IntSign::Signed {
+            let negative = self
+                .builder
+                .build_int_compare(IntPredicate::SLT, value, zero, "shr_neg")
+                .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+            self.builder
+                .build_select(
+                    negative,
+                    self.i64_signed_const(-1),
+                    zero,
+                    "shr_invalid_fill",
+                )
+                .map_err(|e| CodegenError::Llvm(e.to_string()))?
+                .into_int_value()
+        } else {
+            zero
+        };
+        let selected = self
+            .builder
+            .build_select(invalid, fallback, shifted, "fixed_shift")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?
+            .into_int_value();
+        self.normalize_fixed_int(selected, ty)
+    }
+
+    fn emit_fixed_rotate(
+        &mut self,
+        ty: FixedIntTy,
+        value: IntValue<'ctx>,
+        count: IntValue<'ctx>,
+        left: bool,
+    ) -> Result<IntValue<'ctx>> {
+        let value = self.mask_to_width(value, ty.width)?;
+        let count_mask = self.i64_const(u64::from(ty.width - 1));
+        let count = self
+            .builder
+            .build_and(count, count_mask, "rot_count")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let neg_count = self
+            .builder
+            .build_int_sub(self.context.i64_type().const_zero(), count, "rot_neg")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let inv_count = self
+            .builder
+            .build_and(neg_count, count_mask, "rot_inv_count")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let (left_count, right_count) = if left {
+            (count, inv_count)
+        } else {
+            (inv_count, count)
+        };
+        let left_part = self
+            .builder
+            .build_left_shift(value, left_count, "rot_left")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let right_part = self
+            .builder
+            .build_right_shift(value, right_count, false, "rot_right")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let combined = self
+            .builder
+            .build_or(left_part, right_part, "rot_combined")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.normalize_fixed_int(combined, ty)
+    }
+
+    fn emit_fixed_mask_low(
+        &mut self,
+        ty: FixedIntTy,
+        count: IntValue<'ctx>,
+    ) -> Result<IntValue<'ctx>> {
+        let zero = self.context.i64_type().const_zero();
+        let one = self.i64_const(1);
+        let width_minus_one = self.i64_const(u64::from(ty.width - 1));
+        let count_le_zero = self
+            .builder
+            .build_int_compare(IntPredicate::SLE, count, zero, "mask_empty")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let count_ge_width = self
+            .builder
+            .build_int_compare(
+                IntPredicate::SGE,
+                count,
+                self.i64_const(u64::from(ty.width)),
+                "mask_full",
+            )
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let clamped = self
+            .builder
+            .build_select(count_ge_width, width_minus_one, count, "mask_count_hi")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?
+            .into_int_value();
+        let clamped = self
+            .builder
+            .build_select(count_le_zero, zero, clamped, "mask_count")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?
+            .into_int_value();
+        let shifted = self
+            .builder
+            .build_left_shift(one, clamped, "mask_shift")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let partial = self
+            .builder
+            .build_int_sub(shifted, one, "mask_partial")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let full = self.i64_const(fixed_mask(ty.width));
+        let selected = self
+            .builder
+            .build_select(count_ge_width, full, partial, "mask_selected")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?
+            .into_int_value();
+        let selected = self
+            .builder
+            .build_select(count_le_zero, zero, selected, "mask_zeroed")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?
+            .into_int_value();
+        self.normalize_fixed_int(selected, ty)
+    }
+
+    fn emit_fixed_from_bytes(
+        &mut self,
+        ty: FixedIntTy,
+        endian: FixedEndian,
+        bytes: &[IntValue<'ctx>],
+    ) -> Result<IntValue<'ctx>> {
+        let mut value = self.context.i64_type().const_zero();
+        for (i, byte) in bytes.iter().enumerate() {
+            let src_index = match endian {
+                FixedEndian::Big => i,
+                FixedEndian::Little => bytes.len() - 1 - i,
+            };
+            let shift = 8 * (bytes.len() - 1 - src_index);
+            let byte = self.mask_to_width(*byte, 8)?;
+            let shifted = if shift == 0 {
+                byte
+            } else {
+                self.builder
+                    .build_left_shift(byte, self.i64_const(shift as u64), "byte_shift")
+                    .map_err(|e| CodegenError::Llvm(e.to_string()))?
+            };
+            value = self
+                .builder
+                .build_or(value, shifted, "byte_acc")
+                .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        }
+        self.normalize_fixed_int(value, ty)
+    }
+
+    fn emit_fixed_bswap(
+        &mut self,
+        ty: FixedIntTy,
+        value: IntValue<'ctx>,
+    ) -> Result<IntValue<'ctx>> {
+        let value = self.mask_to_width(value, ty.width)?;
+        let byte_count = ty.width / 8;
+        let mut out = self.context.i64_type().const_zero();
+        for i in 0..byte_count {
+            let shift_in = 8 * i;
+            let shift_out = 8 * (byte_count - 1 - i);
+            let shifted = if shift_in == 0 {
+                value
+            } else {
+                self.builder
+                    .build_right_shift(
+                        value,
+                        self.i64_const(u64::from(shift_in)),
+                        false,
+                        "bswap_in",
+                    )
+                    .map_err(|e| CodegenError::Llvm(e.to_string()))?
+            };
+            let byte = self.mask_to_width(shifted, 8)?;
+            let shifted_out = if shift_out == 0 {
+                byte
+            } else {
+                self.builder
+                    .build_left_shift(byte, self.i64_const(u64::from(shift_out)), "bswap_out")
+                    .map_err(|e| CodegenError::Llvm(e.to_string()))?
+            };
+            out = self
+                .builder
+                .build_or(out, shifted_out, "bswap_acc")
+                .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        }
+        self.normalize_fixed_int(out, ty)
+    }
+
+    fn normalize_fixed_int(
+        &mut self,
+        value: IntValue<'ctx>,
+        ty: FixedIntTy,
+    ) -> Result<IntValue<'ctx>> {
+        let masked = self.mask_to_width(value, ty.width)?;
+        if ty.sign == IntSign::Signed && ty.width < 64 {
+            let shift = self.i64_const(u64::from(64 - ty.width));
+            let shifted_left = self
+                .builder
+                .build_left_shift(masked, shift, "sext_left")
+                .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+            self.builder
+                .build_right_shift(shifted_left, shift, true, "sext_right")
+                .map_err(|e| CodegenError::Llvm(e.to_string()))
+        } else {
+            Ok(masked)
+        }
+    }
+
+    fn mask_to_width(&mut self, value: IntValue<'ctx>, width: u16) -> Result<IntValue<'ctx>> {
+        if width == 64 {
+            Ok(value)
+        } else {
+            self.builder
+                .build_and(value, self.i64_const(fixed_mask(width)), "fixed_mask")
+                .map_err(|e| CodegenError::Llvm(e.to_string()))
+        }
+    }
+
+    fn sign_bit_set(
+        &mut self,
+        value: IntValue<'ctx>,
+        width: u16,
+        name: &str,
+    ) -> Result<IntValue<'ctx>> {
+        let masked = self
+            .builder
+            .build_and(value, self.i64_const(fixed_sign_bit(width)), "sign_bit")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_int_compare(
+                IntPredicate::NE,
+                masked,
+                self.context.i64_type().const_zero(),
+                name,
+            )
+            .map_err(|e| CodegenError::Llvm(e.to_string()))
+    }
+
+    fn bool_not(&mut self, value: IntValue<'ctx>, name: &str) -> Result<IntValue<'ctx>> {
+        let not = self
+            .builder
+            .build_not(value, name)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_int_z_extend(not, self.context.i64_type(), "bool_zext")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))
+    }
+
+    fn i64_const(&self, value: u64) -> IntValue<'ctx> {
+        self.context.i64_type().const_int(value, false)
+    }
+
+    fn i64_signed_const(&self, value: i64) -> IntValue<'ctx> {
+        self.context.i64_type().const_int(value as u64, true)
     }
 
     fn emit_arith(
@@ -6464,7 +7060,7 @@ fn ty_from_type_node(type_node: &Node) -> Result<Ty> {
 
 fn value_ty_from_ty(ty: &Ty) -> Result<ValueTy> {
     match ty {
-        Ty::Int | Ty::Bool => Ok(ValueTy::Int),
+        Ty::IntLit | Ty::Int | Ty::Bool | Ty::FixedInt(_) => Ok(ValueTy::Int),
         Ty::Fn(arg, ret, _) => Ok(ValueTy::Fn(
             Box::new(value_ty_from_ty(arg)?),
             Box::new(value_ty_from_ty(ret)?),
@@ -6548,7 +7144,7 @@ fn infer_value_ty(node: &Node, env: &[BindingTy]) -> Result<ValueTy> {
         Node::App { .. } => {
             let (head, args) = unfold_app(node);
             match head {
-                Node::Sym { .. } => Ok(ValueTy::Int),
+                Node::Sym { name } => primitive_value_ty(name, args.len()),
                 Node::Var { index } => match lookup_binding_ty(env, *index)? {
                     BindingTy::Function { param_tys, ret_ty } => {
                         apply_fn_spine_ty(nested_fn_ty(param_tys, ret_ty.clone()), args.len())
@@ -6673,6 +7269,25 @@ fn infer_value_ty(node: &Node, env: &[BindingTy]) -> Result<ValueTy> {
     }
 }
 
+fn primitive_value_ty(name: &str, arg_count: usize) -> Result<ValueTy> {
+    let Some(kind) = PrimKind::lookup(name) else {
+        return Ok(ValueTy::Int);
+    };
+    if arg_count != kind.arity() {
+        return Ok(ValueTy::Int);
+    }
+    match kind {
+        PrimKind::Fixed(FixedPrim::Arith {
+            mode: FixedArithMode::Check,
+            ..
+        }) => Ok(ValueTy::Record(vec![
+            ("ok".to_string(), ValueTy::Int),
+            ("value".to_string(), ValueTy::Int),
+        ])),
+        _ => Ok(ValueTy::Int),
+    }
+}
+
 fn lookup_binding_ty(env: &[BindingTy], idx: u64) -> Result<&BindingTy> {
     env.get(idx as usize)
         .ok_or(CodegenError::FreeVarInLambda { index: idx })
@@ -6689,6 +7304,34 @@ fn remember_match_type(slot: &mut Option<ValueTy>, ty: &ValueTy) -> Result<()> {
             expected: existing.to_string(),
             actual: ty.to_string(),
         }),
+    }
+}
+
+fn fixed_mask(width: u16) -> u64 {
+    if width == 64 {
+        u64::MAX
+    } else {
+        (1u64 << width) - 1
+    }
+}
+
+fn fixed_sign_bit(width: u16) -> u64 {
+    1u64 << (width - 1)
+}
+
+fn fixed_signed_min(width: u16) -> i64 {
+    if width == 64 {
+        i64::MIN
+    } else {
+        -(1i64 << (width - 1))
+    }
+}
+
+fn fixed_signed_max(width: u16) -> i64 {
+    if width == 64 {
+        i64::MAX
+    } else {
+        (1i64 << (width - 1)) - 1
     }
 }
 

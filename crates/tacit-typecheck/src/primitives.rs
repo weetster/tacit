@@ -1,4 +1,4 @@
-//! Type and effect signatures for built-in @name primitives (ADR 0028, 0030, 0042, 0047, 0061, 0062, 0063, 0064, 0067, 0068, 0069, 0074).
+//! Type and effect signatures for built-in @name primitives (ADR 0028, 0030, 0042, 0047, 0061, 0062, 0063, 0064, 0067, 0068, 0069, 0074, 0084).
 //!
 //! Effect sets mirror `stdlib/libc-effects.toml` (ADR 0025, consumed in Stage 3).
 //! The canonical source for primitive effects is that TOML file; values here match it.
@@ -15,8 +15,90 @@
 //! - ADR 0069: Bundle G UTF-8 codepoint primitives (`utf8-decode`,
 //!   `utf8-encode`, `utf8-len`).
 //! - ADR 0074: Phase 4 higher-order combinators (`map`, `fold`, `for-each`).
+//! - ADR 0084: fixed-width integer casts, arithmetic, bit operations, shifts,
+//!   masks, and byte-order helpers.
 
-use crate::ty::{EffAtom, EffSet, FnEff, Ty};
+use std::collections::BTreeMap;
+
+use crate::ty::{EffAtom, EffSet, FixedIntTy, FnEff, Ty};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FixedCastKind {
+    Trunc,
+    SignExtend,
+    ZeroExtend,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FixedArithOp {
+    Add,
+    Sub,
+    Mul,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FixedArithMode {
+    Wrap,
+    Check,
+    Saturate,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FixedBitOp {
+    And,
+    Or,
+    Xor,
+    Not,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FixedShiftOp {
+    Shl,
+    Shr,
+    Rotl,
+    Rotr,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FixedEndian {
+    Big,
+    Little,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FixedPrim {
+    FromIntWrap {
+        dst: FixedIntTy,
+    },
+    Cast {
+        src: FixedIntTy,
+        dst: FixedIntTy,
+        kind: FixedCastKind,
+    },
+    Arith {
+        ty: FixedIntTy,
+        op: FixedArithOp,
+        mode: FixedArithMode,
+    },
+    Bit {
+        ty: FixedIntTy,
+        op: FixedBitOp,
+    },
+    Shift {
+        ty: FixedIntTy,
+        op: FixedShiftOp,
+    },
+    MaskLow {
+        ty: FixedIntTy,
+    },
+    Bytes {
+        ty: FixedIntTy,
+        endian: FixedEndian,
+    },
+    ByteSwap {
+        ty: FixedIntTy,
+    },
+}
 
 /// Look up the type of a `@name` primitive by name.
 /// Returns `None` if the name is not a known primitive.
@@ -24,6 +106,10 @@ use crate::ty::{EffAtom, EffSet, FnEff, Ty};
 /// IO effect sits at the innermost (final) application: partial applications
 /// are pure closures; IO is produced only when all args are supplied.
 pub fn prim_type(name: &str) -> Option<Ty> {
+    if let Some(prim) = parse_fixed_prim(name) {
+        return Some(fixed_prim_type(prim));
+    }
+
     Some(match name {
         // LIBC: write(fd: Int, buf: Buf|Str, len: Int) -> Int / IO
         "write" => fn3_io(Ty::Int, Ty::Unknown, Ty::Int, Ty::Int),
@@ -121,6 +207,154 @@ pub fn prim_type(name: &str) -> Option<Ty> {
         // CMP: Int → Int → Bool (pure, ADR 0042)
         "eq" | "ne" | "lt" | "le" | "gt" | "ge" => fn2_pure(Ty::Int, Ty::Int, Ty::Bool),
         _ => return None,
+    })
+}
+
+pub fn parse_fixed_prim(name: &str) -> Option<FixedPrim> {
+    let parts: Vec<&str> = name.split('-').collect();
+    if parts.len() == 4 && parts[1] == "from" && parts[2] == "int" && parts[3] == "wrap" {
+        return Some(FixedPrim::FromIntWrap {
+            dst: FixedIntTy::parse_name(parts[0])?,
+        });
+    }
+
+    if parts.len() == 4 && parts[1] == "to" {
+        let src = FixedIntTy::parse_name(parts[0])?;
+        let dst = FixedIntTy::parse_name(parts[2])?;
+        let kind = match parts[3] {
+            "trunc" => FixedCastKind::Trunc,
+            "sext" => FixedCastKind::SignExtend,
+            "zext" => FixedCastKind::ZeroExtend,
+            _ => return None,
+        };
+        if valid_cast(src, dst, kind) {
+            return Some(FixedPrim::Cast { src, dst, kind });
+        }
+        return None;
+    }
+
+    if parts.len() == 3 {
+        if let Some(ty) = FixedIntTy::parse_name(parts[0]) {
+            let op = match parts[1] {
+                "add" => Some(FixedArithOp::Add),
+                "sub" => Some(FixedArithOp::Sub),
+                "mul" => Some(FixedArithOp::Mul),
+                _ => None,
+            };
+            if let Some(op) = op {
+                let mode = match parts[2] {
+                    "wrap" => FixedArithMode::Wrap,
+                    "check" if op != FixedArithOp::Mul => FixedArithMode::Check,
+                    "sat" if op != FixedArithOp::Mul => FixedArithMode::Saturate,
+                    _ => return None,
+                };
+                return Some(FixedPrim::Arith { ty, op, mode });
+            }
+        }
+    }
+
+    if parts.len() == 2 {
+        if let Some(ty) = FixedIntTy::parse_name(parts[0]) {
+            let op = match parts[1] {
+                "and" => Some(FixedBitOp::And),
+                "or" => Some(FixedBitOp::Or),
+                "xor" => Some(FixedBitOp::Xor),
+                "not" => Some(FixedBitOp::Not),
+                _ => None,
+            };
+            if let Some(op) = op {
+                return Some(FixedPrim::Bit { ty, op });
+            }
+            let op = match parts[1] {
+                "shl" => Some(FixedShiftOp::Shl),
+                "shr" => Some(FixedShiftOp::Shr),
+                "rotl" => Some(FixedShiftOp::Rotl),
+                "rotr" => Some(FixedShiftOp::Rotr),
+                _ => None,
+            };
+            if let Some(op) = op {
+                return Some(FixedPrim::Shift { ty, op });
+            }
+            if parts[1] == "bswap" && ty.sign == crate::ty::IntSign::Unsigned && ty.width > 8 {
+                return Some(FixedPrim::ByteSwap { ty });
+            }
+        }
+    }
+
+    if parts.len() == 3 {
+        if let Some(ty) = FixedIntTy::parse_name(parts[0]) {
+            if parts[1] == "mask" && parts[2] == "low" {
+                return Some(FixedPrim::MaskLow { ty });
+            }
+            if parts[1] == "from"
+                && ty.sign == crate::ty::IntSign::Unsigned
+                && matches!(ty.width, 16 | 32 | 64)
+            {
+                let endian = match parts[2] {
+                    "be" => FixedEndian::Big,
+                    "le" => FixedEndian::Little,
+                    _ => return None,
+                };
+                return Some(FixedPrim::Bytes { ty, endian });
+            }
+        }
+    }
+
+    None
+}
+
+fn valid_cast(src: FixedIntTy, dst: FixedIntTy, kind: FixedCastKind) -> bool {
+    match kind {
+        FixedCastKind::Trunc => src.width > dst.width,
+        FixedCastKind::SignExtend => src.sign.is_signed() && dst.width > src.width,
+        FixedCastKind::ZeroExtend => dst.width > src.width,
+    }
+}
+
+pub fn fixed_prim_type(prim: FixedPrim) -> Ty {
+    match prim {
+        FixedPrim::FromIntWrap { dst } => fn1_pure(Ty::Int, Ty::FixedInt(dst)),
+        FixedPrim::Cast { src, dst, .. } => fn1_pure(Ty::FixedInt(src), Ty::FixedInt(dst)),
+        FixedPrim::Arith { ty, mode, .. } => {
+            let arg = Ty::FixedInt(ty);
+            let ret = match mode {
+                FixedArithMode::Wrap | FixedArithMode::Saturate => Ty::FixedInt(ty),
+                FixedArithMode::Check => checked_result_ty(ty),
+            };
+            fn2_pure(arg.clone(), arg, ret)
+        }
+        FixedPrim::Bit { ty, op } => {
+            let arg = Ty::FixedInt(ty);
+            match op {
+                FixedBitOp::Not => fn1_pure(arg.clone(), arg),
+                FixedBitOp::And | FixedBitOp::Or | FixedBitOp::Xor => {
+                    fn2_pure(arg.clone(), arg.clone(), arg)
+                }
+            }
+        }
+        FixedPrim::Shift { ty, .. } => fn2_pure(Ty::FixedInt(ty), Ty::Int, Ty::FixedInt(ty)),
+        FixedPrim::MaskLow { ty } => fn1_pure(Ty::Int, Ty::FixedInt(ty)),
+        FixedPrim::Bytes { ty, .. } => fixed_fn(
+            &vec![
+                Ty::FixedInt(FixedIntTy::new(crate::ty::IntSign::Unsigned, 8));
+                (ty.width / 8) as usize
+            ],
+            Ty::FixedInt(ty),
+        ),
+        FixedPrim::ByteSwap { ty } => fn1_pure(Ty::FixedInt(ty), Ty::FixedInt(ty)),
+    }
+}
+
+fn checked_result_ty(int_ty: FixedIntTy) -> Ty {
+    let mut fields = BTreeMap::new();
+    fields.insert("ok".to_string(), Ty::Bool);
+    fields.insert("value".to_string(), Ty::FixedInt(int_ty));
+    Ty::Record(fields)
+}
+
+fn fixed_fn(args: &[Ty], ret: Ty) -> Ty {
+    args.iter().rev().cloned().fold(ret, |acc, arg| {
+        Ty::Fn(Box::new(arg), Box::new(acc), FnEff::pure_())
     })
 }
 

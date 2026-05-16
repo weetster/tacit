@@ -1,0 +1,1 @@
+(let (ann (int 173) (sym u8)) (let (app (app (sym u8-and) (var 0)) (int 15)) (let (app (app (sym u8-shr) (var 1)) (int 4)) (app (sym u8-to-u64-zext) (app (app (sym u8-or) (app (app (sym u8-shl) (var 0)) (int 4))) (var 1))))))

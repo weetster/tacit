@@ -89,7 +89,10 @@ pub fn type_from_node(
         Node::App { fn_, arg } => {
             let f_ty = type_from_node(fn_, ty_vars, eff_vars, subst, &child_path(path, 0), diags);
             let a_ty = type_from_node(arg, ty_vars, eff_vars, subst, &child_path(path, 1), diags);
-            if matches!(f_ty, Ty::Int | Ty::Bool | Ty::Str | Ty::Buf | Ty::I64Vec) {
+            if matches!(
+                f_ty,
+                Ty::Int | Ty::Bool | Ty::Str | Ty::Buf | Ty::I64Vec | Ty::FixedInt(_)
+            ) {
                 let name = match fn_.as_ref() {
                     Node::Sym { name } => name.as_str(),
                     _ => "<type>",
@@ -185,6 +188,9 @@ fn sym_to_ty(name: &str, path: &[usize], diags: &mut Vec<Diagnostic>) -> Ty {
         "Str" => Ty::Str,
         "Buf" => Ty::Buf,
         "I64Vec" => Ty::I64Vec,
+        fixed if crate::ty::FixedIntTy::parse_name(fixed).is_some() => {
+            Ty::FixedInt(crate::ty::FixedIntTy::parse_name(fixed).expect("checked above"))
+        }
         other => {
             diags.push(Diagnostic::unresolved_type(path, other));
             Ty::Unknown
