@@ -42,7 +42,7 @@ fn imports_exports_and_defs_emit_sorted_by_hash() {
         (hash_node(&def_a), String::from_utf8(emit(&def_a)).unwrap()),
         (hash_node(&def_b), String::from_utf8(emit(&def_b)).unwrap()),
     ];
-    expected_defs.sort_by(|a, b| a.0.cmp(&b.0));
+    expected_defs.sort_by_key(|a| a.0);
 
     let unit = Node::Unit {
         imports: vec![
