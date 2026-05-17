@@ -273,6 +273,31 @@ pub fn evict_package_cache(root: impl AsRef<Path>, hash: &str) -> Result<(), Pac
     Ok(())
 }
 
+pub fn seed_package_cache(
+    root: impl AsRef<Path>,
+    package: &CachedPackage,
+    manifest_text: Option<&str>,
+) -> Result<(), Diagnostic> {
+    let cache = PackageCache::for_project_root(root.as_ref());
+    cache.materialize_cached_package(package)?;
+    if let Some(text) = manifest_text {
+        let path = cache
+            .root
+            .join("packages")
+            .join(&package.hash)
+            .join("manifest.toml");
+        write_atomic(&path, text.as_bytes()).map_err(|source| {
+            io_diag(
+                "cache-corruption",
+                &path,
+                source,
+                "failed to write manifest snapshot",
+            )
+        })?;
+    }
+    Ok(())
+}
+
 pub fn package_hash_for_project(graph: &ProjectGraph) -> String {
     package_hash_from_hashes(graph.units.iter().map(|unit| unit.hash.as_str()))
 }

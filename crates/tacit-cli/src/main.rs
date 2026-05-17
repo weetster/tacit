@@ -51,6 +51,12 @@ enum Cmd {
         check: Option<PathBuf>,
     },
 
+    /// Inspect or seed bundled source-level stdlib packages.
+    Stdlib {
+        #[command(subcommand)]
+        command: StdlibCmd,
+    },
+
     /// Compile a .tac source file to a native executable.
     Compile {
         /// Input .tac/.taca file or project root directory.
@@ -227,6 +233,14 @@ enum PrimerFormat {
 }
 
 #[derive(ValueEnum, Clone)]
+enum StdlibFormat {
+    /// Human-readable bundled stdlib package list.
+    Text,
+    /// Stable JSON bundled stdlib package index.
+    Json,
+}
+
+#[derive(ValueEnum, Clone)]
 enum TestFormat {
     /// Human-readable summary on stdout (default).
     Text,
@@ -260,6 +274,23 @@ enum CacheCmd {
     },
 }
 
+#[derive(Subcommand)]
+enum StdlibCmd {
+    /// Print bundled stdlib package hashes, exports, and source metadata.
+    List {
+        /// Output format: human-readable text (default) or stable JSON.
+        #[arg(long, value_enum, value_name = "FORMAT", default_value = "text")]
+        format: StdlibFormat,
+    },
+
+    /// Materialize bundled stdlib package objects into ROOT/.tacit/cache.
+    Seed {
+        /// Project root directory.
+        #[arg(long, value_name = "PROJECT", default_value = ".")]
+        root: PathBuf,
+    },
+}
+
 #[derive(ValueEnum, Clone)]
 enum ViewFormat {
     Authoring,
@@ -278,6 +309,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     match cli.command {
         Cmd::Version { format } => cmd_version(format),
         Cmd::Primer { format, check } => cmd_primer(format, check),
+        Cmd::Stdlib { command } => cmd_stdlib(command),
         Cmd::Compile {
             input,
             output,
@@ -370,6 +402,50 @@ fn cmd_primer(
         PrimerFormat::Text => {
             use std::io::Write;
             std::io::stdout().write_all(release::PRIMER_BYTES)?;
+        }
+    }
+    Ok(())
+}
+
+fn cmd_stdlib(command: StdlibCmd) -> Result<(), Box<dyn std::error::Error>> {
+    match command {
+        StdlibCmd::List { format } => {
+            let list = match release::stdlib_list() {
+                Ok(list) => list,
+                Err(diags) => {
+                    eprintln!("{}", DiagOutput::new(diags).to_json_string());
+                    std::process::exit(1);
+                }
+            };
+            match format {
+                StdlibFormat::Json => {
+                    println!("{}", serde_json::to_string_pretty(&list)?);
+                }
+                StdlibFormat::Text => {
+                    for package in &list.packages {
+                        println!(
+                            "{} {} ({})",
+                            package.name, package.hash, package.source_path
+                        );
+                        for export in &package.public_exports {
+                            println!("  {} {}", export.alias, export.hash);
+                        }
+                    }
+                }
+            }
+        }
+        StdlibCmd::Seed { root } => {
+            let seeded = match release::seed_stdlib(root) {
+                Ok(seeded) => seeded,
+                Err(diags) => {
+                    eprintln!("{}", DiagOutput::new(diags).to_json_string());
+                    std::process::exit(1);
+                }
+            };
+            for package in &seeded.packages {
+                println!("seeded {} {}", package.name, package.hash);
+            }
+            println!("cache {}", seeded.cache_root);
         }
     }
     Ok(())

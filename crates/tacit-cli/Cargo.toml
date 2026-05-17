@@ -22,6 +22,7 @@ serde_json = "1"
 
 [build-dependencies]
 blake3 = "1"
+tacit-canonical = { path = "../tacit-canonical" }
 
 # Feature flags mirror tacit-codegen: pick one llvm<N>-<M> to enable the
 # compile subcommand.  The local `llvm` aggregate gates the compile code in

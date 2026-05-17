@@ -33,9 +33,9 @@ pub use library::{
 pub use package::{
     check_package, clear_package_cache, evict_package_cache, load_package, lock_package,
     materialize_package_derived, package_entry_expression, package_hash_for_project,
-    package_test_entry_expression, CachedPackage, DependencySpec, LockDependency, LockSource,
-    LockTransitive, Lockfile, PackageCacheError, PackageGraph, PackageManifest, PackageMetadata,
-    PackageTest,
+    package_test_entry_expression, seed_package_cache, CachedPackage, DependencySpec,
+    LockDependency, LockSource, LockTransitive, Lockfile, PackageCacheError, PackageGraph,
+    PackageManifest, PackageMetadata, PackageTest,
 };
 pub use project::{
     check_project, discover_project_root, emit_project_inspection, load_project,

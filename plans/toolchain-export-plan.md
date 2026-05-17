@@ -356,6 +356,11 @@ implemented with JSON metadata output.
 
 ### Stage 3: Stdlib Bundle
 
+**Status:** Complete 2026-05-17. The release manifest records bundled stdlib
+package hashes and export metadata, the build stages cache/source stdlib
+assets, and `tacit stdlib list` / `tacit stdlib seed` are implemented with a
+hash-only external-project dependency test.
+
 - Add a bundled stdlib package index to the release manifest.
 - Add code to materialize bundled stdlib packages into a target cache.
 - Add `tacit stdlib list` and `tacit stdlib seed`.

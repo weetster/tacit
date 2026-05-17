@@ -1,8 +1,10 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+use tacit_canonical::ast::Node;
 
 const SCHEMA_KEYS: [&str; 7] = [
     "canonical",
@@ -13,6 +15,8 @@ const SCHEMA_KEYS: [&str; 7] = [
     "toolchain_release",
     "toolchain_pin",
 ];
+
+const STDLIB_PACKAGES: [&str; 6] = ["core", "bytes", "array", "text", "collections", "io"];
 
 fn main() {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
@@ -45,7 +49,8 @@ fn main() {
     let codegen = env::var_os("CARGO_FEATURE_LLVM").is_some();
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR"));
     let primer = stage_primer_asset(&out_dir, &metadata, &primer_source_path);
-    let manifest = render_manifest(&metadata, &primer, &git_rev, codegen);
+    let stdlib = stage_stdlib_assets(&out_dir, &workspace_root);
+    let manifest = render_manifest(&metadata, &primer, &stdlib, &git_rev, codegen);
 
     println!("cargo:rustc-env=TACIT_PRIMER_ID={}", metadata.primer_id);
     println!(
@@ -71,7 +76,12 @@ fn main() {
         metadata.primer_metadata_path
     );
 
-    fs::write(out_dir.join("toolchain-release.json"), manifest).expect("write release manifest");
+    fs::write(out_dir.join("toolchain-release.json"), &manifest).expect("write release manifest");
+    let share_manifest_path = out_dir.join("share/tacit/toolchain-release.json");
+    if let Some(parent) = share_manifest_path.parent() {
+        fs::create_dir_all(parent).expect("create share/tacit asset directory");
+    }
+    fs::write(share_manifest_path, manifest).expect("write share/tacit release manifest");
 }
 
 #[derive(Default)]
@@ -279,6 +289,24 @@ struct PrimerAsset {
     hash: String,
 }
 
+struct StdlibPackageAsset {
+    short_name: String,
+    name: String,
+    version: String,
+    hash: String,
+    unit_hash: String,
+    source_path: String,
+    manifest_path: String,
+    cache_path: String,
+    public_exports: BTreeMap<String, String>,
+}
+
+struct ParsedStdlibManifest {
+    name: String,
+    version: String,
+    exports: BTreeMap<String, String>,
+}
+
 fn stage_primer_asset(
     out_dir: &Path,
     metadata: &ReleaseMetadata,
@@ -300,6 +328,276 @@ fn stage_primer_asset(
     PrimerAsset { hash }
 }
 
+fn stage_stdlib_assets(out_dir: &Path, workspace_root: &Path) -> Vec<StdlibPackageAsset> {
+    let mut packages = Vec::new();
+    for short_name in STDLIB_PACKAGES {
+        let package_root = workspace_root.join("stdlib/tacit").join(short_name);
+        let manifest_path = package_root.join("tacit.toml");
+        let unit_path = package_root.join("src/lib.tac");
+        println!("cargo:rerun-if-changed={}", manifest_path.display());
+        println!("cargo:rerun-if-changed={}", unit_path.display());
+
+        let manifest_text = fs::read_to_string(&manifest_path)
+            .unwrap_or_else(|err| panic!("{}: {}", manifest_path.display(), err));
+        let manifest = parse_stdlib_manifest(&manifest_text, &manifest_path);
+        let source_bytes =
+            fs::read(&unit_path).unwrap_or_else(|err| panic!("{}: {}", unit_path.display(), err));
+        let node = tacit_canonical::parse(&source_bytes)
+            .unwrap_or_else(|err| panic!("{}: {}", unit_path.display(), err));
+        let canonical_bytes = tacit_canonical::emit(&node);
+        let unit_hash = hash_hex_bytes(&canonical_bytes);
+        let (definition_hashes, public_exports, package_exports) = unit_content_hashes(&node);
+        let package_hash = graph_hash_with_tag("tacit-package-v1", [&unit_hash]);
+
+        let expected_name = format!("tacit.{short_name}");
+        if manifest.name != expected_name {
+            panic!(
+                "{}: expected [package].name = {:?}, got {:?}",
+                manifest_path.display(),
+                expected_name,
+                manifest.name
+            );
+        }
+        for (alias, hash) in &manifest.exports {
+            if !public_exports.contains(hash) {
+                panic!(
+                    "{}: [exports].{} names blake3:{} which is not a public export",
+                    manifest_path.display(),
+                    alias,
+                    hash
+                );
+            }
+        }
+
+        let cache_package_dir = out_dir
+            .join("share/tacit/stdlib-cache/packages")
+            .join(&package_hash);
+        write_asset(
+            &out_dir
+                .join("share/tacit/stdlib-cache/objects/units")
+                .join(format!("{unit_hash}.tac")),
+            &canonical_bytes,
+        );
+        if let Node::Unit { defs, .. } = &node {
+            for def in defs {
+                let bytes = tacit_canonical::emit(def);
+                let hash = hash_hex_bytes(&bytes);
+                if !definition_hashes.contains(&hash) {
+                    panic!("internal stdlib definition hash tracking mismatch");
+                }
+                write_asset(
+                    &out_dir
+                        .join("share/tacit/stdlib-cache/objects/defs")
+                        .join(format!("{hash}.tac")),
+                    &bytes,
+                );
+            }
+        }
+        write_asset(
+            &cache_package_dir.join("package.json"),
+            render_package_index(
+                &package_hash,
+                [&unit_hash],
+                &public_exports,
+                &package_exports,
+            )
+            .as_bytes(),
+        );
+        write_asset(
+            &cache_package_dir.join("manifest.toml"),
+            manifest_text.as_bytes(),
+        );
+
+        let release_source_dir = format!("share/tacit/stdlib-src/tacit/{short_name}");
+        write_asset(
+            &out_dir.join(&release_source_dir).join("tacit.toml"),
+            manifest_text.as_bytes(),
+        );
+        write_asset(
+            &out_dir.join(&release_source_dir).join("src/lib.tac"),
+            &source_bytes,
+        );
+
+        packages.push(StdlibPackageAsset {
+            short_name: short_name.to_string(),
+            name: manifest.name,
+            version: manifest.version,
+            hash: blake3_prefix(&package_hash),
+            unit_hash: blake3_prefix(&unit_hash),
+            source_path: release_source_dir,
+            manifest_path: format!("share/tacit/stdlib-src/tacit/{short_name}/tacit.toml"),
+            cache_path: format!("share/tacit/stdlib-cache/packages/{package_hash}"),
+            public_exports: manifest
+                .exports
+                .into_iter()
+                .map(|(alias, hash)| (alias, blake3_prefix(&hash)))
+                .collect(),
+        });
+    }
+    packages
+}
+
+fn parse_stdlib_manifest(text: &str, path: &Path) -> ParsedStdlibManifest {
+    let mut section = String::new();
+    let mut name = String::new();
+    let mut version = String::new();
+    let mut exports = BTreeMap::new();
+
+    for (line_index, raw_line) in text.lines().enumerate() {
+        let line_number = line_index + 1;
+        let line = raw_line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if let Some(section_name) = line.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
+            section = section_name.trim().to_string();
+            continue;
+        }
+        let (key, raw_value) = line
+            .split_once('=')
+            .unwrap_or_else(|| panic!("{}:{line_number}: expected key = value", path.display()));
+        let key = key.trim();
+        let value = parse_value(raw_value.trim()).unwrap_or_else(|| {
+            panic!(
+                "{}:{line_number}: expected TOML string or integer value",
+                path.display()
+            )
+        });
+        match (section.as_str(), key, value) {
+            ("package", "name", MetadataValue::String(value)) => name = value,
+            ("package", "version", MetadataValue::String(value)) => version = value,
+            ("exports", alias, MetadataValue::String(value)) => {
+                let hash = strip_blake3_hash(&value).unwrap_or_else(|| {
+                    panic!(
+                        "{}:{line_number}: [exports].{} must be blake3:<hash>",
+                        path.display(),
+                        alias
+                    )
+                });
+                exports.insert(alias.to_string(), hash.to_string());
+            }
+            _ => {
+                panic!(
+                    "{}:{line_number}: unexpected key `{key}` in section `{section}`",
+                    path.display()
+                );
+            }
+        }
+    }
+
+    if name.is_empty() {
+        panic!("{}: missing [package].name", path.display());
+    }
+    if version.is_empty() {
+        panic!("{}: missing [package].version", path.display());
+    }
+    ParsedStdlibManifest {
+        name,
+        version,
+        exports,
+    }
+}
+
+fn unit_content_hashes(node: &Node) -> (BTreeSet<String>, BTreeSet<String>, BTreeSet<String>) {
+    let Node::Unit { exports, defs, .. } = node else {
+        panic!("stdlib source must be a unit artifact");
+    };
+
+    let definition_hashes: BTreeSet<String> = defs
+        .iter()
+        .map(|def| hash_hex_bytes(&tacit_canonical::emit(def)))
+        .collect();
+    let mut public_exports = BTreeSet::new();
+    let mut package_exports = BTreeSet::new();
+    for export in exports {
+        let Node::Export { visibility, hash } = export else {
+            panic!("unit export list contains a non-export node");
+        };
+        if !definition_hashes.contains(hash) {
+            panic!("unit exports blake3:{hash} without a matching definition");
+        }
+        match visibility.as_str() {
+            "public" => {
+                public_exports.insert(hash.clone());
+            }
+            "package" => {
+                package_exports.insert(hash.clone());
+            }
+            other => panic!("unsupported export visibility {other:?}"),
+        }
+    }
+    (definition_hashes, public_exports, package_exports)
+}
+
+fn render_package_index<'a>(
+    package_hash: &str,
+    unit_hashes: impl IntoIterator<Item = &'a String>,
+    public_exports: &BTreeSet<String>,
+    package_exports: &BTreeSet<String>,
+) -> String {
+    let units: Vec<String> = unit_hashes
+        .into_iter()
+        .map(|hash| blake3_prefix(hash))
+        .collect();
+    format!(
+        "{{\n  \"format\": \"tacit-package-v1\",\n  \"hash\": \"{}\",\n  \"units\": {},\n  \"public_exports\": {},\n  \"package_exports\": {}\n}}\n",
+        blake3_prefix(package_hash),
+        json_string_array(units.iter().map(String::as_str)),
+        json_string_array(public_exports.iter().map(|hash| blake3_prefix(hash))),
+        json_string_array(package_exports.iter().map(|hash| blake3_prefix(hash)))
+    )
+}
+
+fn json_string_array<I, V>(values: I) -> String
+where
+    I: IntoIterator<Item = V>,
+    V: AsRef<str>,
+{
+    let mut out = String::from("[");
+    for (index, value) in values.into_iter().enumerate() {
+        if index > 0 {
+            out.push_str(", ");
+        }
+        out.push('"');
+        out.push_str(&json_escape(value.as_ref()));
+        out.push('"');
+    }
+    out.push(']');
+    out
+}
+
+fn graph_hash_with_tag<'a>(tag: &str, unit_hashes: impl IntoIterator<Item = &'a String>) -> String {
+    let mut hashes: Vec<&String> = unit_hashes.into_iter().collect();
+    hashes.sort();
+    let mut bytes = tag.as_bytes().to_vec();
+    bytes.push(b'\n');
+    for hash in hashes {
+        bytes.extend_from_slice(hash.as_bytes());
+        bytes.push(b'\n');
+    }
+    hash_hex_bytes(&bytes)
+}
+
+fn hash_hex_bytes(bytes: &[u8]) -> String {
+    blake3::hash(bytes).to_hex().to_string()
+}
+
+fn blake3_prefix(hash: &str) -> String {
+    format!("blake3:{hash}")
+}
+
+fn strip_blake3_hash(value: &str) -> Option<&str> {
+    let raw = value.strip_prefix("blake3:")?;
+    (raw.len() == 64 && raw.bytes().all(|byte| byte.is_ascii_hexdigit())).then_some(raw)
+}
+
+fn write_asset(path: &Path, bytes: &[u8]) {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).unwrap_or_else(|err| panic!("{}: {}", parent.display(), err));
+    }
+    fs::write(path, bytes).unwrap_or_else(|err| panic!("{}: {}", path.display(), err));
+}
+
 fn render_primer_metadata(metadata: &ReleaseMetadata, hash: &str) -> String {
     format!(
         "id = \"{}\"\nversion = \"{}\"\ntoolchain_version = \"{}\"\nhash = \"{}\"\ntokenizer = \"{}\"\ntokens = {}\n",
@@ -319,6 +617,7 @@ fn blake3_prefixed(bytes: &[u8]) -> String {
 fn render_manifest(
     metadata: &ReleaseMetadata,
     primer: &PrimerAsset,
+    stdlib: &[StdlibPackageAsset],
     git_rev: &str,
     codegen: bool,
 ) -> String {
@@ -347,6 +646,17 @@ fn render_manifest(
         json_field(&mut out, 2, key, value, index + 1 != SCHEMA_KEYS.len());
     }
     out.push_str("  },\n");
+    out.push_str("  \"stdlib\": {\n");
+    for (index, package) in stdlib.iter().enumerate() {
+        json_field(
+            &mut out,
+            2,
+            &package.name,
+            &package.hash,
+            index + 1 != stdlib.len(),
+        );
+    }
+    out.push_str("  },\n");
     out.push_str("  \"assets\": {\n");
     json_field(&mut out, 2, "root", "share/tacit", true);
     out.push_str("    \"primer\": {\n");
@@ -370,6 +680,46 @@ fn render_manifest(
     json_field(&mut out, 3, "hash", &primer.hash, true);
     json_field(&mut out, 3, "tokenizer", &metadata.primer_tokenizer, true);
     json_u64_field(&mut out, 3, "tokens", metadata.primer_tokens, false);
+    out.push_str("    },\n");
+    out.push_str("    \"stdlib\": {\n");
+    json_field(&mut out, 3, "cache_path", "share/tacit/stdlib-cache", true);
+    json_field(
+        &mut out,
+        3,
+        "source_path",
+        "share/tacit/stdlib-src/tacit",
+        true,
+    );
+    out.push_str("      \"packages\": [\n");
+    for (package_index, package) in stdlib.iter().enumerate() {
+        out.push_str("        {\n");
+        json_field(&mut out, 5, "name", &package.name, true);
+        json_field(&mut out, 5, "short_name", &package.short_name, true);
+        json_field(&mut out, 5, "version", &package.version, true);
+        json_field(&mut out, 5, "hash", &package.hash, true);
+        json_field(&mut out, 5, "unit_hash", &package.unit_hash, true);
+        json_field(&mut out, 5, "source_path", &package.source_path, true);
+        json_field(&mut out, 5, "manifest_path", &package.manifest_path, true);
+        json_field(&mut out, 5, "cache_path", &package.cache_path, true);
+        out.push_str("          \"public_exports\": [\n");
+        for (export_index, (alias, hash)) in package.public_exports.iter().enumerate() {
+            out.push_str("            {\n");
+            json_field(&mut out, 7, "alias", alias, true);
+            json_field(&mut out, 7, "hash", hash, false);
+            out.push_str("            }");
+            if export_index + 1 != package.public_exports.len() {
+                out.push(',');
+            }
+            out.push('\n');
+        }
+        out.push_str("          ]\n");
+        out.push_str("        }");
+        if package_index + 1 != stdlib.len() {
+            out.push(',');
+        }
+        out.push('\n');
+    }
+    out.push_str("      ]\n");
     out.push_str("    }\n");
     out.push_str("  },\n");
     out.push_str("  \"distribution\": {\n");

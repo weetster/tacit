@@ -77,6 +77,25 @@ fn version_json_reports_release_metadata() {
         "o200k_base"
     );
     assert_eq!(json["manifest"]["assets"]["primer"]["tokens"], 26265);
+    assert!(json["manifest"]["stdlib"]["tacit.text"]
+        .as_str()
+        .expect("tacit.text hash")
+        .starts_with("blake3:"));
+    assert_eq!(
+        json["manifest"]["assets"]["stdlib"]["cache_path"],
+        "share/tacit/stdlib-cache"
+    );
+    assert_eq!(
+        json["manifest"]["assets"]["stdlib"]["source_path"],
+        "share/tacit/stdlib-src/tacit"
+    );
+    assert_eq!(
+        json["manifest"]["assets"]["stdlib"]["packages"]
+            .as_array()
+            .expect("stdlib packages")
+            .len(),
+        6
+    );
     let release_hash = json["release_hash"].as_str().expect("release hash");
     assert!(
         release_hash.starts_with("blake3:") && release_hash.len() == "blake3:".len() + 64,
@@ -200,6 +219,124 @@ fn primer_check_accepts_exact_bytes_and_rejects_edits() {
         "{}",
         String::from_utf8_lossy(&bad.stderr)
     );
+}
+
+#[test]
+fn stdlib_list_json_reports_bundled_packages() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let out = tacit(&["stdlib", "list", "--format", "json"], dir.path());
+    assert!(
+        out.status.success(),
+        "stdlib list failed\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let json: Value = serde_json::from_slice(&out.stdout).expect("stdlib list json");
+    assert_eq!(json["format"], "tacit-stdlib-v1");
+    assert_eq!(json["toolchain_version"], "0.7.0");
+    assert_eq!(json["cache_path"], "share/tacit/stdlib-cache");
+    assert_eq!(json["source_path"], "share/tacit/stdlib-src/tacit");
+    let packages = json["packages"].as_array().expect("packages");
+    assert_eq!(packages.len(), 6);
+    let text = packages
+        .iter()
+        .find(|package| package["name"] == "tacit.text")
+        .expect("tacit.text package");
+    assert!(text["hash"].as_str().unwrap().starts_with("blake3:"));
+    assert_eq!(
+        text["public_exports"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|export| export["alias"] == "ascii-is-digit")
+            .unwrap()["hash"],
+        "blake3:f7babbf21591eeeb64d2c990e40b6be53def9032770ae10c346c7e3132173a5a"
+    );
+}
+
+#[test]
+fn stdlib_seed_allows_hash_dependency_without_repo_path() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let app = dir.path().join("app");
+    std::fs::create_dir_all(app.join("src")).unwrap();
+
+    let seed = tacit(&["stdlib", "seed", "--root", "app"], dir.path());
+    assert!(
+        seed.status.success(),
+        "stdlib seed failed\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&seed.stdout),
+        String::from_utf8_lossy(&seed.stderr)
+    );
+
+    let list = tacit(&["stdlib", "list", "--format", "json"], dir.path());
+    assert!(list.status.success());
+    let json: Value = serde_json::from_slice(&list.stdout).expect("stdlib list json");
+    let text = json["packages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|package| package["name"] == "tacit.text")
+        .expect("tacit.text package");
+    let text_package_hash = text["hash"].as_str().unwrap();
+    let ascii_is_digit = text["public_exports"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|export| export["alias"] == "ascii-is-digit")
+        .unwrap()["hash"]
+        .as_str()
+        .unwrap()
+        .strip_prefix("blake3:")
+        .unwrap()
+        .to_string();
+
+    let test_def = cli_apply_int_to_bool_import_def(&ascii_is_digit, "57");
+    let test_hash = cli_hash(&test_def);
+    let unit = Node::Unit {
+        imports: vec![Node::Import {
+            hash: ascii_is_digit,
+            sig: Box::new(cli_int_to_bool_sig()),
+        }],
+        exports: vec![Node::Export {
+            visibility: "public".into(),
+            hash: test_hash.clone(),
+        }],
+        defs: vec![test_def],
+    };
+    std::fs::write(app.join("src/main.tac"), emit(&unit)).unwrap();
+    std::fs::write(
+        app.join("tacit.toml"),
+        format!(
+            "[package]\nname = \"stdlib-seeded-consumer\"\n\n[dependencies]\ntext = {{ hash = \"{}\", source = {{ registry = \"builtin\", name = \"tacit.text\" }} }}\n\n[exports]\ndigit = \"blake3:{}\"\n",
+            text_package_hash, test_hash
+        ),
+    )
+    .unwrap();
+
+    let lock = tacit(&["lock", "."], &app);
+    assert!(
+        lock.status.success(),
+        "lock failed\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&lock.stdout),
+        String::from_utf8_lossy(&lock.stderr)
+    );
+    let check = tacit(&["check", ".", "--format", "json"], &app);
+    assert!(
+        check.status.success(),
+        "check failed\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&check.stdout),
+        String::from_utf8_lossy(&check.stderr)
+    );
+
+    let lockfile = std::fs::read_to_string(app.join("tacit.lock")).unwrap();
+    assert!(lockfile.contains(r#""registry": "builtin""#), "{lockfile}");
+    assert!(!lockfile.contains(r#""path":"#), "{lockfile}");
+    assert!(app
+        .join(".tacit/cache/packages")
+        .join(text_package_hash.strip_prefix("blake3:").unwrap())
+        .join("manifest.toml")
+        .exists());
 }
 
 /// Round-trip: write .taca → canonicalize → render --authoring → canonicalize again.
@@ -795,6 +932,17 @@ fn cli_int_to_int_sig() -> Node {
     }
 }
 
+fn cli_int_to_bool_sig() -> Node {
+    Node::Sig {
+        type_: Box::new(Node::FnTy {
+            arg: Box::new(cli_sym("Int")),
+            ret: Box::new(cli_sym("Bool")),
+            eff: Box::new(Node::EffSet { atoms: vec![] }),
+        }),
+        eval_eff: Box::new(Node::EffSet { atoms: vec![] }),
+    }
+}
+
 fn cli_u8_to_int_io_sig() -> Node {
     Node::Sig {
         type_: Box::new(Node::FnTy {
@@ -884,6 +1032,20 @@ fn cli_apply_import_def(import_hash: &str) -> Node {
                     hash: import_hash.into(),
                 }),
                 arg: Box::new(Node::Var { index: 0 }),
+            }),
+        }),
+    }
+}
+
+fn cli_apply_int_to_bool_import_def(import_hash: &str, value: &str) -> Node {
+    Node::Def {
+        sig: Box::new(cli_bool_sig()),
+        body: Box::new(Node::App {
+            fn_: Box::new(Node::Ref {
+                hash: import_hash.into(),
+            }),
+            arg: Box::new(Node::Int {
+                value: value.into(),
             }),
         }),
     }
