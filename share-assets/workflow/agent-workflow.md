@@ -67,7 +67,30 @@ write the pin manually) before invasive changes.
 
 ## The core authoring loop
 
-For code-level work, prefer this loop:
+### Editing source
+
+`.tac` files are canonical S-expression bytes with BLAKE3 definition-hash
+references; the primer teaches the authoring view (`.taca`), which is a
+different surface syntax. Do not hand-edit `.tac`. Round-trip through
+`tacit canonicalize` instead:
+
+1. Render existing source as authoring view to a scratch path outside the
+   project: `tacit render <unit.tac> --as authoring -o /tmp/<scratch>.taca`.
+2. Edit the scratch `.taca` using authoring-view syntax from the primer.
+3. Canonicalize back into the project:
+   `tacit canonicalize /tmp/<scratch>.taca -o <unit.tac> --force`. That
+   rewrites both `<unit.tac>` and the `<unit.tacd>` sidecar.
+4. Delete the scratch `.taca`. Do not check `.taca` files in.
+
+Every source edit changes definition hashes. After step 3, run `tacit lock`
+to refresh `tacit.lock`, then update any `[exports]`, `[bin]`, or `[[tests]]`
+entries in `tacit.toml` that referenced the old hashes
+(`tacit view <project-dir> --as inspection --hashes` or `tacit.lock` give
+you the new ones).
+
+### Validating
+
+For validation, prefer this loop:
 
 1. `tacit check .` — type and effect check the whole project graph.
 2. `tacit lock` — refresh `tacit.lock` after any dependency or visibility
