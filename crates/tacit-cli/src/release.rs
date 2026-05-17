@@ -22,6 +22,10 @@ pub const PRIMER_TOKENIZER: &str = env!("TACIT_PRIMER_TOKENIZER");
 pub const PRIMER_TOKENS: u64 = parse_u64(env!("TACIT_PRIMER_TOKENS"));
 pub const PRIMER_PATH: &str = env!("TACIT_PRIMER_PATH");
 pub const PRIMER_METADATA_PATH: &str = env!("TACIT_PRIMER_METADATA_PATH");
+#[allow(dead_code)]
+pub const WORKFLOW_PATH: &str = env!("TACIT_WORKFLOW_PATH");
+#[allow(dead_code)]
+pub const WORKFLOW_HASH: &str = env!("TACIT_WORKFLOW_HASH");
 pub const EMBEDDED_MANIFEST_BYTES: &[u8] =
     include_bytes!(concat!(env!("OUT_DIR"), "/toolchain-release.json"));
 pub const EMBEDDED_MANIFEST_TEXT: &str =

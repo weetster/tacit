@@ -49,8 +49,9 @@ fn main() {
     let codegen = env::var_os("CARGO_FEATURE_LLVM").is_some();
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR"));
     let primer = stage_primer_asset(&out_dir, &metadata, &primer_source_path);
+    let workflow = stage_workflow_asset(&out_dir, &metadata, &workspace_root);
     let stdlib = stage_stdlib_assets(&out_dir, &workspace_root);
-    let manifest = render_manifest(&metadata, &primer, &stdlib, &git_rev, codegen);
+    let manifest = render_manifest(&metadata, &primer, &workflow, &stdlib, &git_rev, codegen);
 
     println!("cargo:rustc-env=TACIT_PRIMER_ID={}", metadata.primer_id);
     println!(
@@ -76,6 +77,11 @@ fn main() {
         metadata.primer_metadata_path
     );
 
+    println!(
+        "cargo:rustc-env=TACIT_WORKFLOW_PATH={}",
+        metadata.workflow_path
+    );
+    println!("cargo:rustc-env=TACIT_WORKFLOW_HASH={}", workflow.hash);
     fs::write(out_dir.join("toolchain-release.json"), &manifest).expect("write release manifest");
     let share_manifest_path = out_dir.join("share/tacit/toolchain-release.json");
     if let Some(parent) = share_manifest_path.parent() {
@@ -96,6 +102,8 @@ struct ReleaseMetadata {
     primer_metadata_path: String,
     primer_tokenizer: String,
     primer_tokens: u64,
+    workflow_source_path: String,
+    workflow_path: String,
     llvm_feature: String,
     llvm_version: String,
     schemas: BTreeMap<String, String>,
@@ -150,6 +158,12 @@ impl ReleaseMetadata {
                 }
                 ("primer", "tokens", MetadataValue::Integer(value)) => {
                     metadata.primer_tokens = value;
+                }
+                ("workflow", "source_path", MetadataValue::String(value)) => {
+                    metadata.workflow_source_path = value;
+                }
+                ("workflow", "path", MetadataValue::String(value)) => {
+                    metadata.workflow_path = value;
                 }
                 ("llvm", "feature", MetadataValue::String(value)) => metadata.llvm_feature = value,
                 ("llvm", "version", MetadataValue::String(value)) => metadata.llvm_version = value,
@@ -206,6 +220,8 @@ impl ReleaseMetadata {
         if self.primer_tokens == 0 {
             return Err("missing primer.tokens".to_string());
         }
+        require_present("workflow.source_path", &self.workflow_source_path)?;
+        require_present("workflow.path", &self.workflow_path)?;
         require_present("llvm.feature", &self.llvm_feature)?;
         require_present("llvm.version", &self.llvm_version)?;
         require_present("distribution.kind", &self.distribution_kind)?;
@@ -289,6 +305,10 @@ struct PrimerAsset {
     hash: String,
 }
 
+struct WorkflowAsset {
+    hash: String,
+}
+
 struct StdlibPackageAsset {
     short_name: String,
     name: String,
@@ -326,6 +346,24 @@ fn stage_primer_asset(
     )
     .expect("write primer metadata");
     PrimerAsset { hash }
+}
+
+fn stage_workflow_asset(
+    out_dir: &Path,
+    metadata: &ReleaseMetadata,
+    workspace_root: &Path,
+) -> WorkflowAsset {
+    let source_path = workspace_root.join(&metadata.workflow_source_path);
+    println!("cargo:rerun-if-changed={}", source_path.display());
+    let bytes =
+        fs::read(&source_path).unwrap_or_else(|err| panic!("{}: {}", source_path.display(), err));
+    let hash = blake3_prefixed(&bytes);
+    let workflow_path = out_dir.join(&metadata.workflow_path);
+    if let Some(parent) = workflow_path.parent() {
+        fs::create_dir_all(parent).expect("create workflow asset directory");
+    }
+    fs::write(&workflow_path, &bytes).expect("write workflow asset");
+    WorkflowAsset { hash }
 }
 
 fn stage_stdlib_assets(out_dir: &Path, workspace_root: &Path) -> Vec<StdlibPackageAsset> {
@@ -617,6 +655,7 @@ fn blake3_prefixed(bytes: &[u8]) -> String {
 fn render_manifest(
     metadata: &ReleaseMetadata,
     primer: &PrimerAsset,
+    workflow: &WorkflowAsset,
     stdlib: &[StdlibPackageAsset],
     git_rev: &str,
     codegen: bool,
@@ -680,6 +719,10 @@ fn render_manifest(
     json_field(&mut out, 3, "hash", &primer.hash, true);
     json_field(&mut out, 3, "tokenizer", &metadata.primer_tokenizer, true);
     json_u64_field(&mut out, 3, "tokens", metadata.primer_tokens, false);
+    out.push_str("    },\n");
+    out.push_str("    \"workflow\": {\n");
+    json_field(&mut out, 3, "path", &metadata.workflow_path, true);
+    json_field(&mut out, 3, "hash", &workflow.hash, false);
     out.push_str("    },\n");
     out.push_str("    \"stdlib\": {\n");
     json_field(&mut out, 3, "cache_path", "share/tacit/stdlib-cache", true);

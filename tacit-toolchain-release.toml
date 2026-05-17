@@ -13,6 +13,10 @@ metadata_path = "share/tacit/primer/tacit-lite.toml"
 tokenizer = "o200k_base"
 tokens = 26265
 
+[workflow]
+source_path = "share-assets/workflow/agent-workflow.md"
+path = "share/tacit/workflow/agent-workflow.md"
+
 [llvm]
 feature = "llvm19-1"
 version = "19.1"

@@ -402,6 +402,23 @@ stderr referencing ADR 0090 and lets the command continue.
 
 ### Stage 6: Release Packaging
 
+**Status:** Complete 2026-05-17. `scripts/build-release.sh` produces a
+reproducible Linux x86_64 binary archive that links statically against the
+system LLVM 19 install (apt `llvm-19-dev`); the script fails fast if the
+expected static archives are absent, and verifies the produced binary contains
+no `libLLVM*.so` dependency via `ldd`. The bundled `share/tacit/` tree was
+extended with `workflow/agent-workflow.md` (sourced from
+`share-assets/workflow/`, byte-hash-pinned in `toolchain-release.json` under
+`assets.workflow`), and the script regenerates `templates/executable/` and
+`templates/library/` by invoking the freshly built `tacit init`. The release
+hash recorded by the binary matches the staged manifest exactly. A new Rust
+integration test, `crates/tacit-cli/tests/staged_toolchain.rs`, drives
+`init` / `version` / `primer --check` / `stdlib list` / `check` / `lock` /
+`test` / `compile` against a project created in a tempdir outside the
+workspace, using the staged `share/tacit/` via `TACIT_TOOLCHAIN_ASSET_ROOT`,
+covering ADR 0090's "Validation" block. Installation and external-project
+setup are documented in `docs/installation.md`.
+
 - Add a release script or CI workflow that builds the binary-archive
   distribution with the pinned LLVM feature, assembles `share/tacit/`, and
   emits checksums.
