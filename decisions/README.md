@@ -105,3 +105,4 @@ Keep ADRs short. They record the decision, not the full analysis that led to it.
 - [0087 — Phase 6 source-level stdlib foundations](0087-phase-6-source-level-stdlib-foundations.md)
 - [0088 — Phase 6 constrained host-interface ABI](0088-phase-6-host-interface-abi.md)
 - [0089 — Phase 6 frozen](0089-phase-6-frozen.md)
+- [0090 — Toolchain release contract](0090-toolchain-release-contract.md)

@@ -1,6 +1,7 @@
 # Tacit Toolchain Export Plan
 
-**Status:** Proposed
+**Status:** Active; Stage 0 decision accepted 2026-05-17 by
+[ADR 0090](../decisions/0090-toolchain-release-contract.md)
 **Date:** 2026-05-17
 **Scope:** Exporting Tacit as a versioned toolchain for separate Tacit projects
 
@@ -259,6 +260,7 @@ my-project/
   tacit.toml
   tacit.lock
   AGENTS.md
+  CLAUDE.md
   src/
     main.tac
     main.tacd
@@ -279,8 +281,9 @@ For a library template:
 - `tacit interface --emit-library` can be demonstrated if the boundary is in
   the supported scalar subset.
 
-The generated `AGENTS.md` should instruct agents to use `tacit primer` to fetch
-the matching primer instead of copying prose from this repository.
+The generated `AGENTS.md` and `CLAUDE.md` should come from the same release
+template and instruct agents to use `tacit primer` to fetch the matching primer
+instead of copying prose from this repository.
 
 ## CLI Surface
 
@@ -314,6 +317,9 @@ compact.
 
 ### Stage 0: Decision Record
 
+**Status:** Complete 2026-05-17. Deliverable:
+[ADR 0090](../decisions/0090-toolchain-release-contract.md)
+
 Write an ADR before implementation that decides:
 
 - release manifest schema,
@@ -327,7 +333,7 @@ Write an ADR before implementation that decides:
 
 - Add workspace-level release metadata.
 - Add a deterministic release manifest generator.
-- Embed or locate release metadata at runtime.
+- Embed release metadata and verify the adjacent installed manifest at runtime.
 - Add `tacit version --format json`.
 - Add tests that assert schema names and toolchain version are present.
 
@@ -351,7 +357,8 @@ Write an ADR before implementation that decides:
 
 - Add `tacit init`.
 - Generate `tacit-toolchain.toml`, `tacit.toml`, starter units, sidecars,
-  optional stdlib dependency entries, and lockfile.
+  optional stdlib dependency entries, and lockfile. Do not generate `.taca`
+  files.
 - Add executable and library templates.
 - Test that generated projects pass `check`, `lock`, and package tests.
 
@@ -360,12 +367,14 @@ Write an ADR before implementation that decides:
 - Parse `tacit-toolchain.toml`.
 - Validate it in package-aware commands.
 - Add structured diagnostics for mismatches.
-- Decide and implement warning/error behavior for missing pins.
+- Implement ADR 0090's first-export behavior: present mismatched pins are
+  errors, while missing pins are warnings.
 
 ### Stage 6: Release Packaging
 
-- Add a release script or CI workflow that builds the CLI with the pinned LLVM
-  feature, assembles `share/tacit/`, and emits checksums.
+- Add a release script or CI workflow that builds the binary-archive
+  distribution with the pinned LLVM feature, assembles `share/tacit/`, and
+  emits checksums.
 - Add an integration test that runs against an installed or staged toolchain
   outside this repository tree.
 - Document installation and external project setup.
@@ -396,7 +405,10 @@ Additional validation:
 - The exported primer's BLAKE3 hash and token count match release metadata.
 - No validation step reads, lists, or searches `corpus/sealed/`.
 
-## Open Questions
+## Stage 0 Questions
+
+Resolved by [ADR 0090](../decisions/0090-toolchain-release-contract.md);
+retained here as the original Stage 0 question list.
 
 - Should `tacit check` reject missing `tacit-toolchain.toml`, or only warn until
   the first public release?
