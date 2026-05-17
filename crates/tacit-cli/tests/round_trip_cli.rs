@@ -339,6 +339,159 @@ fn stdlib_seed_allows_hash_dependency_without_repo_path() {
         .exists());
 }
 
+#[cfg(feature = "llvm")]
+#[test]
+fn init_executable_project_passes_lock_check_test_and_compile() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let out = tacit(&["init", "hello"], dir.path());
+    assert!(
+        out.status.success(),
+        "init failed\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let project = dir.path().join("hello");
+    assert!(project.join("tacit-toolchain.toml").exists());
+    assert!(project.join("tacit.toml").exists());
+    assert!(project.join("tacit.lock").exists());
+    assert!(project.join("AGENTS.md").exists());
+    assert!(project.join("CLAUDE.md").exists());
+    assert!(project.join("src/main.tac").exists());
+    assert!(project.join("src/main.tacd").exists());
+    assert!(
+        !project.join("src/main.taca").exists(),
+        "init must not generate .taca files"
+    );
+
+    let manifest = std::fs::read_to_string(project.join("tacit.toml")).unwrap();
+    assert!(manifest.contains("[exports]"), "{manifest}");
+    assert!(manifest.contains("[bin]"), "{manifest}");
+    assert!(manifest.contains("[[tests]]"), "{manifest}");
+
+    let pin = std::fs::read_to_string(project.join("tacit-toolchain.toml")).unwrap();
+    assert!(pin.contains("format = \"tacit-toolchain-pin-v1\""), "{pin}");
+    assert!(pin.contains("\"tacit.text\" = \"blake3:"), "{pin}");
+    let agents = std::fs::read_to_string(project.join("AGENTS.md")).unwrap();
+    assert!(agents.contains("tacit primer"), "{agents}");
+    assert_eq!(
+        agents,
+        std::fs::read_to_string(project.join("CLAUDE.md")).unwrap()
+    );
+
+    let check = tacit(&["check", ".", "--format", "json"], &project);
+    assert!(
+        check.status.success(),
+        "check failed\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&check.stdout),
+        String::from_utf8_lossy(&check.stderr)
+    );
+    let lock = tacit(&["lock", "."], &project);
+    assert!(
+        lock.status.success(),
+        "lock failed\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&lock.stdout),
+        String::from_utf8_lossy(&lock.stderr)
+    );
+    let tests = tacit(&["test", ".", "--format", "json"], &project);
+    assert!(
+        tests.status.success(),
+        "test failed\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&tests.stdout),
+        String::from_utf8_lossy(&tests.stderr)
+    );
+    let test_json: Value = serde_json::from_slice(&tests.stdout).unwrap();
+    assert_eq!(test_json["outcome"], "pass");
+    assert_eq!(test_json["summary"]["pass"], 1);
+
+    let compile = tacit(&["compile", ".", "--emit-llvm-ir"], &project);
+    assert!(
+        compile.status.success(),
+        "compile failed\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(String::from_utf8_lossy(&compile.stdout).contains("ret i32 0"));
+}
+
+#[cfg(feature = "llvm")]
+#[test]
+fn init_library_with_stdlib_passes_lock_check_test_and_interface_library() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let out = tacit(
+        &["init", "math-lib", "--template", "library", "--with-stdlib"],
+        dir.path(),
+    );
+    assert!(
+        out.status.success(),
+        "init failed\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let project = dir.path().join("math-lib");
+    let manifest = std::fs::read_to_string(project.join("tacit.toml")).unwrap();
+    assert!(manifest.contains("[dependencies]"), "{manifest}");
+    assert!(manifest.contains("text = { hash = \"blake3:"), "{manifest}");
+    assert!(manifest.contains("[exports]"), "{manifest}");
+    assert!(!manifest.contains("[bin]"), "{manifest}");
+    assert!(project.join(".tacit/cache/packages").exists());
+
+    let check = tacit(&["check", ".", "--format", "json"], &project);
+    assert!(
+        check.status.success(),
+        "check failed\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&check.stdout),
+        String::from_utf8_lossy(&check.stderr)
+    );
+    let lock = tacit(&["lock", "."], &project);
+    assert!(
+        lock.status.success(),
+        "lock failed\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&lock.stdout),
+        String::from_utf8_lossy(&lock.stderr)
+    );
+    let tests = tacit(&["test", ".", "--format", "json"], &project);
+    assert!(
+        tests.status.success(),
+        "test failed\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&tests.stdout),
+        String::from_utf8_lossy(&tests.stderr)
+    );
+    let interface = tacit(&["interface", ".", "--emit-library"], &project);
+    assert!(
+        interface.status.success(),
+        "interface failed\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&interface.stdout),
+        String::from_utf8_lossy(&interface.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&interface.stdout).contains(".a"),
+        "{}",
+        String::from_utf8_lossy(&interface.stdout)
+    );
+}
+
+#[test]
+fn init_refuses_non_empty_directory() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let project = dir.path().join("existing");
+    std::fs::create_dir_all(&project).unwrap();
+    std::fs::write(project.join("note.txt"), "keep me\n").unwrap();
+
+    let out = tacit(&["init", "existing"], dir.path());
+    assert!(!out.status.success(), "init should reject non-empty dir");
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("directory is not empty"),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        std::fs::read_to_string(project.join("note.txt")).unwrap(),
+        "keep me\n"
+    );
+}
+
 /// Round-trip: write .taca → canonicalize → render --authoring → canonicalize again.
 /// The two canonical hashes must match (hash stability).
 #[test]

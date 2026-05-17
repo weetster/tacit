@@ -5,6 +5,7 @@ use std::process::Command;
 
 use clap::{Parser, Subcommand, ValueEnum};
 use serde::Serialize;
+use tacit_canonical::ast::Node;
 
 use tacit_typecheck::ty::EffAtom;
 use tacit_typecheck::{
@@ -55,6 +56,20 @@ enum Cmd {
     Stdlib {
         #[command(subcommand)]
         command: StdlibCmd,
+    },
+
+    /// Create a new pinned Tacit project.
+    Init {
+        /// Project directory to create.
+        path: PathBuf,
+
+        /// Add bundled stdlib hash dependencies and seed them into the cache.
+        #[arg(long)]
+        with_stdlib: bool,
+
+        /// Starter project template.
+        #[arg(long, value_enum, value_name = "KIND", default_value = "executable")]
+        template: InitTemplate,
     },
 
     /// Compile a .tac source file to a native executable.
@@ -240,6 +255,14 @@ enum StdlibFormat {
     Json,
 }
 
+#[derive(ValueEnum, Clone, Copy)]
+enum InitTemplate {
+    /// Public Int-returning executable entry.
+    Executable,
+    /// Public scalar function export suitable for host-library output.
+    Library,
+}
+
 #[derive(ValueEnum, Clone)]
 enum TestFormat {
     /// Human-readable summary on stdout (default).
@@ -310,6 +333,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         Cmd::Version { format } => cmd_version(format),
         Cmd::Primer { format, check } => cmd_primer(format, check),
         Cmd::Stdlib { command } => cmd_stdlib(command),
+        Cmd::Init {
+            path,
+            with_stdlib,
+            template,
+        } => cmd_init(path, with_stdlib, template),
         Cmd::Compile {
             input,
             output,
@@ -449,6 +477,345 @@ fn cmd_stdlib(command: StdlibCmd) -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     Ok(())
+}
+
+fn cmd_init(
+    path: PathBuf,
+    with_stdlib: bool,
+    template: InitTemplate,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if path.is_file() {
+        return Err(format!("{}: file already exists", path.display()).into());
+    }
+    if path.is_dir() && path.read_dir()?.next().is_some() {
+        return Err(format!("{}: directory is not empty", path.display()).into());
+    }
+
+    let stdlib = match release::stdlib_list() {
+        Ok(list) => list,
+        Err(diags) => {
+            eprintln!("{}", DiagOutput::new(diags).to_json_string());
+            std::process::exit(1);
+        }
+    };
+    let version = release::version_envelope()?;
+    let package_name = init_package_name(&path);
+    let project = init_project_template(template);
+    let root = path;
+    let src_dir = root.join("src");
+    std::fs::create_dir_all(&src_dir).map_err(|e| format!("{}: {}", src_dir.display(), e))?;
+
+    let unit_bytes = tacit_canonical::emit(&project.unit);
+    let unit_path = src_dir.join("main.tac");
+    std::fs::write(&unit_path, &unit_bytes)
+        .map_err(|e| format!("{}: {}", unit_path.display(), e))?;
+    let sidecar_path = src_dir.join("main.tacd");
+    project
+        .sidecar(&unit_bytes)
+        .write(&sidecar_path)
+        .map_err(|e| format!("{}: {}", sidecar_path.display(), e))?;
+
+    let toolchain_pin = render_toolchain_pin(&version.release_hash, &stdlib);
+    write_text_file(&root.join("tacit-toolchain.toml"), &toolchain_pin)?;
+    write_text_file(
+        &root.join("tacit.toml"),
+        &render_init_manifest(&package_name, &project, with_stdlib, &stdlib),
+    )?;
+    let agent_doc = render_agent_doc(&package_name);
+    write_text_file(&root.join("AGENTS.md"), &agent_doc)?;
+    write_text_file(&root.join("CLAUDE.md"), &agent_doc)?;
+
+    if with_stdlib {
+        if let Err(diags) = release::seed_stdlib(root.clone()) {
+            eprintln!("{}", DiagOutput::new(diags).to_json_string());
+            std::process::exit(1);
+        }
+    }
+
+    match lock_package(&root) {
+        Ok(_) => {
+            println!("created {}", root.display());
+            Ok(())
+        }
+        Err(diags) => {
+            eprintln!("{}", DiagOutput::new(diags).to_json_string());
+            std::process::exit(1);
+        }
+    }
+}
+
+struct InitProject {
+    unit: Node,
+    export_hash: String,
+    test_hash: String,
+    export_alias: &'static str,
+    bin_alias: Option<&'static str>,
+    unit_alias: &'static str,
+}
+
+impl InitProject {
+    fn sidecar(&self, canonical_bytes: &[u8]) -> Sidecar {
+        let mut definition_aliases = BTreeMap::new();
+        definition_aliases.insert(self.export_hash.clone(), self.export_alias.to_string());
+        definition_aliases.insert(self.test_hash.clone(), "template-smoke-test".to_string());
+
+        let mut export_aliases = BTreeMap::new();
+        export_aliases.insert(self.export_hash.clone(), self.export_alias.to_string());
+
+        Sidecar::new(
+            canonical_bytes,
+            SidecarNode {
+                unit_alias: Some(self.unit_alias.to_string()),
+                definition_aliases: Some(definition_aliases),
+                export_aliases: Some(export_aliases),
+                ..Default::default()
+            },
+        )
+    }
+}
+
+fn init_project_template(template: InitTemplate) -> InitProject {
+    match template {
+        InitTemplate::Executable => executable_template(),
+        InitTemplate::Library => library_template(),
+    }
+}
+
+fn executable_template() -> InitProject {
+    let main = Node::Def {
+        sig: Box::new(int_sig()),
+        body: Box::new(Node::Int { value: "0".into() }),
+    };
+    let main_hash = hex_hash_node(&main);
+    let test = Node::Def {
+        sig: Box::new(bool_sig()),
+        body: Box::new(eq_ints(
+            Node::Ref {
+                hash: main_hash.clone(),
+            },
+            Node::Int { value: "0".into() },
+        )),
+    };
+    let test_hash = hex_hash_node(&test);
+    InitProject {
+        unit: Node::Unit {
+            imports: vec![],
+            exports: vec![Node::Export {
+                visibility: "public".into(),
+                hash: main_hash.clone(),
+            }],
+            defs: vec![main, test],
+        },
+        export_hash: main_hash,
+        test_hash,
+        export_alias: "main",
+        bin_alias: Some("main"),
+        unit_alias: "Main",
+    }
+}
+
+fn library_template() -> InitProject {
+    let identity = Node::Def {
+        sig: Box::new(int_to_int_sig()),
+        body: Box::new(Node::Lam {
+            body: Box::new(Node::Var { index: 0 }),
+        }),
+    };
+    let identity_hash = hex_hash_node(&identity);
+    let test = Node::Def {
+        sig: Box::new(bool_sig()),
+        body: Box::new(eq_ints(
+            Node::App {
+                fn_: Box::new(Node::Ref {
+                    hash: identity_hash.clone(),
+                }),
+                arg: Box::new(Node::Int { value: "7".into() }),
+            },
+            Node::Int { value: "7".into() },
+        )),
+    };
+    let test_hash = hex_hash_node(&test);
+    InitProject {
+        unit: Node::Unit {
+            imports: vec![],
+            exports: vec![Node::Export {
+                visibility: "public".into(),
+                hash: identity_hash.clone(),
+            }],
+            defs: vec![identity, test],
+        },
+        export_hash: identity_hash,
+        test_hash,
+        export_alias: "identity",
+        bin_alias: None,
+        unit_alias: "Library",
+    }
+}
+
+fn render_init_manifest(
+    package_name: &str,
+    project: &InitProject,
+    with_stdlib: bool,
+    stdlib: &release::StdlibListEnvelope,
+) -> String {
+    let mut out = String::new();
+    out.push_str("[package]\n");
+    out.push_str(&format!("name = \"{}\"\n", toml_escape(package_name)));
+    out.push_str("version = \"0.1.0\"\n\n");
+
+    if with_stdlib {
+        out.push_str("[dependencies]\n");
+        for package in &stdlib.packages {
+            out.push_str(&format!(
+                "{} = {{ hash = \"{}\", source = {{ registry = \"builtin\", name = \"{}\" }} }}\n",
+                package.short_name,
+                package.hash,
+                toml_escape(&package.name)
+            ));
+        }
+        out.push('\n');
+    }
+
+    out.push_str("[exports]\n");
+    out.push_str(&format!(
+        "{} = \"blake3:{}\"\n\n",
+        project.export_alias, project.export_hash
+    ));
+
+    if let Some(bin_alias) = project.bin_alias {
+        out.push_str("[bin]\n");
+        out.push_str(&format!("{bin_alias} = \"{}\"\n\n", project.export_alias));
+    }
+
+    out.push_str("[[tests]]\n");
+    out.push_str("name = \"template-smoke-test\"\n");
+    out.push_str(&format!("target = \"blake3:{}\"\n", project.test_hash));
+    out
+}
+
+fn render_toolchain_pin(release_hash: &str, stdlib: &release::StdlibListEnvelope) -> String {
+    let mut out = String::new();
+    out.push_str("format = \"tacit-toolchain-pin-v1\"\n\n");
+    out.push_str("[toolchain]\n");
+    out.push_str(&format!("version = \"{}\"\n", release::TOOLCHAIN_VERSION));
+    out.push_str(&format!("release_hash = \"{}\"\n\n", release_hash));
+    out.push_str("[primer]\n");
+    out.push_str(&format!("id = \"{}\"\n", release::PRIMER_ID));
+    out.push_str(&format!("version = \"{}\"\n", release::PRIMER_VERSION));
+    out.push_str(&format!(
+        "toolchain_version = \"{}\"\n",
+        release::PRIMER_TOOLCHAIN_VERSION
+    ));
+    out.push_str(&format!("hash = \"{}\"\n\n", release::PRIMER_HASH));
+    out.push_str("[stdlib]\n");
+    for package in &stdlib.packages {
+        out.push_str(&format!(
+            "\"{}\" = \"{}\"\n",
+            toml_escape(&package.name),
+            package.hash
+        ));
+    }
+    out
+}
+
+fn render_agent_doc(package_name: &str) -> String {
+    format!(
+        "# {package_name} Agent Instructions\n\nThis is a Tacit project pinned by `tacit-toolchain.toml`.\n\n- Use `tacit primer` to fetch the matching Tacit-Lite language primer for this toolchain.\n- Do not copy primer prose from another repository or another toolchain version.\n- Use installed toolchain workflow guidance when tool use is needed.\n- Keep generated source canonical: edit `.tac` plus `.tacd` files, and do not add `.taca` files to this project.\n- Before handing off changes, run `tacit lock`, `tacit check .`, and `tacit test . --format json` when LLVM support is available.\n"
+    )
+}
+
+fn init_package_name(path: &Path) -> String {
+    let raw = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.trim().is_empty())
+        .unwrap_or("tacit-project");
+    let mut out = String::new();
+    let mut previous_dash = false;
+    for ch in raw.chars() {
+        let mapped = if ch.is_ascii_alphanumeric() {
+            ch.to_ascii_lowercase()
+        } else {
+            '-'
+        };
+        if mapped == '-' {
+            if !previous_dash && !out.is_empty() {
+                out.push(mapped);
+            }
+            previous_dash = true;
+        } else {
+            out.push(mapped);
+            previous_dash = false;
+        }
+    }
+    while out.ends_with('-') {
+        out.pop();
+    }
+    if out.is_empty() {
+        "tacit-project".to_string()
+    } else {
+        out
+    }
+}
+
+fn int_sig() -> Node {
+    Node::Sig {
+        type_: Box::new(sym("Int")),
+        eval_eff: Box::new(eff(&[])),
+    }
+}
+
+fn bool_sig() -> Node {
+    Node::Sig {
+        type_: Box::new(sym("Bool")),
+        eval_eff: Box::new(eff(&[])),
+    }
+}
+
+fn int_to_int_sig() -> Node {
+    Node::Sig {
+        type_: Box::new(Node::FnTy {
+            arg: Box::new(sym("Int")),
+            ret: Box::new(sym("Int")),
+            eff: Box::new(eff(&[])),
+        }),
+        eval_eff: Box::new(eff(&[])),
+    }
+}
+
+fn eq_ints(left: Node, right: Node) -> Node {
+    Node::App {
+        fn_: Box::new(Node::App {
+            fn_: Box::new(sym("eq")),
+            arg: Box::new(left),
+        }),
+        arg: Box::new(right),
+    }
+}
+
+fn sym(name: &str) -> Node {
+    Node::Sym { name: name.into() }
+}
+
+fn eff(atoms: &[&str]) -> Node {
+    Node::EffSet {
+        atoms: atoms.iter().map(|atom| (*atom).to_string()).collect(),
+    }
+}
+
+fn hex_hash_node(node: &Node) -> String {
+    tacit_canonical::hash_node(node)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+fn toml_escape(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+fn write_text_file(path: &Path, text: &str) -> Result<(), Box<dyn std::error::Error>> {
+    std::fs::write(path, text.as_bytes()).map_err(|e| format!("{}: {}", path.display(), e).into())
 }
 
 // ---------------------------------------------------------------------------

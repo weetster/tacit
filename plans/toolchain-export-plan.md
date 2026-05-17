@@ -369,6 +369,12 @@ hash-only external-project dependency test.
 
 ### Stage 4: Project Init
 
+**Status:** Complete 2026-05-17. `tacit init` generates pinned executable and
+library projects with canonical source, sidecars, agent docs, optional bundled
+stdlib dependencies, seeded cache entries, and deterministic lockfiles.
+Integration tests cover generated-project `check`, `lock`, package tests,
+executable compile, and library `interface --emit-library`.
+
 - Add `tacit init`.
 - Generate `tacit-toolchain.toml`, `tacit.toml`, starter units, sidecars,
   optional stdlib dependency entries, and lockfile. Do not generate `.taca`
