@@ -1,0 +1,24 @@
+[package]
+name = "tacit-embedding-demo-kernel"
+version = "0.0.0"
+
+[exports]
+decode-op = "blake3:6801ba1a7002828247c6f4fd9b07c8e0f85f160f8f6c25b04f58716448b701f0"
+log-acc = "blake3:9ffd5f694710e069a322d0f1e21246944530766c9539a3c92e50881f7b0962f7"
+step-cpu = "blake3:1084b19ec62ce94e4f788305f08a18cc31efb8939c71d4e7319b8991c2f5a5a3"
+
+[[tests]]
+name = "test_decode_op_low_nibble"
+target = "blake3:2a553c5cac9a81c4875e45983b2d926fcfb1843fcbe8a86e1f87577b69b4eaa7"
+
+[[tests]]
+name = "test_step_add"
+target = "blake3:912c3c42bcab87e95a17ac1fcdd280754061fca79274d17ad8e93942a3ba2f53"
+
+[[tests]]
+name = "test_step_load"
+target = "blake3:1641442266c71c589cc9790b3817155a08594c044f08ca1a4ea3c37295c7da0b"
+
+[[tests]]
+name = "test_step_nop"
+target = "blake3:d5133b923c13e9f3eaceefdb5dc93990315d38ef423f7276a16c9885071b2ae7"

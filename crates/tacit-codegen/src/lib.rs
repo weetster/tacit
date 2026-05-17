@@ -36,4 +36,7 @@ pub mod compile;
 pub use error::CodegenError;
 
 #[cfg(feature = "llvm")]
-pub use compile::{compile_to_ir_string, compile_to_object, Compiler};
+pub use compile::{
+    compile_library_to_ir_string, compile_library_to_object, compile_to_ir_string,
+    compile_to_object, Compiler,
+};

@@ -1,0 +1,17 @@
+[package]
+name = "tacit-embedding-demo-host"
+version = "0.1.0"
+edition = "2021"
+description = "Phase 6 Stage 11 embedding demo: Rust host that links a Tacit kernel through the constrained host ABI"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[[bin]]
+name = "tacit-embedding-demo-host"
+path = "src/main.rs"
+
+[dependencies]
+
+[build-dependencies]
+tacit-typecheck = { path = "../../../../crates/tacit-typecheck" }
+tacit-codegen = { path = "../../../../crates/tacit-codegen", features = ["llvm19-1"] }

@@ -76,6 +76,13 @@ enum Cmd {
         /// Host target. Phase 6 supports native; wasm is rejected.
         #[arg(long, value_enum, value_name = "TARGET", default_value = "native")]
         target: InterfaceTarget,
+
+        /// Emit a linkable static library under .tacit/derived/.../host/.
+        /// Stage 11 supports scalar-only boundary types; records and borrowed
+        /// vectors at the boundary are diagnostics for the library backend
+        /// even when interface.json accepts them.
+        #[arg(long)]
+        emit_library: bool,
     },
 
     /// Regenerate tacit.lock for a package root.
@@ -237,7 +244,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         } => cmd_compile(input, output, entry, emit_llvm_ir),
         Cmd::Check { input, format } => cmd_check(input, format),
         Cmd::Test { input, format } => cmd_test(input, format),
-        Cmd::Interface { input, target } => cmd_interface(input, target),
+        Cmd::Interface {
+            input,
+            target,
+            emit_library,
+        } => cmd_interface(input, target, emit_library),
         Cmd::Lock { input } => cmd_lock(input),
         Cmd::Cache { command } => cmd_cache(command),
         Cmd::Canonicalize {
@@ -1018,6 +1029,7 @@ fn write_test_results(tests_dir: Option<&Path>, envelope: &TestEnvelope) {
 fn cmd_interface(
     input: PathBuf,
     target: InterfaceTarget,
+    emit_library: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let target = match target {
         InterfaceTarget::Native => HostTarget::Native,
@@ -1030,18 +1042,80 @@ fn cmd_interface(
             std::process::exit(1);
         }
     };
-    match write_host_interface(&package, target) {
-        Ok((_interface, outputs)) => {
-            println!("{}", outputs.metadata_path.display());
-            println!("{}", outputs.c_header_path.display());
-            println!("{}", outputs.rust_bindings_path.display());
-        }
+    let outputs = match write_host_interface(&package, target) {
+        Ok((_interface, outputs)) => outputs,
         Err(diags) => {
             eprintln!("{}", DiagOutput::new(diags).to_json_string());
             std::process::exit(1);
         }
+    };
+    println!("{}", outputs.metadata_path.display());
+    println!("{}", outputs.c_header_path.display());
+    println!("{}", outputs.rust_bindings_path.display());
+
+    if emit_library {
+        let library = match tacit_typecheck::package_library(&package, target) {
+            Ok((_, library)) => library,
+            Err(diags) => {
+                eprintln!("{}", DiagOutput::new(diags).to_json_string());
+                std::process::exit(1);
+            }
+        };
+        let lib_path = emit_static_library(&library, &outputs.c_header_path)?;
+        println!("{}", lib_path.display());
     }
     Ok(())
+}
+
+#[cfg(feature = "llvm")]
+fn emit_static_library(
+    library: &tacit_typecheck::PackageLibrary,
+    header_path: &Path,
+) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    use tacit_codegen::compile_library_to_object;
+
+    let derived_dir = header_path
+        .parent()
+        .ok_or("interface header has no parent directory")?;
+    let build_dir = derived_dir.join("build");
+    std::fs::create_dir_all(&build_dir).map_err(|e| format!("{}: {}", build_dir.display(), e))?;
+    let module_name = format!("tacit_lib_{}", &library.package_hash[..12]);
+    let obj_path = build_dir.join(format!("{module_name}.o"));
+    compile_library_to_object(library, &module_name, &obj_path)?;
+
+    let archive_name = format!("lib{}.a", library.package_prefix);
+    let archive_path = derived_dir.join(&archive_name);
+    let ar_tool = pick_archiver()
+        .ok_or("no archiver found (ar/llvm-ar); install binutils to assemble static libraries")?;
+    let _ = std::fs::remove_file(&archive_path);
+    let status = Command::new(&ar_tool)
+        .arg("rcs")
+        .arg(&archive_path)
+        .arg(&obj_path)
+        .status()
+        .map_err(|e| format!("failed to invoke archiver {}: {}", ar_tool, e))?;
+    if !status.success() {
+        return Err(format!("archiver {} exited with {}", ar_tool, status).into());
+    }
+    Ok(archive_path)
+}
+
+#[cfg(not(feature = "llvm"))]
+fn emit_static_library(
+    _library: &tacit_typecheck::PackageLibrary,
+    _header_path: &Path,
+) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    Err("tacit was not built with LLVM support (rebuild with --features llvm19-1)".into())
+}
+
+#[cfg(feature = "llvm")]
+fn pick_archiver() -> Option<String> {
+    for cand in ["ar", "llvm-ar"] {
+        if cmd_on_path(cand) {
+            return Some(cand.to_string());
+        }
+    }
+    None
 }
 
 fn effect_strings(effects: &EffSet) -> Vec<String> {

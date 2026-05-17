@@ -5,5 +5,7 @@ members = [
     "crates/tacit-views",
     "crates/tacit-typecheck",
     "crates/tacit-cli",
+    "tools/stage11_demo_gen",
+    "examples/phase-6/embedding-demo/host",
 ]
 resolver = "2"

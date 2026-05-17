@@ -22,7 +22,7 @@ fn workspace_root() -> PathBuf {
 }
 
 fn collect_tac_files(dir: &PathBuf, out: &mut Vec<PathBuf>) {
-    if dir.ends_with("corpus/sealed") {
+    if dir.ends_with("corpus/sealed") || dir.ends_with(".tacit") {
         return;
     }
 
@@ -32,7 +32,7 @@ fn collect_tac_files(dir: &PathBuf, out: &mut Vec<PathBuf>) {
     };
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.ends_with("corpus/sealed") {
+        if path.ends_with("corpus/sealed") || path.ends_with(".tacit") {
             continue;
         }
         if path.is_dir() {

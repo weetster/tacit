@@ -27,3 +27,8 @@ plans/phase-3-results/failures/
 plans/phase-3-results/*.outputs/
 
 .env
+
+# Tacit per-project derived/cache directories produced by `tacit check`,
+# `tacit interface`, `tacit test`, etc. These live next to package roots and
+# are always regenerable.
+.tacit/

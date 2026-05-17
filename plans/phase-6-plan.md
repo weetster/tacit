@@ -860,7 +860,11 @@ Exit criteria:
 
 ## Stage 11: Embedding Demo And Systems Example
 
-**Status:** Planned
+**Status:** Complete 2026-05-16. Linkable-library codegen, `tacit interface
+--emit-library` CLI, and the Rust embedding demo land together; the host
+links the Tacit kernel through the ADR 0088 ABI, satisfies a host import,
+and calls each public export. The kernel runs its package tests under
+`tacit test` and the full demo runs in CI.
 
 **Purpose:** Prove the Phase 6 end-to-end story without expanding into a full
 emulator, GUI framework, or Phase 7 tooling project.
@@ -885,6 +889,52 @@ Exit criteria:
 - The host owns platform-like capabilities; Tacit owns the typed logic kernel.
 - The systems example demonstrates emulator-style expressiveness without being
   a full emulator.
+
+Outcome:
+
+- Codegen gained a Stage 11 library-emission path
+  (`tacit_codegen::compile_library_to_object`) that produces an LLVM object
+  per package: one extern "C" wrapper per public export with the
+  `tacit_status` return / per-package context / out-pointer signature from
+  ADR 0088, plus one private dispatch function per reachable host import
+  that loads the per-package thread-local context pointer and calls through
+  the callbacks struct, trapping on a null context or null callback.
+- The typechecker gained a `package_library` helper that translates a Stage
+  10 host interface into the codegen-friendly library spec (per-export
+  expanded body with host-import refs left as `Ref` nodes, sorted-by-hash
+  callback indices, scalar boundary types). Non-scalar boundary types and
+  unsupported targets are rejected with `abi-library-unsupported-type` and
+  `abi-unsupported-target` diagnostics; the wider Stage 10 interface
+  generation still accepts records and borrowed vectors so the headers and
+  Rust bindings remain complete.
+- The Stage 10 project graph helper grew
+  `project_definition_expression_with_leaves`, which threads a "leaf hash
+  set" through `expand_refs` so host-import refs survive expansion. This
+  lets the existing project-graph machinery feed the library codegen
+  without conflating definitions and imports.
+- The `tacit interface` CLI gained an `--emit-library` flag that drives the
+  new pipeline end-to-end, writing the object file plus `libtacit_p_<pkg>.a`
+  alongside the interface metadata and bindings.
+- The systems-shaped Tacit kernel lives at
+  `examples/phase-6/embedding-demo/kernel/`. It exports `decode-op`,
+  `step-cpu`, and `log-acc`; the kernel declares one host import
+  (`demo.log / write-byte`) and includes four `Bool` package tests that
+  exercise the pure exports through `tacit test`. The companion generator
+  `tools/stage11_demo_gen/` regenerates `lib.tac` and `tacit.toml` with
+  matching definition hashes.
+- The Rust host crate at `examples/phase-6/embedding-demo/host/` has a
+  `build.rs` that loads the kernel package, generates the bindings and
+  the static library under `OUT_DIR`, links the archive, and runs a
+  small program through every public export plus the host-provided log
+  callback. CI builds and runs the host binary, asserts the printed
+  transcript, and checks the package tests through stable JSON output.
+- Stage 11 deliberately restricts the library codegen subset to scalar
+  boundary types; records and borrowed typed vectors remain in
+  `interface.json` and the generated headers but produce
+  `abi-library-unsupported-type` diagnostics if used at a boundary. Stage
+  12 records that gap, along with closure-environment allocation in
+  private bodies and the absence of any optimizer pipeline, as Phase 8
+  performance work.
 
 ## Stage 12: Primer, Evaluation, And Freeze
 

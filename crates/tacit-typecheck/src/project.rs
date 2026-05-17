@@ -378,7 +378,27 @@ pub fn project_definition_expression(
     }
 
     let mut stack = Vec::new();
-    let expression = expanded_definition_body(graph, hash, &mut stack)?;
+    let expression = expanded_definition_body(graph, hash, &mut stack, &BTreeSet::new())?;
+    Ok(ProjectEntry {
+        hash: definition.hash.clone(),
+        expression,
+    })
+}
+
+/// Expand a definition body but leave `Ref` nodes whose hash is in `leaves`
+/// in place. Used by Stage 11 host-library codegen so host-import refs can be
+/// dispatched through the callback table rather than being expanded inline.
+pub fn project_definition_expression_with_leaves(
+    graph: &ProjectGraph,
+    hash: &str,
+    leaves: &BTreeSet<String>,
+) -> Result<ProjectEntry, ProjectEntryError> {
+    let definition = graph
+        .definitions
+        .get(hash)
+        .ok_or_else(|| ProjectEntryError::MissingDefinition(hash.to_string()))?;
+    let mut stack = Vec::new();
+    let expression = expanded_definition_body(graph, hash, &mut stack, leaves)?;
     Ok(ProjectEntry {
         hash: definition.hash.clone(),
         expression,
@@ -748,6 +768,7 @@ fn expanded_definition_body(
     graph: &ProjectGraph,
     hash: &str,
     stack: &mut Vec<String>,
+    leaves: &BTreeSet<String>,
 ) -> Result<Node, ProjectEntryError> {
     if let Some(start) = stack.iter().position(|entry| entry == hash) {
         let mut cycle = stack[start..].to_vec();
@@ -764,7 +785,7 @@ fn expanded_definition_body(
     };
 
     stack.push(hash.to_string());
-    let expanded = expand_refs(graph, body, stack, 0)?;
+    let expanded = expand_refs(graph, body, stack, 0, leaves)?;
     stack.pop();
     Ok(expanded)
 }
@@ -774,31 +795,33 @@ fn expand_refs(
     node: &Node,
     stack: &mut Vec<String>,
     depth: u64,
+    leaves: &BTreeSet<String>,
 ) -> Result<Node, ProjectEntryError> {
     match node {
+        Node::Ref { hash } if leaves.contains(hash) => Ok(Node::Ref { hash: hash.clone() }),
         Node::Ref { hash } => {
-            let expanded = expanded_definition_body(graph, hash, stack)?;
+            let expanded = expanded_definition_body(graph, hash, stack, leaves)?;
             Ok(shift_free_vars(&expanded, 0, depth))
         }
         Node::Lam { body } => Ok(Node::Lam {
-            body: Box::new(expand_refs(graph, body, stack, depth + 1)?),
+            body: Box::new(expand_refs(graph, body, stack, depth + 1, leaves)?),
         }),
         Node::App { fn_, arg } => Ok(Node::App {
-            fn_: Box::new(expand_refs(graph, fn_, stack, depth)?),
-            arg: Box::new(expand_refs(graph, arg, stack, depth)?),
+            fn_: Box::new(expand_refs(graph, fn_, stack, depth, leaves)?),
+            arg: Box::new(expand_refs(graph, arg, stack, depth, leaves)?),
         }),
         Node::Let { rhs, body } => Ok(Node::Let {
-            rhs: Box::new(expand_refs(graph, rhs, stack, depth)?),
-            body: Box::new(expand_refs(graph, body, stack, depth + 1)?),
+            rhs: Box::new(expand_refs(graph, rhs, stack, depth, leaves)?),
+            body: Box::new(expand_refs(graph, body, stack, depth + 1, leaves)?),
         }),
         Node::Rec { bindings, body } => {
             let inner = depth + bindings.len() as u64;
             Ok(Node::Rec {
                 bindings: bindings
                     .iter()
-                    .map(|binding| expand_refs(graph, binding, stack, inner))
+                    .map(|binding| expand_refs(graph, binding, stack, inner, leaves))
                     .collect::<Result<Vec<_>, _>>()?,
-                body: Box::new(expand_refs(graph, body, stack, inner)?),
+                body: Box::new(expand_refs(graph, body, stack, inner, leaves)?),
             })
         }
         Node::Module { bindings } => {
@@ -806,20 +829,20 @@ fn expand_refs(
             Ok(Node::Module {
                 bindings: bindings
                     .iter()
-                    .map(|binding| expand_refs(graph, binding, stack, inner))
+                    .map(|binding| expand_refs(graph, binding, stack, inner, leaves))
                     .collect::<Result<Vec<_>, _>>()?,
             })
         }
         Node::If { cond, then, else_ } => Ok(Node::If {
-            cond: Box::new(expand_refs(graph, cond, stack, depth)?),
-            then: Box::new(expand_refs(graph, then, stack, depth)?),
-            else_: Box::new(expand_refs(graph, else_, stack, depth)?),
+            cond: Box::new(expand_refs(graph, cond, stack, depth, leaves)?),
+            then: Box::new(expand_refs(graph, then, stack, depth, leaves)?),
+            else_: Box::new(expand_refs(graph, else_, stack, depth, leaves)?),
         }),
         Node::Match { scrutinee, arms } => Ok(Node::Match {
-            scrutinee: Box::new(expand_refs(graph, scrutinee, stack, depth)?),
+            scrutinee: Box::new(expand_refs(graph, scrutinee, stack, depth, leaves)?),
             arms: arms
                 .iter()
-                .map(|arm| expand_refs(graph, arm, stack, depth))
+                .map(|arm| expand_refs(graph, arm, stack, depth, leaves))
                 .collect::<Result<Vec<_>, _>>()?,
         }),
         Node::Arm { pattern, body } => Ok(Node::Arm {
@@ -829,32 +852,38 @@ fn expand_refs(
                 body,
                 stack,
                 depth + count_pat_vars(pattern),
+                leaves,
             )?),
         }),
         Node::Record { fields } => Ok(Node::Record {
             fields: fields
                 .iter()
-                .map(|(name, value)| Ok((name.clone(), expand_refs(graph, value, stack, depth)?)))
+                .map(|(name, value)| {
+                    Ok((
+                        name.clone(),
+                        expand_refs(graph, value, stack, depth, leaves)?,
+                    ))
+                })
                 .collect::<Result<Vec<_>, ProjectEntryError>>()?,
         }),
         Node::Proj { record, field } => Ok(Node::Proj {
-            record: Box::new(expand_refs(graph, record, stack, depth)?),
+            record: Box::new(expand_refs(graph, record, stack, depth, leaves)?),
             field: field.clone(),
         }),
         Node::Ctor { name, args } => Ok(Node::Ctor {
             name: name.clone(),
             args: args
                 .iter()
-                .map(|arg| expand_refs(graph, arg, stack, depth))
+                .map(|arg| expand_refs(graph, arg, stack, depth, leaves))
                 .collect::<Result<Vec<_>, _>>()?,
         }),
         Node::Ann { expr, type_ } => Ok(Node::Ann {
-            expr: Box::new(expand_refs(graph, expr, stack, depth)?),
+            expr: Box::new(expand_refs(graph, expr, stack, depth, leaves)?),
             type_: type_.clone(),
         }),
         Node::Def { sig, body } => Ok(Node::Def {
             sig: sig.clone(),
-            body: Box::new(expand_refs(graph, body, stack, depth)?),
+            body: Box::new(expand_refs(graph, body, stack, depth, leaves)?),
         }),
         _ => Ok(node.clone()),
     }

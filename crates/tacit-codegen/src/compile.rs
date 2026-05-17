@@ -110,6 +110,11 @@ pub struct Compiler<'ctx> {
     /// hoisting order; collisions across compilation units are not a
     /// Phase 1 concern (no link-step deduplication).
     next_fn_id: usize,
+    /// Stage 11 host-import dispatch functions, keyed by host_import_hash.
+    /// When `Ref { hash }` is encountered during expression compilation and
+    /// the hash matches, the registered direct-call function lowers as a
+    /// callback-table indirect call into the host context.
+    host_imports: std::collections::BTreeMap<String, FunctionBinding<'ctx>>,
 }
 
 /// Per-binder entry on the binding stack. Innermost binder is `last`.
@@ -268,6 +273,7 @@ impl<'ctx> Compiler<'ctx> {
             module,
             builder,
             next_fn_id: 0,
+            host_imports: std::collections::BTreeMap::new(),
         }
     }
 
@@ -424,6 +430,14 @@ impl<'ctx> Compiler<'ctx> {
             | Node::EffVar { .. } => Err(CodegenError::Unsupported(
                 "type expression in value position",
             )),
+            Node::Ref { hash } => {
+                if let Some(binding) = self.host_imports.get(hash).cloned() {
+                    return self.reify_function_binding(&binding, cur_fn);
+                }
+                Err(CodegenError::Unsupported(
+                    "unit artifact node in value position",
+                ))
+            }
             Node::Imports { .. }
             | Node::Import { .. }
             | Node::HostImport { .. }
@@ -431,8 +445,7 @@ impl<'ctx> Compiler<'ctx> {
             | Node::Export { .. }
             | Node::Defs { .. }
             | Node::Def { .. }
-            | Node::Sig { .. }
-            | Node::Ref { .. } => Err(CodegenError::Unsupported(
+            | Node::Sig { .. } => Err(CodegenError::Unsupported(
                 "unit artifact node in value position",
             )),
         }
@@ -838,6 +851,21 @@ impl<'ctx> Compiler<'ctx> {
 
         match head {
             Node::Sym { name } => self.compile_primitive_call(name, &args, env, cur_fn),
+            Node::Ref { hash } => {
+                if let Some(binding) = self.host_imports.get(hash).cloned() {
+                    let arg_vals = self.compile_call_args(&args, env, cur_fn)?;
+                    if args.len() == binding.arity() {
+                        self.call_function(&binding, &arg_vals)
+                    } else {
+                        let closure = self.reify_function_binding(&binding, cur_fn)?;
+                        self.call_closure_spine(closure, &arg_vals)
+                    }
+                } else {
+                    Err(CodegenError::Unsupported(
+                        "ref to unknown definition in app head",
+                    ))
+                }
+            }
             Node::Lam { .. } | Node::Ann { .. } => {
                 let (arity, lam_body, ann_ty) =
                     collect_annotated_lam_chain(head).ok_or(CodegenError::AppNonFunction)?;
@@ -8040,4 +8068,463 @@ fn lookup_var<'a, 'ctx>(env: &'a [Binding<'ctx>], idx: u64) -> Result<&'a Bindin
         return Err(CodegenError::FreeVarInLambda { index: idx });
     }
     Ok(&env[i])
+}
+
+// =========================================================================
+// Stage 11: Host-library emission per ADR 0088.
+//
+// `compile_library_to_object` accepts a `PackageLibrary` (built by the
+// typechecker from a checked package + its host interface) and emits an
+// LLVM object exposing one extern "C" wrapper per public export. Host
+// imports are dispatched indirectly through a per-package thread-local
+// pointer to the host-supplied `tacit_p_<pkg>_context` struct.
+// =========================================================================
+
+use tacit_typecheck::library::{
+    LibReturn, LibScalar, LibraryExport, LibraryImport, PackageLibrary,
+};
+
+const TACIT_STATUS_OK: u64 = 0;
+const TACIT_STATUS_BAD_ARGUMENT: u64 = 1;
+
+pub fn compile_library_to_object(
+    spec: &PackageLibrary,
+    module_name: &str,
+    out_path: &Path,
+) -> Result<()> {
+    let context = Context::create();
+    let mut compiler = Compiler::new(&context, module_name);
+    compiler.compile_package_library(spec)?;
+    compiler.write_object(out_path)
+}
+
+pub fn compile_library_to_ir_string(spec: &PackageLibrary, module_name: &str) -> Result<String> {
+    let context = Context::create();
+    let mut compiler = Compiler::new(&context, module_name);
+    compiler.compile_package_library(spec)?;
+    Ok(compiler.print_to_string())
+}
+
+impl<'ctx> Compiler<'ctx> {
+    pub fn compile_package_library(&mut self, spec: &PackageLibrary) -> Result<()> {
+        let ptr_t = self.context.ptr_type(AddressSpace::default());
+
+        // {ptr user, ptr callbacks}. Per-package by hash.
+        let ctx_struct_ty = self
+            .context
+            .struct_type(&[ptr_t.into(), ptr_t.into()], false);
+
+        let callback_field_count = spec.imports.len().max(1);
+        let callback_fields: Vec<BasicTypeEnum<'ctx>> =
+            (0..callback_field_count).map(|_| ptr_t.into()).collect();
+        let callbacks_struct_ty = self.context.struct_type(&callback_fields, false);
+
+        let tls_name = format!("{}_current_ctx", spec.package_prefix);
+        let tls_global = self.module.add_global(ptr_t, None, &tls_name);
+        tls_global.set_thread_local(true);
+        tls_global.set_initializer(&ptr_t.const_null());
+        tls_global.set_linkage(Linkage::Internal);
+
+        for import in &spec.imports {
+            self.compile_host_import_trampoline(
+                import,
+                &spec.package_prefix,
+                ctx_struct_ty,
+                callbacks_struct_ty,
+                tls_global,
+            )?;
+        }
+
+        for export in &spec.exports {
+            self.compile_library_export(export, ctx_struct_ty, tls_global)?;
+        }
+
+        self.module
+            .verify()
+            .map_err(|e| CodegenError::Llvm(e.to_string_lossy().into_owned()))?;
+        Ok(())
+    }
+
+    fn compile_host_import_trampoline(
+        &mut self,
+        import: &LibraryImport,
+        _package_prefix: &str,
+        ctx_struct_ty: inkwell::types::StructType<'ctx>,
+        callbacks_struct_ty: inkwell::types::StructType<'ctx>,
+        tls_global: inkwell::values::GlobalValue<'ctx>,
+    ) -> Result<()> {
+        let ptr_t = self.context.ptr_type(AddressSpace::default());
+        let i32_t = self.context.i32_type();
+        let i64_t = self.context.i64_type();
+
+        // Trampoline LLVM signature uses the Tacit codegen's normalized i64
+        // for every scalar; the wrapper itself widens/narrows for the C ABI.
+        let param_count = import.params.len();
+        let trampoline_params: Vec<BasicMetadataTypeEnum<'ctx>> =
+            (0..param_count).map(|_| i64_t.into()).collect();
+        let trampoline_fn_ty = i64_t.fn_type(&trampoline_params, false);
+        let trampoline_name = format!("{}_dispatch", import.callback);
+        let trampoline_fn =
+            self.module
+                .add_function(&trampoline_name, trampoline_fn_ty, Some(Linkage::Private));
+
+        let saved_block = self.builder.get_insert_block();
+        let entry_bb = self.context.append_basic_block(trampoline_fn, "entry");
+        let abort_bb = self.context.append_basic_block(trampoline_fn, "abort");
+        let load_callbacks_bb = self
+            .context
+            .append_basic_block(trampoline_fn, "load_callbacks");
+        let load_fn_bb = self.context.append_basic_block(trampoline_fn, "load_fn");
+        let do_call_bb = self.context.append_basic_block(trampoline_fn, "do_call");
+        let read_out_bb = self.context.append_basic_block(trampoline_fn, "read_out");
+
+        self.builder.position_at_end(entry_bb);
+        let ctx_ptr = self
+            .builder
+            .build_load(ptr_t, tls_global.as_pointer_value(), "ctx")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?
+            .into_pointer_value();
+        let ctx_null = self
+            .builder
+            .build_is_null(ctx_ptr, "ctx_null")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(ctx_null, abort_bb, load_callbacks_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(abort_bb);
+        let trap = self.llvm_trap();
+        self.builder
+            .build_call(trap, &[], "tacit_host_trap")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_unreachable()
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(load_callbacks_bb);
+        let callbacks_pp = self
+            .builder
+            .build_struct_gep(ctx_struct_ty, ctx_ptr, 1, "callbacks_pp")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let callbacks_ptr = self
+            .builder
+            .build_load(ptr_t, callbacks_pp, "callbacks")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?
+            .into_pointer_value();
+        let callbacks_null = self
+            .builder
+            .build_is_null(callbacks_ptr, "callbacks_null")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(callbacks_null, abort_bb, load_fn_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(load_fn_bb);
+        let fn_pp = self
+            .builder
+            .build_struct_gep(
+                callbacks_struct_ty,
+                callbacks_ptr,
+                import.index as u32,
+                "fn_pp",
+            )
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let fn_ptr = self
+            .builder
+            .build_load(ptr_t, fn_pp, "callback_fn")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?
+            .into_pointer_value();
+        let fn_null = self
+            .builder
+            .build_is_null(fn_ptr, "callback_null")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(fn_null, abort_bb, do_call_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(do_call_bb);
+        let user_pp = self
+            .builder
+            .build_struct_gep(ctx_struct_ty, ctx_ptr, 0, "user_pp")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let user_ptr = self
+            .builder
+            .build_load(ptr_t, user_pp, "user")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?
+            .into_pointer_value();
+
+        let mut c_param_metas: Vec<BasicMetadataTypeEnum<'ctx>> = vec![ptr_t.into()];
+        let mut c_args: Vec<BasicMetadataValueEnum<'ctx>> = vec![user_ptr.into()];
+        for (i, scalar) in import.params.iter().enumerate() {
+            let c_ty = scalar_int_type(self.context, *scalar);
+            c_param_metas.push(c_ty.into());
+            let raw_arg = trampoline_fn
+                .get_nth_param(i as u32)
+                .ok_or_else(|| CodegenError::Llvm(format!("trampoline missing arg {i}")))?;
+            let i64_val = raw_arg.into_int_value();
+            let c_val = trunc_i64_to_scalar(&self.builder, i64_val, c_ty, *scalar)?;
+            c_args.push(c_val.into());
+        }
+
+        let result_out_alloca = match &import.result {
+            LibReturn::Unit => None,
+            LibReturn::Scalar(scalar) => {
+                let ty = scalar_int_type(self.context, *scalar);
+                c_param_metas.push(ptr_t.into());
+                let saved_ip = self.builder.get_insert_block().unwrap();
+                let alloca_bb = trampoline_fn.get_first_basic_block().unwrap();
+                if let Some(first_inst) = alloca_bb.get_first_instruction() {
+                    self.builder.position_before(&first_inst);
+                } else {
+                    self.builder.position_at_end(alloca_bb);
+                }
+                let alloca = self
+                    .builder
+                    .build_alloca(ty, "callback_out")
+                    .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+                self.builder.position_at_end(saved_ip);
+                c_args.push(alloca.into());
+                Some((alloca, ty, *scalar))
+            }
+        };
+
+        let c_fn_ty = i32_t.fn_type(&c_param_metas, false);
+        let call_site = self
+            .builder
+            .build_indirect_call(c_fn_ty, fn_ptr, &c_args, "host_callback")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let status = call_site
+            .try_as_basic_value()
+            .basic()
+            .ok_or_else(|| CodegenError::Llvm("host callback returned no value".into()))?
+            .into_int_value();
+        let ok_const = i32_t.const_int(TACIT_STATUS_OK, false);
+        let is_ok = self
+            .builder
+            .build_int_compare(IntPredicate::EQ, status, ok_const, "status_ok")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(is_ok, read_out_bb, abort_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(read_out_bb);
+        let result_i64 = match result_out_alloca {
+            None => i64_t.const_zero(),
+            Some((alloca, ty, scalar)) => {
+                let raw = self
+                    .builder
+                    .build_load(ty, alloca, "result_raw")
+                    .map_err(|e| CodegenError::Llvm(e.to_string()))?
+                    .into_int_value();
+                extend_scalar_to_i64(&self.builder, raw, i64_t, scalar)?
+            }
+        };
+        self.builder
+            .build_return(Some(&result_i64))
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        if let Some(saved) = saved_block {
+            self.builder.position_at_end(saved);
+        }
+
+        let binding = FunctionBinding {
+            value: trampoline_fn,
+            param_tys: vec![ValueTy::Int; param_count],
+            ret_ty: ValueTy::Int,
+            captures: Vec::new(),
+            closure_template: None,
+        };
+        self.host_imports.insert(import.hash.clone(), binding);
+        Ok(())
+    }
+
+    fn compile_library_export(
+        &mut self,
+        export: &LibraryExport,
+        _ctx_struct_ty: inkwell::types::StructType<'ctx>,
+        tls_global: inkwell::values::GlobalValue<'ctx>,
+    ) -> Result<()> {
+        let ptr_t = self.context.ptr_type(AddressSpace::default());
+        let i32_t = self.context.i32_type();
+        let i64_t = self.context.i64_type();
+
+        // Peel any leading Ann nodes; the export body may carry an annotation
+        // that helps the typechecker propagate signature info but is opaque
+        // to codegen.
+        let mut peeled = &export.body;
+        while let Node::Ann { expr, .. } = peeled {
+            peeled = expr.as_ref();
+        }
+        let (lam_arity, body) = collect_lam_chain(peeled)
+            .ok_or(CodegenError::Unsupported("export body is not a lambda"))?;
+        if lam_arity != export.params.len() {
+            return Err(CodegenError::FunctionArity {
+                expected: export.params.len(),
+                got: lam_arity,
+            });
+        }
+
+        let param_tys: Vec<ValueTy> = (0..lam_arity).map(|_| ValueTy::Int).collect();
+        let hoisted = self.hoist_lambda(body, param_tys, ValueTy::Int, "lib_export", None)?;
+
+        let mut wrapper_params: Vec<BasicMetadataTypeEnum<'ctx>> = vec![ptr_t.into()];
+        for scalar in &export.params {
+            wrapper_params.push(scalar_int_type(self.context, *scalar).into());
+        }
+        let has_out = matches!(export.result, LibReturn::Scalar(_));
+        if has_out {
+            wrapper_params.push(ptr_t.into());
+        }
+        let wrapper_ty = i32_t.fn_type(&wrapper_params, false);
+        let wrapper_fn =
+            self.module
+                .add_function(&export.symbol, wrapper_ty, Some(Linkage::External));
+
+        let saved_block = self.builder.get_insert_block();
+        let entry_bb = self.context.append_basic_block(wrapper_fn, "entry");
+        let bad_arg_bb = self.context.append_basic_block(wrapper_fn, "bad_arg");
+        let run_bb = self.context.append_basic_block(wrapper_fn, "run");
+
+        self.builder.position_at_end(entry_bb);
+        let ctx_in = wrapper_fn
+            .get_nth_param(0)
+            .ok_or_else(|| CodegenError::Llvm("wrapper missing ctx".into()))?
+            .into_pointer_value();
+        let ctx_null = self
+            .builder
+            .build_is_null(ctx_in, "ctx_null")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(ctx_null, bad_arg_bb, run_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(bad_arg_bb);
+        let bad_arg_const = i32_t.const_int(TACIT_STATUS_BAD_ARGUMENT, false);
+        self.builder
+            .build_return(Some(&bad_arg_const))
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(run_bb);
+        if has_out {
+            let out_idx = (1 + export.params.len()) as u32;
+            let out_ptr = wrapper_fn
+                .get_nth_param(out_idx)
+                .ok_or_else(|| CodegenError::Llvm("wrapper missing out".into()))?
+                .into_pointer_value();
+            let out_null = self
+                .builder
+                .build_is_null(out_ptr, "out_null")
+                .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+            let do_call_bb = self.context.append_basic_block(wrapper_fn, "do_call");
+            self.builder
+                .build_conditional_branch(out_null, bad_arg_bb, do_call_bb)
+                .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+            self.builder.position_at_end(do_call_bb);
+        }
+
+        // Save prior TLS, install new, run, restore.
+        let prior_ctx = self
+            .builder
+            .build_load(ptr_t, tls_global.as_pointer_value(), "prior_ctx")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?
+            .into_pointer_value();
+        self.builder
+            .build_store(tls_global.as_pointer_value(), ctx_in)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        let mut hoisted_args: Vec<CompiledValue<'ctx>> = Vec::with_capacity(export.params.len());
+        for (i, scalar) in export.params.iter().enumerate() {
+            let raw_param = wrapper_fn
+                .get_nth_param((i + 1) as u32)
+                .ok_or_else(|| CodegenError::Llvm(format!("wrapper missing param {i}")))?
+                .into_int_value();
+            let i64_val = extend_scalar_to_i64(&self.builder, raw_param, i64_t, *scalar)?;
+            hoisted_args.push(CompiledValue {
+                ty: ValueTy::Int,
+                value: i64_val.into(),
+            });
+        }
+
+        let call_result = self.call_function(&hoisted, &hoisted_args)?;
+        let result_i64 = call_result.value.into_int_value();
+
+        // Restore TLS regardless of return path.
+        self.builder
+            .build_store(tls_global.as_pointer_value(), prior_ctx)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        if let LibReturn::Scalar(scalar) = export.result {
+            let out_idx = (1 + export.params.len()) as u32;
+            let out_ptr = wrapper_fn
+                .get_nth_param(out_idx)
+                .ok_or_else(|| CodegenError::Llvm("wrapper missing out".into()))?
+                .into_pointer_value();
+            let truncated = trunc_i64_to_scalar(
+                &self.builder,
+                result_i64,
+                scalar_int_type(self.context, scalar),
+                scalar,
+            )?;
+            self.builder
+                .build_store(out_ptr, truncated)
+                .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        }
+
+        let ok_const = i32_t.const_int(TACIT_STATUS_OK, false);
+        self.builder
+            .build_return(Some(&ok_const))
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        if let Some(saved) = saved_block {
+            self.builder.position_at_end(saved);
+        }
+        Ok(())
+    }
+}
+
+fn scalar_int_type<'ctx>(
+    context: &'ctx Context,
+    scalar: LibScalar,
+) -> inkwell::types::IntType<'ctx> {
+    match scalar.width_bits() {
+        8 => context.i8_type(),
+        16 => context.i16_type(),
+        32 => context.i32_type(),
+        64 => context.i64_type(),
+        other => panic!("unsupported scalar width {other}"),
+    }
+}
+
+fn trunc_i64_to_scalar<'ctx>(
+    builder: &Builder<'ctx>,
+    value: IntValue<'ctx>,
+    target_ty: inkwell::types::IntType<'ctx>,
+    scalar: LibScalar,
+) -> Result<IntValue<'ctx>> {
+    if scalar.width_bits() == 64 {
+        Ok(value)
+    } else {
+        builder
+            .build_int_truncate(value, target_ty, "abi_trunc")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))
+    }
+}
+
+fn extend_scalar_to_i64<'ctx>(
+    builder: &Builder<'ctx>,
+    value: IntValue<'ctx>,
+    target_ty: inkwell::types::IntType<'ctx>,
+    scalar: LibScalar,
+) -> Result<IntValue<'ctx>> {
+    if scalar.width_bits() == 64 {
+        Ok(value)
+    } else if scalar.is_signed() {
+        builder
+            .build_int_s_extend(value, target_ty, "abi_sext")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))
+    } else {
+        builder
+            .build_int_z_extend(value, target_ty, "abi_zext")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))
+    }
 }

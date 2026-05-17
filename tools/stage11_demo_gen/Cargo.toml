@@ -1,0 +1,14 @@
+[package]
+name = "stage11-demo-gen"
+version = "0.1.0"
+edition = "2021"
+description = "One-shot generator for the Phase 6 Stage 11 embedding demo kernel files"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[[bin]]
+name = "stage11-demo-gen"
+path = "src/main.rs"
+
+[dependencies]
+tacit-canonical = { path = "../../crates/tacit-canonical" }

@@ -12,6 +12,7 @@
 pub mod error;
 pub mod infer;
 pub mod interface;
+pub mod library;
 pub mod package;
 pub mod primitives;
 pub mod project;
@@ -26,6 +27,9 @@ pub use interface::{
     emit_c_header, emit_rust_bindings, generate_host_interface, write_host_interface,
     HostInterface, HostInterfaceOutputs, HostTarget,
 };
+pub use library::{
+    package_library, LibReturn, LibScalar, LibraryExport, LibraryImport, PackageLibrary,
+};
 pub use package::{
     check_package, clear_package_cache, evict_package_cache, load_package, lock_package,
     materialize_package_derived, package_entry_expression, package_hash_for_project,
@@ -35,9 +39,10 @@ pub use package::{
 };
 pub use project::{
     check_project, discover_project_root, emit_project_inspection, load_project,
-    materialize_project_derived, project_definition_expression, project_entry_expression,
-    ProjectDefinition, ProjectDerivedError, ProjectEntry, ProjectEntryError, ProjectGraph,
-    ProjectLoadError, ProjectUnit,
+    materialize_project_derived, project_definition_expression,
+    project_definition_expression_with_leaves, project_entry_expression, ProjectDefinition,
+    ProjectDerivedError, ProjectEntry, ProjectEntryError, ProjectGraph, ProjectLoadError,
+    ProjectUnit,
 };
 pub use sidecar::check_against_tacd;
 pub use ty::{EffSet, Ty};

@@ -91,6 +91,25 @@ jobs:
           output=$(printf '1\n2\n3\n' | /tmp/tacit-sum-numbers)
           test "$output" = "6"
 
+      - name: Phase 6 Stage 11 embedding demo
+        run: |
+          # Package-level tests for the kernel run via the CLI.
+          ./target/debug/tacit test examples/phase-6/embedding-demo/kernel --format json > /tmp/embedding-demo-test.json
+          test "$(jq -r .outcome /tmp/embedding-demo-test.json)" = "pass"
+          # Interface + linkable library.
+          ./target/debug/tacit interface examples/phase-6/embedding-demo/kernel --emit-library > /tmp/embedding-demo-interface.txt
+          grep -q interface.json /tmp/embedding-demo-interface.txt
+          grep -q tacit_host.h /tmp/embedding-demo-interface.txt
+          grep -q libtacit_p_ /tmp/embedding-demo-interface.txt
+          # End-to-end demo: link the static lib into a Rust host that satisfies
+          # the host import callback and calls each public export. The host crate
+          # pins the llvm19-1 feature itself, so no extra --features here.
+          cargo run -p tacit-embedding-demo-host > /tmp/embedding-demo.out
+          grep -q "decode_op(0xAB) = 11" /tmp/embedding-demo.out
+          grep -q "cpu program ran to acc = 40" /tmp/embedding-demo.out
+          grep -q "host_log: \[40\]" /tmp/embedding-demo.out
+          grep -q "^ok" /tmp/embedding-demo.out
+
   corpus:
     name: corpus
     runs-on: ubuntu-latest
