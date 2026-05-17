@@ -141,8 +141,10 @@ Source builds are not a supported release channel but are the contributor
 workflow. Requirements:
 
 - Rust toolchain (stable; see `rust-toolchain.toml` if present)
-- LLVM 19 development install (Debian/Ubuntu: `sudo apt install llvm-19-dev
-  libpolly-19-dev`)
+- LLVM 19 development install
+  - Debian bookworm / Ubuntu 24.04+: `sudo apt install llvm-19-dev libpolly-19-dev`
+  - Ubuntu 22.04: add apt.llvm.org's Jammy repo for LLVM 19, then install
+    `llvm-19-dev libpolly-19-dev`
 - A C linker on `PATH` (`cc`, `clang`, or `gcc`) and `ar`/`llvm-ar`
 
 Then:

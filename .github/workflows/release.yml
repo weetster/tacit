@@ -26,7 +26,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install LLVM 19 (apt)
+      - name: Configure LLVM apt repository
+        run: |
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key \
+            | sudo tee /usr/share/keyrings/apt.llvm.org.asc >/dev/null
+          echo "deb [signed-by=/usr/share/keyrings/apt.llvm.org.asc] http://apt.llvm.org/jammy/ llvm-toolchain-jammy-19 main" \
+            | sudo tee /etc/apt/sources.list.d/llvm.list >/dev/null
+          sudo apt-get update
+
+      - name: Install LLVM 19
         run: sudo apt-get install -y llvm-19-dev libpolly-19-dev
 
       - name: Install Rust toolchain

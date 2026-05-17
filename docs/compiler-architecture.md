@@ -105,13 +105,14 @@ emitter uses `inkwell` over LLVM-C. Per
 
 **LLVM 19**, `inkwell` feature flag `llvm19-1` (inkwell 0.9).
 
-Rationale: LLVM 19 is the newest version available in Debian bookworm's
-default apt repos (`llvm-19-dev`) without adding a third-party source.
-It is also available as a brew bottle for arm64 macOS. inkwell 0.9 is
-the first release to support LLVM 19 via the `llvm19-1` feature.
+Rationale: LLVM 19 is available in Debian bookworm's default apt repos
+(`llvm-19-dev`) and via apt.llvm.org on older Ubuntu LTS runners such as
+22.04. It is also available as a brew bottle for arm64 macOS. inkwell 0.9
+is the first release to support LLVM 19 via the `llvm19-1` feature.
 
 Contributors pass `--features llvm19-1` to build the IR emitter.
-CI installs `llvm-19-dev` via apt (see `.github/workflows/ci.yml`).
+CI installs `llvm-19-dev` via apt; the release workflow adds apt.llvm.org on
+Ubuntu 22.04 to keep the published binary on a glibc 2.35 baseline.
 
 ### Installing LLVM (dev-loop)
 
