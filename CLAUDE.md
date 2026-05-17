@@ -5,7 +5,14 @@ Tacit is an AI-first programming language. See [plans/tacit-plan.md](plans/tacit
 **Current phase: Phase 6 frozen; Phase 7 is next.** Phase 6 completed on
 2026-05-17 via [ADR 0089](decisions/0089-phase-6-frozen.md), delivering
 modules, packages, package tests, systems primitives, source-level stdlib
-foundations, and the constrained host-interface ABI. Phase 5 completed on
+foundations, and the constrained host-interface ABI. The
+[toolchain export plan](plans/toolchain-export-plan.md) also completed on
+2026-05-17 (six stages under [ADR 0090](decisions/0090-toolchain-release-contract.md)),
+shipping `tacit init`, `tacit-toolchain-pin-v1` enforcement, bundled stdlib
+seeding, a workflow asset, `scripts/build-release.sh`, and a Linux x86_64
+GitHub Actions release pipeline. Toolchain work runs outside the phase
+system; expansions (compatibility ranges, more targets, registries) require a
+new ADR. Phase 5 completed on
 2026-05-09 via
 [ADR 0076](decisions/0076-phase-5-short-gate.md),
 [ADR 0077](decisions/0077-phase-5-metrics.md), and

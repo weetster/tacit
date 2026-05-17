@@ -1,7 +1,13 @@
 # Tacit Toolchain Export Plan
 
-**Status:** Active; Stage 0 decision accepted 2026-05-17 by
-[ADR 0090](../decisions/0090-toolchain-release-contract.md)
+**Status:** Complete 2026-05-17. All six stages landed under
+[ADR 0090](../decisions/0090-toolchain-release-contract.md). A pinned
+`tacit init`-generated project outside this repository can be checked,
+locked, tested, compiled, and host-linked using only an installed toolchain
+archive; `scripts/build-release.sh` and `.github/workflows/release.yml`
+produce reproducible Linux x86_64 archives that statically link LLVM 19.
+Future toolchain work (compatibility ranges, additional target triples,
+public registry, `cargo install` channel) requires a follow-on ADR.
 **Date:** 2026-05-17
 **Scope:** Exporting Tacit as a versioned toolchain for separate Tacit projects
 
@@ -475,12 +481,25 @@ retained here as the original Stage 0 question list.
 
 This plan is complete when:
 
-- An external project can be initialized and used without cloning this repo.
-- The project records the exact toolchain, primer, and stdlib hashes it expects.
-- The installed toolchain can print and verify the matching primer.
-- Bundled stdlib packages can be consumed through ordinary hash-pinned package
-  resolution.
-- Release validation proves `check`, `lock`, `test`, `compile`, and `primer`
-  flows in a temp external project.
-- The release process records all hashes needed to reproduce the toolchain
-  context seen by an agent.
+- [x] An external project can be initialized and used without cloning this
+  repo. — `tacit init` (Stage 4) + bundled stdlib seed (Stage 3).
+- [x] The project records the exact toolchain, primer, and stdlib hashes it
+  expects. — `tacit-toolchain.toml` `tacit-toolchain-pin-v1` (Stage 4) and pin
+  enforcement (Stage 5).
+- [x] The installed toolchain can print and verify the matching primer. —
+  `tacit primer` / `tacit primer --check` (Stage 2).
+- [x] Bundled stdlib packages can be consumed through ordinary hash-pinned
+  package resolution. — `tacit stdlib seed` plus hash-only dependency entries
+  (Stage 3); covered by
+  `stdlib_seed_allows_hash_dependency_without_repo_path`.
+- [x] Release validation proves `check`, `lock`, `test`, `compile`, and
+  `primer` flows in a temp external project. —
+  `crates/tacit-cli/tests/staged_toolchain.rs` (Stage 6) drives the full
+  validation block via `TACIT_TOOLCHAIN_ASSET_ROOT` against a tempdir outside
+  the workspace.
+- [x] The release process records all hashes needed to reproduce the
+  toolchain context seen by an agent. —
+  `toolchain-release.json` records compiler version, git rev, LLVM feature,
+  schema names, primer hash, workflow hash, and bundled stdlib package
+  hashes; the release archive includes `SHA256SUMS` plus an
+  embedded-vs-staged manifest hash check in `scripts/build-release.sh`.
