@@ -1153,6 +1153,7 @@ fn write_cli_project(d: &std::path::Path) -> (String, Node, Node) {
     (main_hash, provider_unit, main_unit)
 }
 
+#[cfg(feature = "llvm")]
 fn write_cli_test_package(
     d: &std::path::Path,
     test_def: fn(&str, &str) -> Node,
@@ -1273,6 +1274,7 @@ fn cli_bool_def_with_effect<const N: usize>(atoms: [&str; N]) -> Node {
     }
 }
 
+#[cfg(feature = "llvm")]
 fn cli_non_exhaustive_bool_match_def() -> Node {
     Node::Def {
         sig: Box::new(cli_bool_sig()),
@@ -1295,6 +1297,7 @@ fn cli_identity_def() -> Node {
     }
 }
 
+#[cfg(feature = "llvm")]
 fn cli_eq_import_const_def(import_hash: &str, value: &str) -> Node {
     Node::Def {
         sig: Box::new(cli_bool_sig()),
