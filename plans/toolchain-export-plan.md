@@ -343,6 +343,11 @@ and `tacit version --format json` are implemented.
 
 ### Stage 2: Primer Asset
 
+**Status:** Complete 2026-05-17. The build generates the release primer copy
+and metadata from `plans/primer/tacit-lite-primer.md`, records its BLAKE3 hash
+and `o200k_base` token count, and `tacit primer` / `tacit primer --check` are
+implemented with JSON metadata output.
+
 - Add release primer asset generation from `plans/primer/tacit-lite-primer.md`.
 - Compute BLAKE3 and token count.
 - Add `tacit primer` and `tacit primer --check`.

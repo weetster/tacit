@@ -40,6 +40,17 @@ enum Cmd {
         format: VersionFormat,
     },
 
+    /// Print or verify the matching Tacit-Lite primer for this toolchain.
+    Primer {
+        /// Output format: primer text (default) or stable JSON metadata.
+        #[arg(long, value_enum, value_name = "FORMAT", default_value = "text")]
+        format: PrimerFormat,
+
+        /// Verify a file's BLAKE3 hash against the installed primer metadata.
+        #[arg(long, value_name = "FILE")]
+        check: Option<PathBuf>,
+    },
+
     /// Compile a .tac source file to a native executable.
     Compile {
         /// Input .tac/.taca file or project root directory.
@@ -208,6 +219,14 @@ enum VersionFormat {
 }
 
 #[derive(ValueEnum, Clone)]
+enum PrimerFormat {
+    /// Primer markdown bytes, or a compact check result when --check is used.
+    Text,
+    /// Stable JSON primer metadata, or a JSON check result when --check is used.
+    Json,
+}
+
+#[derive(ValueEnum, Clone)]
 enum TestFormat {
     /// Human-readable summary on stdout (default).
     Text,
@@ -258,6 +277,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
     match cli.command {
         Cmd::Version { format } => cmd_version(format),
+        Cmd::Primer { format, check } => cmd_primer(format, check),
         Cmd::Compile {
             input,
             output,
@@ -309,6 +329,47 @@ fn cmd_version(format: VersionFormat) -> Result<(), Box<dyn std::error::Error>> 
             println!("tacit {}", envelope.toolchain_version);
             println!("release {}", envelope.release_hash);
             println!("installed manifest: {}", envelope.installed_manifest.status);
+        }
+    }
+    Ok(())
+}
+
+fn cmd_primer(
+    format: PrimerFormat,
+    check: Option<PathBuf>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(path) = check {
+        let result = release::primer_check(path)?;
+        match format {
+            PrimerFormat::Json => {
+                println!("{}", serde_json::to_string_pretty(&result)?);
+            }
+            PrimerFormat::Text => {
+                if result.ok {
+                    println!("ok {}", result.path);
+                }
+            }
+        }
+        if !result.ok {
+            return Err(format!(
+                "primer hash mismatch for {}: expected {}, got {}",
+                result.path, result.expected_hash, result.actual_hash
+            )
+            .into());
+        }
+        return Ok(());
+    }
+
+    match format {
+        PrimerFormat::Json => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&release::primer_metadata())?
+            );
+        }
+        PrimerFormat::Text => {
+            use std::io::Write;
+            std::io::stdout().write_all(release::PRIMER_BYTES)?;
         }
     }
     Ok(())

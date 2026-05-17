@@ -58,6 +58,25 @@ fn version_json_reports_release_metadata() {
         json["manifest"]["schemas"]["toolchain_release"],
         "tacit-toolchain-release-v1"
     );
+    assert_eq!(json["manifest"]["assets"]["root"], "share/tacit");
+    assert_eq!(json["manifest"]["assets"]["primer"]["id"], "tacit-lite");
+    assert_eq!(
+        json["manifest"]["assets"]["primer"]["toolchain_version"],
+        "0.7.0"
+    );
+    assert_eq!(
+        json["manifest"]["assets"]["primer"]["path"],
+        "share/tacit/primer/tacit-lite.md"
+    );
+    assert_eq!(
+        json["manifest"]["assets"]["primer"]["metadata_path"],
+        "share/tacit/primer/tacit-lite.toml"
+    );
+    assert_eq!(
+        json["manifest"]["assets"]["primer"]["tokenizer"],
+        "o200k_base"
+    );
+    assert_eq!(json["manifest"]["assets"]["primer"]["tokens"], 26265);
     let release_hash = json["release_hash"].as_str().expect("release hash");
     assert!(
         release_hash.starts_with("blake3:") && release_hash.len() == "blake3:".len() + 64,
@@ -104,6 +123,83 @@ fn version_json_verifies_adjacent_manifest() {
         .as_str()
         .expect("installed hash")
         .starts_with("blake3:"));
+}
+
+#[test]
+fn primer_text_matches_planning_copy() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let out = tacit(&["primer"], dir.path());
+    assert!(
+        out.status.success(),
+        "primer failed\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let planning = std::fs::read(
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("plans/primer/tacit-lite-primer.md"),
+    )
+    .unwrap();
+    assert_eq!(out.stdout, planning);
+}
+
+#[test]
+fn primer_json_reports_hash_and_tokens() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let out = tacit(&["primer", "--format", "json"], dir.path());
+    assert!(
+        out.status.success(),
+        "primer json failed\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let json: Value = serde_json::from_slice(&out.stdout).expect("primer json");
+    assert_eq!(json["format"], "tacit-primer-v1");
+    assert_eq!(json["id"], "tacit-lite");
+    assert_eq!(json["version"], "0.7.0");
+    assert_eq!(json["toolchain_version"], "0.7.0");
+    assert_eq!(json["path"], "share/tacit/primer/tacit-lite.md");
+    assert_eq!(json["metadata_path"], "share/tacit/primer/tacit-lite.toml");
+    assert_eq!(json["tokenizer"], "o200k_base");
+    assert_eq!(json["tokens"], 26265);
+    let hash = json["hash"].as_str().expect("primer hash");
+    assert!(
+        hash.starts_with("blake3:") && hash.len() == "blake3:".len() + 64,
+        "{hash}"
+    );
+}
+
+#[test]
+fn primer_check_accepts_exact_bytes_and_rejects_edits() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let d = dir.path();
+    let primer = tacit(&["primer"], d);
+    assert!(primer.status.success());
+
+    std::fs::write(d.join("primer.md"), &primer.stdout).unwrap();
+    let ok = tacit(&["primer", "--check", "primer.md", "--format", "json"], d);
+    assert!(
+        ok.status.success(),
+        "primer check failed\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&ok.stdout),
+        String::from_utf8_lossy(&ok.stderr)
+    );
+    let ok_json: Value = serde_json::from_slice(&ok.stdout).expect("check json");
+    assert_eq!(ok_json["format"], "tacit-primer-check-v1");
+    assert_eq!(ok_json["ok"], true);
+
+    let mut edited = primer.stdout;
+    edited.extend_from_slice(b"\n<!-- edited -->\n");
+    std::fs::write(d.join("edited.md"), edited).unwrap();
+    let bad = tacit(&["primer", "--check", "edited.md"], d);
+    assert!(!bad.status.success(), "edited primer should fail check");
+    assert!(
+        String::from_utf8_lossy(&bad.stderr).contains("primer hash mismatch"),
+        "{}",
+        String::from_utf8_lossy(&bad.stderr)
+    );
 }
 
 /// Round-trip: write .taca → canonicalize → render --authoring → canonicalize again.

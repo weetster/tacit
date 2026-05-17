@@ -20,6 +20,9 @@ tempfile = "3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
+[build-dependencies]
+blake3 = "1"
+
 # Feature flags mirror tacit-codegen: pick one llvm<N>-<M> to enable the
 # compile subcommand.  The local `llvm` aggregate gates the compile code in
 # main.rs without requiring a direct inkwell dependency.
