@@ -384,6 +384,16 @@ executable compile, and library `interface --emit-library`.
 
 ### Stage 5: Toolchain Pin Enforcement
 
+**Status:** Complete 2026-05-17. A strict `tacit-toolchain-pin-v1` parser
+lives in `crates/tacit-cli/src/pin.rs` and is invoked from `tacit check` (in
+project mode), `tacit compile` (in project mode), `tacit test`, `tacit
+interface`, and `tacit lock`. Present-but-mismatched pins fail with structured
+diagnostics (`toolchain-pin-{version,release-hash,primer,stdlib}-mismatch`,
+`toolchain-pin-{schema-mismatch,schema-missing,missing-field,malformed,
+stdlib-unknown,stdlib-missing,unreadable}`) naming the expected installed
+value and the recorded pin value. A missing pin emits a single warning to
+stderr referencing ADR 0090 and lets the command continue.
+
 - Parse `tacit-toolchain.toml`.
 - Validate it in package-aware commands.
 - Add structured diagnostics for mismatches.

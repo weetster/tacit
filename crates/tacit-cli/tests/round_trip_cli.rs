@@ -473,6 +473,163 @@ fn init_library_with_stdlib_passes_lock_check_test_and_interface_library() {
 }
 
 #[test]
+fn check_warns_but_succeeds_when_pin_is_missing() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let d = dir.path();
+    std::fs::create_dir_all(d.join("src")).unwrap();
+    std::fs::write(
+        d.join("src/main.tac"),
+        emit(&Node::Unit {
+            imports: vec![],
+            exports: vec![],
+            defs: vec![cli_const_int_def("0")],
+        }),
+    )
+    .unwrap();
+
+    let out = tacit(&["check", ".", "--format", "json"], d);
+    assert!(
+        out.status.success(),
+        "check without pin should warn, not fail\nstderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("warning: ") && stderr.contains("missing tacit-toolchain.toml"),
+        "expected missing-pin warning on stderr, got: {stderr}"
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains(r#""errors": []"#), "{stdout}");
+}
+
+#[test]
+fn check_fails_when_pin_toolchain_version_mismatches() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let out = tacit(&["init", "hello"], dir.path());
+    assert!(out.status.success());
+    let project = dir.path().join("hello");
+
+    let pin_path = project.join("tacit-toolchain.toml");
+    let pin = std::fs::read_to_string(&pin_path).unwrap();
+    std::fs::write(
+        &pin_path,
+        pin.replace("version = \"0.7.0\"\n", "version = \"99.0.0\"\n"),
+    )
+    .unwrap();
+
+    let check = tacit(&["check", ".", "--format", "json"], &project);
+    assert!(
+        !check.status.success(),
+        "check should fail on mismatched pin\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&check.stdout),
+        String::from_utf8_lossy(&check.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&check.stderr);
+    let envelope: Value = serde_json::from_str(stderr.trim()).expect("pin diagnostics json");
+    let errors = envelope["errors"].as_array().expect("errors array");
+    assert!(
+        errors
+            .iter()
+            .any(|err| err["kind"] == "toolchain-pin-version-mismatch"),
+        "expected toolchain-pin-version-mismatch, got {errors:?}"
+    );
+}
+
+#[test]
+fn lock_fails_when_primer_hash_pin_mismatches() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let out = tacit(&["init", "hello"], dir.path());
+    assert!(out.status.success());
+    let project = dir.path().join("hello");
+
+    let pin_path = project.join("tacit-toolchain.toml");
+    let pin = std::fs::read_to_string(&pin_path).unwrap();
+    let bogus = "blake3:dead0000000000000000000000000000000000000000000000000000000000ad";
+    let original = pin
+        .lines()
+        .find(|line| line.starts_with("hash = "))
+        .expect("primer hash line")
+        .trim_start_matches("hash = ")
+        .trim_matches('"');
+    std::fs::write(&pin_path, pin.replace(original, bogus)).unwrap();
+
+    let lock = tacit(&["lock", "."], &project);
+    assert!(
+        !lock.status.success(),
+        "lock should fail when primer pin diverges from installed primer"
+    );
+    let stderr = String::from_utf8_lossy(&lock.stderr);
+    let envelope: Value = serde_json::from_str(stderr.trim()).expect("pin diagnostics json");
+    let errors = envelope["errors"].as_array().expect("errors array");
+    assert!(
+        errors
+            .iter()
+            .any(|err| err["kind"] == "toolchain-pin-primer-mismatch"),
+        "expected toolchain-pin-primer-mismatch, got {errors:?}"
+    );
+}
+
+#[test]
+fn check_fails_when_stdlib_pin_hash_diverges() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let out = tacit(&["init", "hello"], dir.path());
+    assert!(out.status.success());
+    let project = dir.path().join("hello");
+
+    let pin_path = project.join("tacit-toolchain.toml");
+    let pin = std::fs::read_to_string(&pin_path).unwrap();
+    let core_line = pin
+        .lines()
+        .find(|line| line.starts_with("\"tacit.core\" = "))
+        .expect("tacit.core line");
+    let bogus = "\"tacit.core\" = \"blake3:abad0000000000000000000000000000000000000000000000000000000000ad\"";
+    std::fs::write(&pin_path, pin.replace(core_line, bogus)).unwrap();
+
+    let check = tacit(&["check", ".", "--format", "json"], &project);
+    assert!(
+        !check.status.success(),
+        "check should fail when a stdlib pin hash diverges"
+    );
+    let stderr = String::from_utf8_lossy(&check.stderr);
+    let envelope: Value = serde_json::from_str(stderr.trim()).expect("pin diagnostics json");
+    let errors = envelope["errors"].as_array().expect("errors array");
+    assert!(
+        errors
+            .iter()
+            .any(|err| err["kind"] == "toolchain-pin-stdlib-mismatch"),
+        "expected toolchain-pin-stdlib-mismatch, got {errors:?}"
+    );
+}
+
+#[test]
+fn check_fails_when_pin_schema_is_wrong() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let out = tacit(&["init", "hello"], dir.path());
+    assert!(out.status.success());
+    let project = dir.path().join("hello");
+
+    let pin_path = project.join("tacit-toolchain.toml");
+    let pin = std::fs::read_to_string(&pin_path).unwrap();
+    std::fs::write(
+        &pin_path,
+        pin.replace("tacit-toolchain-pin-v1", "tacit-toolchain-pin-v999"),
+    )
+    .unwrap();
+
+    let check = tacit(&["check", ".", "--format", "json"], &project);
+    assert!(!check.status.success());
+    let stderr = String::from_utf8_lossy(&check.stderr);
+    let envelope: Value = serde_json::from_str(stderr.trim()).expect("pin diagnostics json");
+    let errors = envelope["errors"].as_array().expect("errors array");
+    assert!(
+        errors
+            .iter()
+            .any(|err| err["kind"] == "toolchain-pin-schema-mismatch"),
+        "expected toolchain-pin-schema-mismatch, got {errors:?}"
+    );
+}
+
+#[test]
 fn init_refuses_non_empty_directory() {
     let dir = tempfile::tempdir().expect("tempdir");
     let project = dir.path().join("existing");

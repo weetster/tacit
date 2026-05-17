@@ -19,6 +19,7 @@ use tacit_views::authoring::{emit_authoring, parse_authoring};
 use tacit_views::sidecar::{Sidecar, SidecarNode};
 use tacit_views::{emit_inspection, InspectFlags};
 
+mod pin;
 mod release;
 
 #[derive(Parser)]
@@ -970,8 +971,16 @@ fn cmd_render(
 // check subcommand
 // ---------------------------------------------------------------------------
 
+fn enforce_project_pin(root: &Path) {
+    if let Err(diags) = pin::enforce_pin(root) {
+        eprintln!("{}", DiagOutput::new(diags).to_json_string());
+        std::process::exit(1);
+    }
+}
+
 fn cmd_check(input: PathBuf, format: CheckFormat) -> Result<(), Box<dyn std::error::Error>> {
     let result = if input.is_dir() {
+        enforce_project_pin(&input);
         match load_package(&input) {
             Ok(package) => check_package(&package).map(|_| ()),
             Err(diags) => Err(diags),
@@ -1079,6 +1088,7 @@ fn cmd_test(input: PathBuf, format: TestFormat) -> Result<(), Box<dyn std::error
 }
 
 fn run_package_tests(input: &Path) -> TestEnvelope {
+    enforce_project_pin(input);
     let package = match load_package(input) {
         Ok(package) => package,
         Err(diags) => return test_envelope(None, None, diags, Vec::new()),
@@ -1576,6 +1586,7 @@ fn cmd_interface(
         InterfaceTarget::Native => HostTarget::Native,
         InterfaceTarget::Wasm => HostTarget::Wasm,
     };
+    enforce_project_pin(&input);
     let package = match load_package(&input) {
         Ok(package) => package,
         Err(diags) => {
@@ -1702,6 +1713,7 @@ fn prefixed(hash: &str) -> String {
 }
 
 fn cmd_lock(input: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+    enforce_project_pin(&input);
     match lock_package(&input) {
         Ok(package) => {
             println!("wrote {}", package.root.root.join("tacit.lock").display());
@@ -1882,6 +1894,7 @@ fn cmd_compile_project(
     entry: Option<String>,
     emit_llvm_ir: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    enforce_project_pin(&input);
     let package = match load_package(&input) {
         Ok(package) => package,
         Err(diags) => {
