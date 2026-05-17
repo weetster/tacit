@@ -17,6 +17,12 @@ Runtime dependencies (dynamically linked on the target host): `libc`,
 in a default Debian-bookworm / Ubuntu-24.04 install. There is no LLVM runtime
 dependency.
 
+Tacit programs themselves have no network access (no sockets, HTTP, TCP, or
+UDP) at the language or stdlib level. The bundled `tacit.io` package provides
+only stdin/stdout/stderr byte I/O. Embedders may add network capabilities via
+host imports (see ADR 0088 / `tacit interface`), but no such capability ships
+with the toolchain itself.
+
 ## Binary-archive layout
 
 A complete Tacit toolchain release is a single directory:

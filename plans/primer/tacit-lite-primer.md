@@ -2108,9 +2108,13 @@ for false.
 
 Tacit-Lite has no implicit command-line argument parser. Portable programs
 receive input on stdin and write bytes to stdout. A program should
-not assume environment variables, files by path, or a process argument vector
-unless the caller explicitly provides such a primitive. The portable pattern
-is:
+not assume environment variables, files by path, a process argument vector,
+or any network access (sockets, HTTP, TCP, UDP) unless the caller explicitly
+provides such a primitive. The language and bundled stdlib (`tacit.io` etc.)
+ship only stdin/stdout/stderr byte I/O; networking is not a Tacit-Lite
+capability. An embedder may declare a network capability through a host
+import, but the receiving program must not assume one exists. The portable
+pattern is:
 
 ```text
 read stdin bytes -> parse or scan -> compute Int/Buf result -> format/write
