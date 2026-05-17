@@ -1,12 +1,12 @@
 format = "tacit-toolchain-release-metadata-v1"
 
 [toolchain]
-version = "0.7.3"
+version = "0.7.4"
 
 [primer]
 id = "tacit-lite"
-version = "0.7.3"
-toolchain_version = "0.7.3"
+version = "0.7.4"
+toolchain_version = "0.7.4"
 source_path = "plans/primer/tacit-lite-primer.md"
 path = "share/tacit/primer/tacit-lite.md"
 metadata_path = "share/tacit/primer/tacit-lite.toml"

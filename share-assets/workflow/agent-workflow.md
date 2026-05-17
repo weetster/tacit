@@ -114,6 +114,39 @@ the primer's host-interface section. Records and borrowed vectors at the
 boundary are rejected by `--emit-library` even when `interface.json` accepts
 them.
 
+## Standalone executables and effects
+
+Standalone-executable entries selected by `tacit compile .` must be `Int`,
+`Bool`, or a fixed-width int. Function-typed entries are rejected with
+`standalone executables require Int or Bool`.
+
+The authoring-view definition form is `<alias> : <type> = <body>`. The
+`/ {…}` effect annotation only attaches to a function arrow
+(`A -> B / {…}`). There is no surface syntax for outer evaluation effects on
+a value-typed definition, no `allow {…}` form, and no `[bin].effects`
+manifest budget. Do not invent one.
+
+A value-typed `main : Int` whose body calls effectful primitives
+(`@buf-alloc`, `@buf-set`, `@fmt-i64`, `@write`, anything producing `Alloc`,
+`Mut`, or `IO`) therefore cannot satisfy both `check` and `compile`. The
+diagnostic signature is paired: `tacit check .` reports
+`signature-mismatch: expected {}, got {…}` on the value-typed entry;
+rewriting the entry as a function (`Int -> Int / {…}`) lets `check` pass but
+then `tacit compile .` rejects it with the entry-type message above. Both
+diagnostics together — not either one alone — indicate this gap.
+
+The supported pattern for an effectful program is to expose the effectful
+work as a function export and drive it from a host:
+
+```
+export public step : Int -> Int / {Alloc, IO, Mut} = ...
+```
+
+Run `tacit interface . --emit-library` to produce headers, bindings, and a
+linkable archive; the host (typically a small Rust binary) satisfies host-
+import callbacks and calls the public Tacit export. `tacit compile .` is
+for pure transforms whose exit code is the whole result.
+
 ## View tools
 
 ```

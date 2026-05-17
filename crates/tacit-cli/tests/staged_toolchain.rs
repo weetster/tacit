@@ -121,7 +121,7 @@ fn version_against_staged_share_reports_matched_manifest() {
     );
     must_succeed(&out, "version --format json");
     let json: Value = serde_json::from_slice(&out.stdout).expect("version json");
-    assert_eq!(json["toolchain_version"], "0.7.3");
+    assert_eq!(json["toolchain_version"], "0.7.4");
     assert_eq!(
         json["installed_manifest"]["status"], "matched",
         "expected staged manifest to match embedded copy"
