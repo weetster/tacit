@@ -86,7 +86,11 @@ jobs:
           output=$(/tmp/tacit-sort)
           test "$output" = "$(printf '1\n2\n3\n4\n5')"
           ./target/debug/tacit compile examples/phase-3/list.tac -o /tmp/tacit-list
-          /tmp/tacit-list; test $? -eq 15
+          # list.tac returns 1+2+3+4+5 = 15 as its process exit status. Run it
+          # inside `if` so bash's `set -e` does not abort on the non-zero exit
+          # before we can assert the value.
+          if /tmp/tacit-list; then rc=0; else rc=$?; fi
+          test "$rc" -eq 15
           ./target/debug/tacit compile examples/phase-3/sum-numbers.tac -o /tmp/tacit-sum-numbers
           output=$(printf '1\n2\n3\n' | /tmp/tacit-sum-numbers)
           test "$output" = "6"
