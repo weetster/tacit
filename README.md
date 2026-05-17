@@ -100,7 +100,8 @@ internal repo layout.
 The first export targets **Linux x86_64**. The `tacit` binary links statically
 against LLVM 19, so no LLVM runtime is required. Runtime deps (`libc`,
 `libstdc++`, `libgcc_s`, `libm`, `libz`, `libzstd`, `libffi`) are present on a
-default Debian-bookworm / Ubuntu-24.04 install.
+default Debian-bookworm / Ubuntu-22.04+ install. Published release artifacts
+are built on Ubuntu 22.04, so the glibc compatibility floor is 2.35.
 
 Download `tacit-<version>-x86_64-unknown-linux-gnu.tar.gz` and its `.sha256`
 companion from the release pipeline, then:

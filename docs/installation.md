@@ -14,8 +14,13 @@ prebuilt-archive story and is out of scope until later.
 
 Runtime dependencies (dynamically linked on the target host): `libc`,
 `libstdc++`, `libgcc_s`, `libm`, `libz`, `libzstd`, `libffi`. All are present
-in a default Debian-bookworm / Ubuntu-24.04 install. There is no LLVM runtime
+in a default Debian-bookworm / Ubuntu-22.04+ install. There is no LLVM runtime
 dependency.
+
+Published GitHub release artifacts are built on Ubuntu 22.04, which sets the
+glibc compatibility floor at **glibc 2.35**. In practice that means the
+published `tacit` binary should run on Debian/Ubuntu hosts with glibc 2.35 or
+newer, but not on older releases whose `libc.so.6` is below that baseline.
 
 Tacit programs themselves have no network access (no sockets, HTTP, TCP, or
 UDP) at the language or stdlib level. The bundled `tacit.io` package provides
@@ -154,7 +159,12 @@ scripts/build-release.sh
 ```
 
 The script verifies that the binary links statically against LLVM 19 (no
-`libLLVM*.so` in `ldd`), assembles the `share/tacit/` tree, regenerates
+`libLLVM*.so` in `ldd`), checks that the binary does not require glibc newer
+than 2.35, assembles the `share/tacit/` tree, regenerates
 `templates/executable/` and `templates/library/` by invoking the freshly
 built `tacit init`, and writes `release/tacit-<version>-x86_64-unknown-linux-gnu.tar.gz`
 plus `.sha256` and `SHA256SUMS` files.
+
+Note that local source builds inherit the host's glibc baseline. If you build
+Tacit on a newer distro than Ubuntu 22.04, your locally produced binary may
+require a newer glibc than the published GitHub release artifact.

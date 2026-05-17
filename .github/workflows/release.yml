@@ -6,6 +6,9 @@ name: Release
 #
 # Per-tag jobs assume the tag was pushed from a green main: this workflow
 # does not re-run the test suite. CI on push/PR is the gate for that.
+#
+# The runner is pinned to Ubuntu 22.04 to keep a stable glibc baseline
+# (2.35) for the published x86_64-unknown-linux-gnu artifact.
 
 on:
   push:
@@ -19,7 +22,7 @@ permissions:
 jobs:
   linux-x86_64:
     name: Build Linux x86_64 archive
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
 

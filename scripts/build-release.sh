@@ -20,6 +20,7 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "${REPO_ROOT}"
 
 TARGET_TRIPLE="x86_64-unknown-linux-gnu"
+GLIBC_FLOOR="2.35"
 LLVM_PREFIX=""
 KEEP_STAGE=0
 
@@ -112,6 +113,24 @@ ldd_out=$(ldd "${BIN_PATH}" 2>&1 || true)
 echo "${ldd_out}" | sed 's/^/    /'
 if echo "${ldd_out}" | grep -q 'libLLVM'; then
     echo "error: ${BIN_PATH} dynamically links libLLVM (expected static link)" >&2
+    exit 1
+fi
+
+echo "==> checking glibc symbol floor (<= ${GLIBC_FLOOR})"
+required_glibc=$(
+    objdump -T "${BIN_PATH}" 2>/dev/null \
+        | grep -o 'GLIBC_[0-9]\+\.[0-9]\+' \
+        | sed 's/^GLIBC_//' \
+        | sort -Vu
+)
+if [[ -z "${required_glibc}" ]]; then
+    echo "error: could not determine required GLIBC symbol versions from ${BIN_PATH}" >&2
+    exit 1
+fi
+max_glibc=$(printf '%s\n' "${required_glibc}" | tail -1)
+echo "${required_glibc}" | sed 's/^/    GLIBC_/'
+if [[ "$(printf '%s\n%s\n' "${GLIBC_FLOOR}" "${max_glibc}" | sort -V | tail -1)" != "${GLIBC_FLOOR}" ]]; then
+    echo "error: ${BIN_PATH} requires GLIBC_${max_glibc}, above release floor GLIBC_${GLIBC_FLOOR}" >&2
     exit 1
 fi
 
