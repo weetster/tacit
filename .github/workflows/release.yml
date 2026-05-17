@@ -46,10 +46,9 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target
-          key: release-${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+          key: release-${{ runner.os }}-ubuntu-22.04-cargo-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
-            release-${{ runner.os }}-cargo-
+            release-${{ runner.os }}-ubuntu-22.04-cargo-
 
       - name: Verify tag matches toolchain version
         if: startsWith(github.ref, 'refs/tags/v')
