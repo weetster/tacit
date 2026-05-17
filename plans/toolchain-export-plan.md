@@ -331,6 +331,10 @@ Write an ADR before implementation that decides:
 
 ### Stage 1: Release Metadata
 
+**Status:** Complete 2026-05-17. Workspace release metadata, deterministic
+manifest generation, embedded runtime metadata, adjacent-manifest verification,
+and `tacit version --format json` are implemented.
+
 - Add workspace-level release metadata.
 - Add a deterministic release manifest generator.
 - Embed release metadata and verify the adjacent installed manifest at runtime.

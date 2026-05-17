@@ -18,6 +18,94 @@ fn tacit(args: &[&str], dir: &std::path::Path) -> std::process::Output {
         .expect("failed to spawn tacit binary")
 }
 
+fn tacit_with_env(
+    args: &[&str],
+    dir: &std::path::Path,
+    envs: &[(&str, &str)],
+) -> std::process::Output {
+    let mut command = Command::new(tacit_bin());
+    command.args(args).current_dir(dir);
+    for (key, value) in envs {
+        command.env(key, value);
+    }
+    command.output().expect("failed to spawn tacit binary")
+}
+
+#[test]
+fn version_json_reports_release_metadata() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let out = tacit(&["version", "--format", "json"], dir.path());
+    assert!(
+        out.status.success(),
+        "version failed\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let json: Value = serde_json::from_slice(&out.stdout).expect("version json");
+    assert_eq!(json["format"], "tacit-version-v1");
+    assert_eq!(json["toolchain_version"], "0.7.0");
+    assert_eq!(json["manifest"]["format"], "tacit-toolchain-release-v1");
+    assert_eq!(json["manifest"]["toolchain_version"], "0.7.0");
+    assert_eq!(
+        json["manifest"]["schemas"]["canonical"],
+        "tacit-canonical-v1"
+    );
+    assert_eq!(json["manifest"]["schemas"]["lockfile"], "tacit-lock-v1");
+    assert_eq!(json["manifest"]["schemas"]["package"], "tacit-package-v1");
+    assert_eq!(json["manifest"]["schemas"]["test_results"], "tacit-test-v1");
+    assert_eq!(
+        json["manifest"]["schemas"]["toolchain_release"],
+        "tacit-toolchain-release-v1"
+    );
+    let release_hash = json["release_hash"].as_str().expect("release hash");
+    assert!(
+        release_hash.starts_with("blake3:") && release_hash.len() == "blake3:".len() + 64,
+        "{release_hash}"
+    );
+}
+
+#[test]
+fn version_flag_uses_toolchain_version() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let out = tacit(&["--version"], dir.path());
+    assert!(
+        out.status.success(),
+        "version flag failed\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("0.7.0"), "{stdout}");
+}
+
+#[test]
+fn version_json_verifies_adjacent_manifest() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let asset_root = dir.path().join("share/tacit");
+    std::fs::create_dir_all(&asset_root).unwrap();
+    std::fs::write(asset_root.join("toolchain-release.json"), b"{}\n").unwrap();
+    let asset_root_text = asset_root.display().to_string();
+
+    let out = tacit_with_env(
+        &["version", "--format", "json"],
+        dir.path(),
+        &[("TACIT_TOOLCHAIN_ASSET_ROOT", asset_root_text.as_str())],
+    );
+    assert!(
+        out.status.success(),
+        "version failed\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let json: Value = serde_json::from_slice(&out.stdout).expect("version json");
+    assert_eq!(json["installed_manifest"]["status"], "mismatch");
+    assert!(json["installed_manifest"]["hash"]
+        .as_str()
+        .expect("installed hash")
+        .starts_with("blake3:"));
+}
+
 /// Round-trip: write .taca → canonicalize → render --authoring → canonicalize again.
 /// The two canonical hashes must match (hash stability).
 #[test]

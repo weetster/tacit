@@ -1,0 +1,21 @@
+format = "tacit-toolchain-release-metadata-v1"
+
+[toolchain]
+version = "0.7.0"
+
+[llvm]
+feature = "llvm19-1"
+version = "19.1"
+
+[schemas]
+canonical = "tacit-canonical-v1"
+lockfile = "tacit-lock-v1"
+package = "tacit-package-v1"
+test_results = "tacit-test-v1"
+interface = "tacit-interface-v1"
+toolchain_release = "tacit-toolchain-release-v1"
+toolchain_pin = "tacit-toolchain-pin-v1"
+
+[distribution]
+kind = "binary-archive"
+layout = "tacit-toolchain-archive-v1"

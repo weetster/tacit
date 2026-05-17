@@ -18,8 +18,14 @@ use tacit_views::authoring::{emit_authoring, parse_authoring};
 use tacit_views::sidecar::{Sidecar, SidecarNode};
 use tacit_views::{emit_inspection, InspectFlags};
 
+mod release;
+
 #[derive(Parser)]
-#[command(name = "tacit", about = "Tacit-Lite compiler and viewer")]
+#[command(
+    name = "tacit",
+    about = "Tacit-Lite compiler and viewer",
+    version = release::TOOLCHAIN_VERSION
+)]
 struct Cli {
     #[command(subcommand)]
     command: Cmd,
@@ -27,6 +33,13 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
+    /// Print installed Tacit toolchain version metadata.
+    Version {
+        /// Output format: human-readable text (default) or stable JSON.
+        #[arg(long, value_enum, value_name = "FORMAT", default_value = "text")]
+        format: VersionFormat,
+    },
+
     /// Compile a .tac source file to a native executable.
     Compile {
         /// Input .tac/.taca file or project root directory.
@@ -187,6 +200,14 @@ enum CheckFormat {
 }
 
 #[derive(ValueEnum, Clone)]
+enum VersionFormat {
+    /// Human-readable toolchain version summary.
+    Text,
+    /// Stable JSON version envelope.
+    Json,
+}
+
+#[derive(ValueEnum, Clone)]
 enum TestFormat {
     /// Human-readable summary on stdout (default).
     Text,
@@ -236,6 +257,7 @@ fn main() {
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
     match cli.command {
+        Cmd::Version { format } => cmd_version(format),
         Cmd::Compile {
             input,
             output,
@@ -275,6 +297,21 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             effects,
         } => cmd_view(input, view_format, debruijn, hashes, types, effects),
     }
+}
+
+fn cmd_version(format: VersionFormat) -> Result<(), Box<dyn std::error::Error>> {
+    let envelope = release::version_envelope()?;
+    match format {
+        VersionFormat::Json => {
+            println!("{}", serde_json::to_string_pretty(&envelope)?);
+        }
+        VersionFormat::Text => {
+            println!("tacit {}", envelope.toolchain_version);
+            println!("release {}", envelope.release_hash);
+            println!("installed manifest: {}", envelope.installed_manifest.status);
+        }
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
