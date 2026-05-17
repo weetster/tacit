@@ -392,6 +392,16 @@ The systems primitive surface is sufficient to express an emulator-style CPU
 core, memory bus, and instruction decoder in Tacit, even if performance work is
 deferred to Phase 8.
 
+Outcome: Phase 6 is frozen by
+[ADR 0089](../decisions/0089-phase-6-frozen.md). It delivered units,
+multi-file project graphs, hash-pinned packages and lockfiles, dependency
+caching, package tests, fixed-width integers, typed mutable memory,
+data-layout/decode examples, source-level stdlib packages, generated
+host-interface metadata/C headers/Rust bindings, and a Rust embedding demo.
+Stage 12 intentionally skipped a model/open-corpus evaluation because the
+primer update was a completeness update, not a token-efficiency hypothesis;
+the freeze relies on regression evidence and durable examples instead.
+
 ### Phase 7: Inspection and debugging tooling
 
 **Goal:** Make Tacit debuggable by AI and inspectable by humans, with Phase 5's

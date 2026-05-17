@@ -1,7 +1,7 @@
 # Phase 6 Plan
 
-**Status:** Active; Stage 0 complete by
-[ADR 0079](../decisions/0079-phase-6-scope.md)
+**Status:** Complete; frozen by
+[ADR 0089](../decisions/0089-phase-6-frozen.md)
 **Scope:** Modules, packages, systems primitives, unit testing, source-library
 foundations, dependency caching, and the constrained host-interface ABI
 
@@ -138,7 +138,7 @@ remain host-owned capabilities during Phase 6.
 | Q-P6-12 | What Tacit types are ABI-expressible at the host boundary? | Resolved by [ADR 0088](../decisions/0088-phase-6-host-interface-abi.md) |
 | Q-P6-13 | What ownership, lifetime, allocation, and result/error rules govern host calls? | Resolved by [ADR 0088](../decisions/0088-phase-6-host-interface-abi.md) |
 | Q-P6-14 | Does Phase 6 commit only to LLVM-native linkable artifacts, or also to WASM? | Resolved by [ADR 0088](../decisions/0088-phase-6-host-interface-abi.md) |
-| Q-P6-15 | What examples and benchmarks prove emulator-style expressiveness without becoming a full emulator? | Stage 12 freeze ADR |
+| Q-P6-15 | What examples and benchmarks prove emulator-style expressiveness without becoming a full emulator? | Resolved by [ADR 0089](../decisions/0089-phase-6-frozen.md) |
 
 ## Required ADR Sequence
 
@@ -168,8 +168,9 @@ ADRs must land before implementation that depends on them.
 10. Host-interface ABI, ABI-expressible type subset, ownership, allocation,
     result/error handling, and backend target decision. Design accepted by
     [ADR 0088](../decisions/0088-phase-6-host-interface-abi.md);
-    implementation planned.
-11. Phase 6 freeze.
+    implementation complete.
+11. Phase 6 freeze. Done:
+    [ADR 0089](../decisions/0089-phase-6-frozen.md).
 
 ## Stage 0: Scope Lock
 
@@ -938,7 +939,8 @@ Outcome:
 
 ## Stage 12: Primer, Evaluation, And Freeze
 
-**Status:** Planned
+**Status:** Complete 2026-05-17. Primer update, non-evaluation regression
+checks, examples review, and freeze ADR complete.
 
 **Purpose:** Close Phase 6 with prompt-facing documentation, regression
 evidence, and a freeze ADR.
@@ -956,6 +958,39 @@ Work items:
   fluency and maintenance comparison.
 - Do not use sealed-corpus feedback.
 - Write the Phase 6 freeze ADR.
+
+Primer update checkpoint:
+
+- `plans/primer/tacit-lite-primer.md` now covers Phase 6 unit/package
+  boundaries, package tests, fixed-width integers, typed-vector memory,
+  source-level stdlib imports, systems-shaped records/memory, and the
+  constrained host import/export surface.
+- Primer token count is re-baselined at 26,265 `o200k_base` tokens, measured
+  with `tiktoken` via `uv run` from `corpus/harness` on 2026-05-17.
+- No open-corpus or sealed-corpus evaluation was run for this checkpoint.
+
+Outcome:
+
+- The Phase 6 primer update is complete and remains language-facing. It
+  teaches unit/package boundaries, package tests, fixed-width integers,
+  typed-vector memory, source-level stdlib imports, systems-shaped
+  records/memory, and the constrained host import/export surface.
+- Primer token count is re-baselined at 26,265 `o200k_base` tokens.
+- The model/open-corpus evaluation was intentionally skipped. The primer
+  update is a completeness update, not a token-efficiency hypothesis: it grows
+  primer size and surface area, so a mid-tier-model evaluation now would mostly
+  measure the larger recurring primer tax rather than a meaningful language
+  density improvement.
+- Durable Phase 6 examples are present under `examples/phase-6/`, covering
+  fixed-width integers, typed memory, data layout/decode, package tests, and
+  the embedding demo.
+- Non-evaluation regression checks passed:
+  `cargo test --workspace --features tacit-codegen/llvm19-1,tacit-cli/llvm19-1`;
+  `cargo run -p tacit-cli --features llvm19-1 -- test
+  examples/phase-6/embedding-demo/kernel --format json`; and
+  `cargo run -p tacit-embedding-demo-host`.
+- The Phase 6 freeze ADR is accepted by
+  [ADR 0089](../decisions/0089-phase-6-frozen.md).
 
 Exit criteria:
 

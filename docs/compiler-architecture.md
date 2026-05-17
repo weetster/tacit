@@ -1,9 +1,10 @@
 # Compiler Architecture
 
-**Status:** Phase 4 complete. Phases 1 through 4 are frozen; see
+**Status:** Phase 6 complete. Phases 1 through 4 and Phase 6 are frozen; see
 [ADR 0046](../decisions/0046-p2-stage-5-frozen.md),
 [ADR 0070](../decisions/0070-p3-frozen.md), and
-[ADR 0075](../decisions/0075-phase-4-frozen.md) for the recent freeze
+[ADR 0075](../decisions/0075-phase-4-frozen.md), and
+[ADR 0089](../decisions/0089-phase-6-frozen.md) for the recent freeze
 baselines. LLVM 19 pinned via `inkwell` 0.9's `llvm19-1` feature.
 
 ## Crate layout

@@ -88,24 +88,36 @@ helper should either return an `Int`/`Bool`-shaped value or perform direct
 buffer/IO work and return an `Int` status.
 
 Type inference is local. Standalone examples in this primer rely on
-inference. The base runtime values are `Int`, `Bool`, `Str`, `Buf`, `I64Vec`,
-records, constructors, and lambdas. Lambdas are function values: they can be
-passed, returned, stored in records, and called through variables. The effect
-lattice has four atoms: `Alloc`, `Mut`, `IO`, and `Div`. Pure code has `{}`.
-Allocation of stack buffers adds `Alloc`; buffer writes and integer
-formatting add `Mut`; `@read`, `@write`, and `@exit` add `IO`; recursive
-calls and division-like primitives can add `Div`.
+inference. The base runtime values are `Int`, fixed-width integers
+(`i8`/`u8` through `i64`/`u64`), `Bool`, `Str`, `Buf`, `I64Vec`, typed vector
+handles such as `u8vec` and `u32vec`, records, constructors, and lambdas.
+Lambdas are function values: they can be passed, returned, stored in records,
+and called through variables. The effect lattice has four atoms: `Alloc`,
+`Mut`, `IO`, and `Div`. Pure code has `{}`. Allocation of stack buffers or
+typed vectors adds `Alloc`; buffer, vector, and formatting writes add `Mut`;
+`@read`, `@write`, `@exit`, and host calls add `IO`; recursive calls and
+division-like primitives can add `Div`.
 
-There is no implicit mutable state. Mutation is explicit through `Buf` and
-`I64Vec` primitives. A `Buf` is a byte buffer: each `@buf-get` reads one
-byte-sized integer. Keep counters, offsets, indexes, and other large `Int`
-values in lambda parameters or `let` bindings, not in buffer cells. Closures
-capture ordinary first-class values by value, but `Buf` and `I64Vec` handles
-are region-limited: direct `rec` helpers may use them from the surrounding
-scope, while first-class closures may not capture them. There is no general
-heap buffer, hash map, object system, type class, effect handler, or
-user-defined effect in Tacit-Lite. If a program needs those, write the direct
-Tacit-Lite shape with the available primitives.
+There is no implicit mutable state. Mutation is explicit through storage
+handles. Legacy `Buf` and `I64Vec` remain valid; new code should prefer
+typed vectors when the element width matters. A `u8vec` is a length-carrying
+byte vector with bounds-checked access and byte-bus load/store helpers. A
+`u32vec` stores `u32` cells directly. Keep counters, offsets, indexes, and
+other large `Int` values in lambda parameters or `let` bindings, not in byte
+cells. Closures capture ordinary first-class values by value, but `Buf`,
+`I64Vec`, and typed-vector handles are region-limited: direct `rec` helpers
+may use them from the surrounding scope, while first-class closures may not
+capture them. There is no general heap buffer, hash map, object system, type
+class, effect handler, user-defined effect, arbitrary FFI, or untyped pointer
+escape in Tacit-Lite. If a program needs those, write the direct Tacit-Lite
+shape with the available primitives or put host-owned behavior behind a typed
+host import.
+
+A single executable program may still be one expression. A package is a set of
+hash-addressed `unit` artifacts. Units declare imports, private definitions,
+and `public` or `package` exports with explicit type/effect signatures. Package
+manifests select dependencies, exported aliases, executable entries, and test
+targets by BLAKE3 hash; display names are only aliases.
 
 ## 2. Progressive Python/Rust/Tacit Pairs
 
@@ -468,16 +480,24 @@ in this order:
    keyword.
 4. Replace Python lists, bytearrays, and Rust arrays with `Buf` only when the
    stored values are bytes or small flags. Use explicit offsets. Keep full
-   `Int` values in recursive state, records, `I64Vec`, or local bindings.
+   `Int` values in recursive state, records, `I64Vec`, typed vectors, or
+   local bindings. Use `u8vec` for bounds-checked byte memory and `u32vec`,
+   `i16vec`, or the matching typed-vector family when the stored width is part
+   of the problem.
 5. Replace standard-library parsing and formatting with `@parse-i64` and
    `@fmt-i64`. Do not hand-roll those unless the program is specifically about
    parsing or formatting internals.
 6. Use records for small named bundles and `@map`, `@fold`, or `@for-each`
    for straight-line `I64Vec` traversal before writing a custom recursive
    loop.
-7. Check the effect story last. If the program reads or writes, it has `IO`.
+7. Use fixed-width primitives when overflow, bit layout, byte order, or ABI
+   width is semantically important. Do not use legacy `@add` or `@sub` on
+   fixed-width values; use explicit names such as `@u8-add-wrap`,
+   `@u32-and`, or `@u16-from-le`.
+8. Check the effect story last. If the program reads or writes, it has `IO`.
    If it allocates a buffer, it has `Alloc`. If it writes to a buffer, it has
-   `Mut`. If it recurses or divides, it may have `Div`.
+   `Mut`. Typed-vector allocation and writes have the same `Alloc` and `Mut`
+   effects. If it recurses or divides, it may have `Div`.
 
 For structured stdin, prefer one `@read` into a buffer and parse by offsets.
 `@read` is a byte read, not a line reader or token reader. Calling `@read`
@@ -546,8 +566,9 @@ let ops = {bump: lambda x. @add x 1, double: lambda x. @mul x 2} in
 ops.bump 41
 ```
 
-`Buf` and `I64Vec` handles are the important exception. They are
-region-limited handles and cannot be captured by first-class closures:
+`Buf`, `I64Vec`, and typed-vector handles such as `u8vec` and `u32vec` are
+the important exception. They are region-limited handles and cannot be
+captured by first-class closures:
 
 ```tacit fail=invalid-capture
 let buf = @buf-alloc 1 in
@@ -623,11 +644,12 @@ let add_five = add 5 in
 add_five 37
 ```
 
-Avoid partially applying a `rec` member whose hidden context includes `Buf` or
-`I64Vec`; call it directly with all arguments instead. If a branch chooses
-behavior, either select between same-typed function values that capture only
-first-class data, or pass a mode flag such as `want_even`, `ascending`, or
-`emit_separator` and branch inside the helper body.
+Avoid partially applying a `rec` member whose hidden context includes `Buf`,
+`I64Vec`, or a typed-vector handle; call it directly with all arguments
+instead. If a branch chooses behavior, either select between same-typed
+function values that capture only first-class data, or pass a mode flag such
+as `want_even`, `ascending`, or `emit_separator` and branch inside the helper
+body.
 
 ### Branch Syntax Traps
 
@@ -730,6 +752,36 @@ stored as full integers. For sorting or indexed access to parsed integers,
 use `I64Vec` storage when it is available. For tiny programs, rescanning the
 input or carrying the few needed integer values in recursive state can still
 be simpler.
+
+When the element width is part of the program, use a typed vector instead of a
+legacy buffer. The eight families are `i8vec`, `u8vec`, `i16vec`, `u16vec`,
+`i32vec`, `u32vec`, `i64vec`, and `u64vec`. Each has `@<ty>vec-alloc`,
+`@<ty>vec-len`, `@<ty>vec-get`, and `@<ty>vec-set`. The handle stores its
+length, and every access is bounds-checked. A bad index traps rather than
+silently corrupting memory, but the typechecker still expects the program to
+guard offsets before it reads or writes.
+
+```tacit
+let regs = @u32vec-alloc 4 in
+let _ = @u32vec-set regs 0 100 in
+let _ = @u32vec-set regs 1 23 in
+@u32-add-wrap (@u32vec-get regs 0) (@u32vec-get regs 1)
+```
+
+For byte-addressed memory buses, use `u8vec` and the byte-bus helpers. They
+read or write the whole multi-byte value with one bounds check and an explicit
+endianness:
+
+```tacit
+let ram = @u8vec-alloc 16 in
+let _ = @u8vec-store-u32-le ram 0 305419896 in
+@u8vec-load-u32-le ram 0
+```
+
+`@u8vec-slice buf off len` returns a non-escapable view into the same storage.
+Writes through the parent and the slice can observe each other. Use slices for
+local views, not for values returned from functions, stored in records, or
+captured by closures.
 
 Fresh buffers are not guaranteed to contain zeroes. If you later read a cell,
 write that cell first. This is especially important for flags such as
@@ -1017,7 +1069,7 @@ comparison primitives.
 
 ### Primitive Surface
 
-Arithmetic: `@add`, `@sub`, `@mul`, `@div`, `@mod`.
+Legacy `Int` arithmetic: `@add`, `@sub`, `@mul`, `@div`, `@mod`.
 
 Comparison: `@eq`, `@ne`, `@lt`, `@le`, `@gt`, `@ge`.
 
@@ -1047,11 +1099,51 @@ Search and range grouping: `@lower-bound-i64`, `@count-equal-ranges`,
 
 Parsing and formatting: `@parse-i64`, `@fmt-i64`.
 
-Only the names listed above are recognized primitives. Always keep the leading
-`@`. An `@`-prefixed name not in this list will fail typechecking with an
-unknown-primitive error; an unprefixed name is treated as a local variable, not
-a primitive. If a needed operation is not in this list, build it from the
-listed primitives rather than guessing a new name.
+Fixed-width integer types: `i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `i64`,
+`u64`. Untyped literals default to `Int` unless an annotation or primitive
+argument expects a fixed-width type. A literal must fit the expected width;
+wrapping or truncation is explicit.
+
+Fixed-width casts:
+`@<dst>-from-int-wrap`, `@<src>-to-<dst>-trunc`,
+`@<src>-to-<dst>-sext`, and `@<src>-to-<dst>-zext`.
+
+Fixed-width arithmetic and bits:
+`@<ty>-add-wrap`, `@<ty>-sub-wrap`, `@<ty>-mul-wrap`,
+`@<ty>-add-check`, `@<ty>-sub-check`, `@<ty>-add-sat`,
+`@<ty>-sub-sat`, `@<ty>-and`, `@<ty>-or`, `@<ty>-xor`,
+`@<ty>-not`, `@<ty>-shl`, `@<ty>-shr`, `@<ty>-rotl`,
+`@<ty>-rotr`, and `@<ty>-mask-low`. Here `<ty>` is one fixed-width type
+name. Checked arithmetic returns a record `{ok: Bool, value: <ty>}`.
+
+Byte-order helpers:
+`@u16-from-be`, `@u16-from-le`, `@u32-from-be`, `@u32-from-le`,
+`@u64-from-be`, `@u64-from-le`, `@u16-bswap`, `@u32-bswap`,
+and `@u64-bswap`.
+
+Typed-vector storage:
+`@<ty>vec-alloc`, `@<ty>vec-len`, `@<ty>vec-get`, and
+`@<ty>vec-set` for `i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `i64`, and
+`u64`.
+
+`u8vec` byte storage extras: `@u8vec-fill`, `@u8vec-copy`,
+`@u8vec-slice`, `@u8vec-eq`, and `@u8vec-scan`.
+
+`u8vec` byte-bus helpers:
+`@u8vec-load-u16-le`, `@u8vec-load-u16-be`,
+`@u8vec-load-u32-le`, `@u8vec-load-u32-be`,
+`@u8vec-load-u64-le`, `@u8vec-load-u64-be`, and the matching
+`@u8vec-store-u16-le`, `@u8vec-store-u16-be`,
+`@u8vec-store-u32-le`, `@u8vec-store-u32-be`,
+`@u8vec-store-u64-le`, `@u8vec-store-u64-be`.
+
+Only the names and name patterns listed above are recognized primitives.
+Always keep the leading `@`. An `@`-prefixed name outside this surface will
+fail typechecking with an unknown-primitive error; an unprefixed name is
+treated as a local variable, import alias, or definition name, not a primitive.
+If a needed operation is not in this surface, build it from listed primitives,
+ordinary unit imports, or source stdlib wrappers rather than guessing a new
+primitive name.
 
 The primitive call shape is part of the language contract. For example,
 `@buf-copy dst dst_off src src_off len` mutates `dst` and returns an `Int`;
@@ -1066,6 +1158,28 @@ does the same with a delimiter set.
 `@count-equal-ranges text table count out` and
 `@dedup-adjacent-ranges text table count out` scan adjacent equal byte ranges
 and write grouped rows to `out`.
+
+Fixed-width primitives do not silently mix widths or signedness. This is valid
+because both operands are `u8`:
+
+```tacit
+let x: u8 = 250 in
+@u8-add-wrap x 10
+```
+
+This is invalid because legacy `@add` is the `Int` arithmetic surface, not the
+fixed-width arithmetic surface:
+
+```tacit fail=operator-overload-failure
+let x: u8 = 1 in @add x x
+```
+
+Use checked arithmetic when overflow must be observed:
+
+```tacit
+let r = @u8-add-check 255 1 in
+if r.ok then r.value else 7
+```
 
 ### Higher-Order Combinators
 
@@ -1113,12 +1227,207 @@ helper instead of a combinator.
 
 ### Program Boundary
 
-The program is authoring-view Tacit source. If a surrounding declaration says
-the program returns `Int` with effects `{Alloc, IO, Mut}`, then the source
-expression must infer `Int` with those effects. If the program prints but the
-declaration omits `IO`, the checker reports an effect violation.
+For a single executable expression, the program is authoring-view Tacit source.
+If a surrounding declaration says the program returns `Int` with effects
+`{Alloc, IO, Mut}`, then the source expression must infer `Int` with those
+effects. If the program prints but the declaration omits `IO`, the checker
+reports an effect violation.
 
-## 4. Effect Reasoning
+At a unit or package boundary, do not rely on local inference. Every import,
+private definition, `package` export, and `public` export has an explicit
+type/effect signature. Definition identity is content-addressed: changing a
+signature, body, or referenced hash creates a new definition hash. Changing a
+display name does not.
+
+## 4. Units, Packages, Tests, Systems, And Host Boundaries
+
+### Units
+
+A `unit` is the Tacit package-level source artifact. It is not the older
+`module` binding group. Use `unit` when writing imports, exports, visibility,
+and cross-unit references. Use `module` only for the simultaneous binding
+group surface.
+
+Unit boundaries are explicit:
+
+```text
+unit Math {
+  import inc : Int -> Int
+    from blake3:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef;
+
+  private double : Int -> Int =
+    lambda x. @add x x;
+
+  export package normalize : Int -> Int =
+    lambda x. if @lt x 0 then 0 else x;
+
+  export public add_two : Int -> Int =
+    lambda x. inc (inc x);
+}
+```
+
+`public` exports can be imported by dependent packages and can become host
+exports when their types fit the ABI. `package` exports are visible only
+inside the same package. `private` definitions are visible only inside their
+own unit. Imports name exact `blake3:<64-hex>` definition hashes and declare
+the expected signature. If the imported artifact has a different signature or
+visibility, the package does not check.
+
+Display aliases such as `Math`, `inc`, and `add_two` are for authoring and
+diagnostics. The semantic dependency is the hash plus the declared signature.
+Do not assume that two definitions with the same alias are compatible.
+
+### Packages
+
+A package is the checked unit graph plus hash-pinned dependency resolution.
+The package manifest is TOML. Package names, descriptions, versions,
+dependency aliases, export aliases, and test names are display metadata; the
+semantic package identity comes from unit content.
+
+```toml
+[package]
+name = "demo.math"
+version = "0.1.0"
+
+[dependencies]
+core = { hash = "blake3:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" }
+
+[exports]
+add-two = "blake3:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+[bin]
+main = "add-two"
+```
+
+Dependencies are exact hashes. There is no semantic-version solving, no
+implicit "latest", and no hidden standard prelude. A local source dependency
+may be resolved during development, but the lockfile records the resolved
+package hash. A consumer that wants a new dependency version changes the hash
+and rechecks the package.
+
+### Package Tests
+
+Package tests are ordinary zero-argument Tacit definitions whose value type is
+`Bool`. A test passes when the definition evaluates to `True` and fails when
+it evaluates to `False`. There is no assertion syntax in the core language;
+write boolean expressions or helper functions.
+
+```text
+unit Tests {
+  export package one_plus_one : Bool =
+    @eq (@add 1 1) 2;
+}
+```
+
+The manifest selects test targets by definition hash:
+
+```toml
+[[tests]]
+name = "one_plus_one"
+target = "blake3:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+effects = []
+
+[[tests]]
+name = "writes_stdout"
+target = "blake3:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+effects = ["Alloc", "IO", "Mut"]
+```
+
+`effects` defaults to `[]`. Effectful tests must opt in to `Alloc`, `IO`, or
+`Mut`. Tests with `Div` are rejected by the package test surface. Static
+compile or effect failures are reported as test results, not as successful
+negative tests.
+
+### Source-Level Stdlib
+
+Source stdlib definitions are ordinary package exports. There is no implicit
+prelude and no name-based `std` resolver: a unit can use a library helper only
+after importing the helper's exact definition hash with a matching signature.
+
+The initial source package names are `tacit.core`, `tacit.bytes`,
+`tacit.array`, `tacit.text`, `tacit.collections`, `tacit.io`, and
+`tacit.host`. Their display names are conventional, not semantic. The common
+pattern is to depend on the package by exact hash, then import the specific
+public helper hash in a unit:
+
+```text
+unit Decode {
+  import u32_from_le : u8 -> u8 -> u8 -> u8 -> u32
+    from blake3:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd;
+
+  export public word : u8 -> u8 -> u8 -> u8 -> u32 =
+    lambda b0. lambda b1. lambda b2. lambda b3. u32_from_le b0 b1 b2 b3;
+}
+```
+
+Use source stdlib wrappers when they make the boundary clearer. Direct
+compiler primitives remain valid, especially for low-level operations that
+need direct codegen, bounds checking, or special callback effect propagation.
+
+### Systems Shapes
+
+For CPU, device, and decoder-style code, use fixed-width integers for
+registers, opcodes, masks, and byte layout. Use records for state and decoded
+instruction shapes. Use typed vectors for register files or memory buses.
+
+```text
+let cpu = {pc: 4096, acc: 0, zero: False} in
+let decoded = {kind: 1, mode: 0, operand: 42} in
+if @eq decoded.kind 1 then @add cpu.acc decoded.operand else cpu.acc
+```
+
+When width matters, annotate or call a fixed-width primitive so literals are
+checked at the right size:
+
+```tacit
+let opcode: u8 = 138 in
+let mode = @u8-and (@u8-shr opcode 6) 3 in
+mode
+```
+
+For byte-addressed memory, prefer `u8vec` byte-bus helpers over hand-written
+shift chains:
+
+```tacit
+let ram = @u8vec-alloc 8 in
+let _ = @u8vec-store-u16-be ram 2 4660 in
+@u16-bswap (@u8vec-load-u16-be ram 2)
+```
+
+Structural records are not packed records. Field order is not a source-level
+layout promise. If bytes must have an exact layout, store them in `u8vec` and
+use explicit load/store helpers.
+
+### Host Imports And Exports
+
+Host integration is a constrained embedding ABI, not general FFI. Tacit source
+declares typed host imports as capability operations. The host later satisfies
+those imports through generated bindings and a callback table.
+
+```text
+unit Demo {
+  import host log_byte : u8 -> Int / {IO}
+    from capability "tacit.host.log" operation "write-byte";
+
+  export public emit : u8 -> Int / {IO} =
+    lambda b. log_byte b;
+}
+```
+
+Capability and operation labels are metadata for the generated interface.
+They are not C symbol names, dynamic library names, header names, or permission
+tokens. Tacit source cannot declare arbitrary `extern "C"`, load plugins, use
+raw pointers, or call platform libraries directly.
+
+Public package exports are the host-export candidates. Host-boundary types
+must be ABI-expressible: scalars, structural records whose fields are
+ABI-expressible, and typed-vector handles only as borrowed function
+parameters. Function values, closures, legacy `Buf`/`I64Vec` handles, raw
+pointers, heap strings, and typed-vector return values do not cross the host
+boundary. Scalars and records are copied by value; borrowed vectors are valid
+only during the call.
+
+## 5. Effect Reasoning
 
 A pure program has no allocation, mutation, IO, or possible divergence beyond
 ordinary finite execution.
@@ -1233,6 +1542,17 @@ not important.
 `let b = @buf-alloc 32 in let w = @fmt-i64 b 0 42 in @write 1 b w`:
 `{Alloc, IO, Mut}`.
 
+`let x: u8 = 250 in @u8-add-wrap x 10`: `{}`.
+
+`let r = @u8-add-check 255 1 in r.ok`: `{}`.
+
+`let regs = @u32vec-alloc 2 in @u32vec-set regs 0 7`: `{Alloc, Mut}`.
+
+`let ram = @u8vec-alloc 4 in @u8vec-load-u16-le ram 0`: `{Alloc}`.
+
+`let ram = @u8vec-alloc 4 in @u8vec-store-u16-le ram 0 4660`:
+`{Alloc, Mut}`.
+
 `rec {f = lambda n. if n then f (@sub n 1) else 0} in f 3`: `{Div}`.
 
 ### Repairing Effect Violations
@@ -1247,12 +1567,13 @@ When an effect appears surprising, find the innermost primitive that creates
 it. `Mut` usually comes from `@buf-set`, `@buf-copy`, `@fmt-i64`, `@read`,
 `@i64-set`, `@i64-copy`, `@line-index`, `@token-index`,
 `@token-index-any`, `@sort-i64`, `@sort-ranges-by-bytes`, or
-`@stable-sort-pairs-i64`, and from `@map` writing its output vector. `IO`
-comes from `@read`, `@write`, `@exit`, or an effectful callback called by a
-combinator. `Alloc` comes from allocation primitives. `Div` comes from
-recursion, division, or modulo.
+`@stable-sort-pairs-i64`, from typed-vector `set`/`fill`/`copy`/`store`
+primitives, and from `@map` writing its output vector. `IO` comes from
+`@read`, `@write`, `@exit`, host imports, or an effectful callback called by
+a combinator. `Alloc` comes from allocation primitives, including
+`@<ty>vec-alloc`. `Div` comes from recursion, division, or modulo.
 
-## 5. Negative Examples And Diagnostics
+## 6. Negative Examples And Diagnostics
 
 Each failing Tacit block below is marked with the diagnostic kind it should
 produce.
@@ -1383,6 +1704,32 @@ primitive surface, or bind a lowercase helper name before using it.
 @add 1 0
 ```
 
+Fixed-width literal outside the target range:
+
+```tacit fail=integer-literal-out-of-range
+let x: u8 = 300 in x
+```
+
+Diagnostic kind: `integer-literal-out-of-range`. Fix: choose a value that
+fits the annotation, use a wider type, or spell an explicit wrapping cast.
+
+```tacit
+let x: u16 = 300 in x
+```
+
+Static shift count outside the type width:
+
+```tacit fail=invalid-shift-width
+@u8-shl 1 8
+```
+
+Diagnostic kind: `invalid-shift-width`. Fix: use a count in range or choose a
+wider integer type.
+
+```tacit
+@u8-shl 1 7
+```
+
 Capturing a region-limited buffer in a first-class closure:
 
 ```tacit fail=invalid-capture
@@ -1397,6 +1744,22 @@ helper.
 ```tacit
 let buf = @buf-alloc 1 in
 rec {get = lambda i. @buf-get buf i} in get 0
+```
+
+Capturing a typed-vector handle in a first-class closure has the same shape:
+
+```tacit fail=invalid-capture
+let regs = @u32vec-alloc 4 in
+let get = lambda i. @u32vec-get regs i in
+get 0
+```
+
+Diagnostic kind: `invalid-capture`. Fix: keep vector access in direct storage
+scope, or use a direct `rec` helper when recursion is actually needed.
+
+```tacit
+let regs = @u32vec-alloc 4 in
+@u32vec-get regs 0
 ```
 
 ### Diagnostic Reading Pattern
@@ -1427,14 +1790,22 @@ as a type symbol. In expression position, an unknown `@foo` primitive-like
 symbol is also reported through the unresolved-type path because primitives
 live in the typechecker surface.
 
-## 6. Compiler Error Catalog
+## 7. Compiler Error Catalog
 
 `type-mismatch`: an inferred type is not compatible with an expected type.
 Usually fix the argument, branch, annotation, or primitive call site.
 
 `operator-overload-failure`: an arithmetic or comparison operator received
 operands that cannot share the required numeric type. Keep both operands as
-integers.
+integers. For fixed-width values, use the explicit fixed-width primitive such
+as `@u8-add-wrap` instead of legacy `@add`.
+
+`integer-literal-out-of-range`: an integer literal does not fit the expected
+fixed-width type. Use a wider type, a smaller literal, or an explicit wrapping
+or truncating cast.
+
+`invalid-shift-width`: a statically known fixed-width shift count is negative
+or at least the bit width. Use a count in range for the type.
 
 `unresolved-type`: a type name, constructor, field projection, or unknown
 primitive-like symbol is not known to the typechecker. Use a known base type,
@@ -1469,8 +1840,16 @@ effect sets instead.
 prove it is valid. Keep buffer use inside the `let` body that owns it.
 
 `invalid-capture`: a first-class closure captures a non-escapable value such
-as `Buf` or `I64Vec`. Use a direct `rec` helper or pass ordinary integer
-state instead.
+as `Buf`, `I64Vec`, or a typed-vector handle. Use a direct `rec` helper or
+pass ordinary integer state instead.
+
+`vec-alloc-not-in-let`: a typed-vector allocation appeared somewhere other
+than the direct right-hand side of a `let` binding. Bind the vector first,
+then use it inside the `let` body.
+
+`bounds-violation`: a typed-vector bounds check failed at runtime. Guard every
+index, offset, and length with the vector's length before reading, writing,
+slicing, copying, or using byte-bus load/store helpers.
 
 `callback-type-mismatch`: a combinator callback does not have the required
 integer function shape. `@map` and `@for-each` expect `lambda x. ...`;
@@ -1497,17 +1876,21 @@ When a program fails, use this sequence:
 2. Unknown name or primitive: bind the lowercase name, capitalize a real
    constructor, or use a primitive from Tacit-Lite's surface.
 3. Type mismatch at a primitive: check argument order. Buffer primitives are
-   strict about `buf`, `offset`, `length`, and `value` positions.
+   strict about `buf`, `offset`, `length`, and `value` positions. Typed-vector
+   primitives are width-specific; `@u32vec-get` cannot read a `u8vec`.
 4. Branch mismatch: make both branches return the same type.
-5. Closure capture failure: move `Buf` or `I64Vec` work into a direct `rec`
-   helper, or pass only ordinary first-class state into the closure.
-6. Combinator callback failure: check the callback arity and accumulator
+5. Fixed-width failure: check literal ranges, signedness, shift counts, and
+   whether legacy `Int` arithmetic was used on a fixed-width value.
+6. Closure capture failure: move `Buf`, `I64Vec`, or typed-vector work into a
+   direct `rec` helper, or pass only ordinary first-class state into the
+   closure.
+7. Combinator callback failure: check the callback arity and accumulator
    order.
-7. Effect violation: update the boundary effect set to match source behavior.
-8. Unsupported executable shape: rewrite toward the executable subset:
+8. Effect violation: update the boundary effect set to match source behavior.
+9. Unsupported executable shape: rewrite toward the executable subset:
    integer result, direct helper calls, `rec`, `if`, `match`, `let`, records,
    closures over first-class values, combinators, and supported primitives.
-9. Wrong output after compile success: keep the type/effect shape and debug
+10. Wrong output after compile success: keep the type/effect shape and debug
    the algorithm with smaller input.
 
 ### Worked Examples
@@ -1783,14 +2166,15 @@ one of the allowed primitive names.
 
 If a program uses an unsupported executable shape, simplify toward the
 current executable subset. Prefer integer results at the program boundary,
-buffers or `I64Vec` for explicit storage, records for small named bundles,
-closures over first-class values, `let`, `if`, `match`, `lambda`, `rec`,
-combinators, and primitive calls.
+buffers, `I64Vec`, or typed vectors for explicit storage, records for small
+named bundles, closures over first-class values, `let`, `if`, `match`,
+`lambda`, `rec`, combinators, and primitive calls.
 
 If an executable rejects a function value, inspect its capture set and call
-shape. A closure that captures `Buf` or `I64Vec` should become a direct `rec`
-helper. A recursive helper whose changing state is hidden in nested closures
-is usually clearer when lifted into one `rec` group with explicit parameters.
+shape. A closure that captures `Buf`, `I64Vec`, or a typed-vector handle
+should become a direct `rec` helper. A recursive helper whose changing state
+is hidden in nested closures is usually clearer when lifted into one `rec`
+group with explicit parameters.
 
 If output differs from the expected bytes only in whitespace — repeated
 missing or extra spaces, missing colons, or missing or extra trailing
@@ -1801,9 +2185,11 @@ suppress the leading separator, and emit a final trailing newline only when
 the program produced output.
 
 If a program crashes with no diagnostic, inspect buffer allocation size and
-read-before-write. A giant buffer can overflow local storage. A flags buffer
-that was never initialized can make every item look already used, which often
-leads to offset `-1` and an invalid buffer access.
+read-before-write. A giant buffer or typed vector can overflow local storage.
+A flags buffer that was never initialized can make every item look already
+used, which often leads to offset `-1` and an invalid buffer access. For typed
+vectors, also check that every `get`, `set`, `slice`, `copy`, `scan`, and
+byte-bus load/store stays inside `0..@<ty>vec-len v`.
 
 If output is wrong but the program compiles and typechecks, reason from input
 bytes. Most wrong outputs are one of: off-by-one length,
@@ -2041,15 +2427,26 @@ implicit string iteration, no Python-style slicing, no automatic stdout
 printing, no mutable locals except through explicit storage primitives, no
 general source-visible heap allocation, and no hidden operations beyond the
 primitives listed here. Compiler-managed closure storage is not a value you
-can allocate, inspect, or free.
+can allocate, inspect, or free. Packages do not imply semantic-version
+resolution, a global registry, or a hidden prelude. Host imports do not imply
+arbitrary `extern "C"`, raw pointers, dynamic library loading, or direct
+bindings to platform libraries.
 If the program needs a table, encode the needed state directly with byte
-buffers, `I64Vec`, or recursive integer state. If the program needs a string
-operation, use byte buffers, range tables, and the primitives listed in this
-primer.
+buffers, `I64Vec`, typed vectors, or recursive integer state. If the program
+needs a string operation, use byte buffers, range tables, source stdlib
+helpers when imported, and the primitives listed in this primer.
 If a shorter solution would need a missing abstraction, write the explicit
 one.
 
 ## Stdlib Appendix: Indexed Storage, Text Ranges, Ordering, Grouping, Stream IO, ASCII, And UTF-8
+
+Tacit source libraries are ordinary packages. There is no implicit prelude:
+import the exact public definition hash you need, with the signature you
+expect. The conventional source package names are `tacit.core`, `tacit.bytes`,
+`tacit.array`, `tacit.text`, `tacit.collections`, `tacit.io`, and
+`tacit.host`. Names are display aliases; the hash is the dependency. The
+source wrappers are preferred when they make intent clearer, but the compiler
+primitives below remain valid compatibility and low-level building blocks.
 
 Use `I64Vec` when a program needs indexed storage for full integer values.
 Byte-oriented buffers still handle raw input/output bytes; an `I64Vec` keeps
