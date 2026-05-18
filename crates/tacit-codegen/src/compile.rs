@@ -119,6 +119,34 @@ pub struct Compiler<'ctx> {
     /// vector parameters, which are not first-class Tacit values and cannot be
     /// represented by `FunctionBinding::param_tys`.
     host_import_abis: std::collections::BTreeMap<String, HostImportBinding<'ctx>>,
+    state_runtime: Option<StateRuntime<'ctx>>,
+}
+
+#[derive(Clone)]
+struct StateRuntime<'ctx> {
+    instance_ty: inkwell::types::StructType<'ctx>,
+    instance_tls: inkwell::values::GlobalValue<'ctx>,
+    status_tls: inkwell::values::GlobalValue<'ctx>,
+    fields: Vec<StateFieldLayout<'ctx>>,
+}
+
+#[derive(Clone)]
+struct StateFieldLayout<'ctx> {
+    name: String,
+    ty: StateFieldTy<'ctx>,
+}
+
+#[derive(Clone)]
+enum StateFieldTy<'ctx> {
+    Scalar(LibScalar),
+    Record {
+        struct_ty: inkwell::types::StructType<'ctx>,
+        fields: Vec<StateFieldLayout<'ctx>>,
+    },
+    Vec {
+        elem: FixedIntTy,
+        slot_ty: inkwell::types::StructType<'ctx>,
+    },
 }
 
 /// Per-binder entry on the binding stack. Innermost binder is `last`.
@@ -286,6 +314,7 @@ impl<'ctx> Compiler<'ctx> {
             next_fn_id: 0,
             host_imports: std::collections::BTreeMap::new(),
             host_import_abis: std::collections::BTreeMap::new(),
+            state_runtime: None,
         }
     }
 
@@ -457,6 +486,7 @@ impl<'ctx> Compiler<'ctx> {
             | Node::Export { .. }
             | Node::Defs { .. }
             | Node::Def { .. }
+            | Node::State { .. }
             | Node::Sig { .. } => Err(CodegenError::Unsupported(
                 "unit artifact node in value position",
             )),
@@ -768,6 +798,92 @@ impl<'ctx> Compiler<'ctx> {
                     let slice_len = self.compile_expr(args[2], env, cur_fn)?;
                     self.check_range(cur_fn, off, slice_len, parent_len, "u8vec_slice")?;
                     let slice_ptr = self.ptr_at(parent_ptr, off, "u8vec_slice_ptr")?;
+                    let mut new_env = env.to_vec();
+                    new_env.insert(
+                        0,
+                        Binding::VecHandle {
+                            ptr: slice_ptr,
+                            len: slice_len,
+                            ty: u8_ty,
+                        },
+                    );
+                    return self.compile_value_expr(body, &new_env, cur_fn);
+                }
+
+                if name == "state-load" && args.len() == 1 {
+                    let runtime = self.state_runtime()?;
+                    let field_name = Self::state_field_name_arg(args[0])?;
+                    let (field_ptr, field) = self.state_field_ptr(&runtime, field_name)?;
+                    if let StateFieldTy::Vec { elem, slot_ty } = field.ty {
+                        let data_pp = self
+                            .builder
+                            .build_struct_gep(slot_ty, field_ptr, 0, "state_load_vec_data_pp")
+                            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+                        let len_pp = self
+                            .builder
+                            .build_struct_gep(slot_ty, field_ptr, 1, "state_load_vec_len_pp")
+                            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+                        let ptr = self
+                            .builder
+                            .build_load(
+                                self.context.ptr_type(AddressSpace::default()),
+                                data_pp,
+                                "state_load_vec_data",
+                            )
+                            .map_err(|e| CodegenError::Llvm(e.to_string()))?
+                            .into_pointer_value();
+                        let len = self
+                            .builder
+                            .build_load(self.context.i64_type(), len_pp, "state_load_vec_len")
+                            .map_err(|e| CodegenError::Llvm(e.to_string()))?
+                            .into_int_value();
+                        let mut new_env = env.to_vec();
+                        new_env.insert(0, Binding::VecHandle { ptr, len, ty: elem });
+                        return self.compile_value_expr(body, &new_env, cur_fn);
+                    }
+                }
+
+                if name == "state-slice" && args.len() == 3 {
+                    let runtime = self.state_runtime()?;
+                    let field_name = Self::state_field_name_arg(args[0])?;
+                    let (field_ptr, field) = self.state_field_ptr(&runtime, field_name)?;
+                    let StateFieldTy::Vec { elem, slot_ty } = field.ty else {
+                        return Err(CodegenError::Unsupported(
+                            "@state-slice requires vector field",
+                        ));
+                    };
+                    let u8_ty = FixedIntTy::new(IntSign::Unsigned, 8);
+                    if elem != u8_ty {
+                        return Err(CodegenError::Unsupported(
+                            "@state-slice requires u8vec field",
+                        ));
+                    }
+                    let data_pp = self
+                        .builder
+                        .build_struct_gep(slot_ty, field_ptr, 0, "state_slice_data_pp")
+                        .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+                    let len_pp = self
+                        .builder
+                        .build_struct_gep(slot_ty, field_ptr, 1, "state_slice_len_pp")
+                        .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+                    let parent_ptr = self
+                        .builder
+                        .build_load(
+                            self.context.ptr_type(AddressSpace::default()),
+                            data_pp,
+                            "state_slice_data",
+                        )
+                        .map_err(|e| CodegenError::Llvm(e.to_string()))?
+                        .into_pointer_value();
+                    let parent_len = self
+                        .builder
+                        .build_load(self.context.i64_type(), len_pp, "state_slice_len")
+                        .map_err(|e| CodegenError::Llvm(e.to_string()))?
+                        .into_int_value();
+                    let off = self.compile_expr(args[1], env, cur_fn)?;
+                    let slice_len = self.compile_expr(args[2], env, cur_fn)?;
+                    self.check_range(cur_fn, off, slice_len, parent_len, "state_slice")?;
+                    let slice_ptr = self.ptr_at(parent_ptr, off, "state_slice_ptr")?;
                     let mut new_env = env.to_vec();
                     new_env.insert(
                         0,
@@ -1245,6 +1361,19 @@ impl<'ctx> Compiler<'ctx> {
             PrimKind::Loop => self.emit_loop(args, env, cur_fn),
             PrimKind::LoopStep => self.emit_loop_directive(args, env, cur_fn, 0),
             PrimKind::LoopExit => self.emit_loop_directive(args, env, cur_fn, 1),
+            PrimKind::StateLoad => self.emit_state_load(args, env, cur_fn),
+            PrimKind::StateStore => self
+                .emit_state_store(args, env, cur_fn)
+                .map(CompiledValue::int),
+            PrimKind::StateAllocVec => self
+                .emit_state_alloc_vec(args, env, cur_fn)
+                .map(CompiledValue::int),
+            PrimKind::StateFreeVec => self
+                .emit_state_free_vec(args, env, cur_fn)
+                .map(CompiledValue::int),
+            PrimKind::StateSlice => Err(CodegenError::Unsupported(
+                "@state-slice must appear as the direct RHS of a `let` binding",
+            )),
         }
     }
 
@@ -7981,6 +8110,7 @@ fn collect_free_outer_indices(node: &Node, depth: u64, out: &mut BTreeSet<usize>
         | Node::HostImport { .. }
         | Node::Exports { .. }
         | Node::Export { .. }
+        | Node::State { .. }
         | Node::Sig { .. }
         | Node::Ref { .. } => {}
     }
@@ -8225,6 +8355,7 @@ fn infer_value_ty(node: &Node, env: &[BindingTy]) -> Result<ValueTy> {
         | Node::Export { .. }
         | Node::Defs { .. }
         | Node::Def { .. }
+        | Node::State { .. }
         | Node::Sig { .. }
         | Node::Ref { .. } => Err(CodegenError::Unsupported(
             "unit artifact node in value position",
@@ -8317,11 +8448,13 @@ fn lookup_var<'a, 'ctx>(env: &'a [Binding<'ctx>], idx: u64) -> Result<&'a Bindin
 // =========================================================================
 
 use tacit_typecheck::library::{
-    LibAbiType, LibRecord, LibScalar, LibraryExport, LibraryImport, PackageLibrary,
+    LibAbiType, LibInstance, LibRecord, LibScalar, LibStateField, LibStateType, LibraryExport,
+    LibraryImport, PackageLibrary,
 };
 
 const TACIT_STATUS_OK: u64 = 0;
 const TACIT_STATUS_BAD_ARGUMENT: u64 = 1;
+const TACIT_STATUS_OUT_OF_MEMORY: u64 = 4;
 
 pub fn compile_library_to_object(
     spec: &PackageLibrary,
@@ -8361,6 +8494,13 @@ impl<'ctx> Compiler<'ctx> {
         tls_global.set_initializer(&ptr_t.const_null());
         tls_global.set_linkage(Linkage::Internal);
 
+        let state_runtime = if let Some(instance) = &spec.instance {
+            Some(self.compile_instance_runtime(instance, &spec.package_prefix)?)
+        } else {
+            None
+        };
+        self.state_runtime = state_runtime;
+
         for import in &spec.imports {
             self.compile_host_import_trampoline(
                 import,
@@ -8374,6 +8514,8 @@ impl<'ctx> Compiler<'ctx> {
         for export in &spec.exports {
             self.compile_library_export(export, ctx_struct_ty, tls_global)?;
         }
+
+        self.state_runtime = None;
 
         self.module
             .verify()
@@ -8397,6 +8539,598 @@ impl<'ctx> Compiler<'ctx> {
         let ptr_t = self.context.ptr_type(AddressSpace::default());
         self.context
             .struct_type(&[ptr_t.into(), self.context.i64_type().into()], false)
+    }
+
+    fn compile_instance_runtime(
+        &mut self,
+        instance: &LibInstance,
+        package_prefix: &str,
+    ) -> Result<StateRuntime<'ctx>> {
+        let ptr_t = self.context.ptr_type(AddressSpace::default());
+        let status_t = self.context.i32_type();
+        let fields = self.state_layout_fields(&instance.fields)?;
+        let field_tys = fields
+            .iter()
+            .map(|field| self.state_field_basic_type(&field.ty))
+            .collect::<Vec<_>>();
+        let instance_ty = self.context.struct_type(&field_tys, false);
+
+        let instance_tls_name = format!("{package_prefix}_current_instance");
+        let instance_tls = self.module.add_global(ptr_t, None, &instance_tls_name);
+        instance_tls.set_thread_local(true);
+        instance_tls.set_initializer(&ptr_t.const_null());
+        instance_tls.set_linkage(Linkage::Internal);
+
+        let status_tls_name = format!("{package_prefix}_current_status");
+        let status_tls = self.module.add_global(status_t, None, &status_tls_name);
+        status_tls.set_thread_local(true);
+        status_tls.set_initializer(&status_t.const_zero());
+        status_tls.set_linkage(Linkage::Internal);
+
+        let runtime = StateRuntime {
+            instance_ty,
+            instance_tls,
+            status_tls,
+            fields,
+        };
+        self.compile_instance_create(instance, &runtime)?;
+        self.compile_instance_destroy(instance, &runtime)?;
+        Ok(runtime)
+    }
+
+    fn state_layout_fields(&self, fields: &[LibStateField]) -> Result<Vec<StateFieldLayout<'ctx>>> {
+        fields
+            .iter()
+            .map(|field| {
+                Ok(StateFieldLayout {
+                    name: field.name.clone(),
+                    ty: self.state_layout_ty(&field.ty)?,
+                })
+            })
+            .collect()
+    }
+
+    fn state_layout_ty(&self, ty: &LibStateType) -> Result<StateFieldTy<'ctx>> {
+        match ty {
+            LibStateType::Scalar(scalar) => Ok(StateFieldTy::Scalar(*scalar)),
+            LibStateType::Vec(elem) => Ok(StateFieldTy::Vec {
+                elem: *elem,
+                slot_ty: self.borrowed_vec_struct_type(),
+            }),
+            LibStateType::Record(fields) => {
+                let fields = self.state_layout_fields(fields)?;
+                let field_tys = fields
+                    .iter()
+                    .map(|field| self.state_field_basic_type(&field.ty))
+                    .collect::<Vec<_>>();
+                Ok(StateFieldTy::Record {
+                    struct_ty: self.context.struct_type(&field_tys, false),
+                    fields,
+                })
+            }
+        }
+    }
+
+    fn state_field_basic_type(&self, ty: &StateFieldTy<'ctx>) -> BasicTypeEnum<'ctx> {
+        match ty {
+            StateFieldTy::Scalar(scalar) => scalar_int_type(self.context, *scalar).into(),
+            StateFieldTy::Record { struct_ty, .. } => (*struct_ty).into(),
+            StateFieldTy::Vec { slot_ty, .. } => (*slot_ty).into(),
+        }
+    }
+
+    fn compile_instance_create(
+        &mut self,
+        instance: &LibInstance,
+        runtime: &StateRuntime<'ctx>,
+    ) -> Result<()> {
+        let ptr_t = self.context.ptr_type(AddressSpace::default());
+        let i32_t = self.context.i32_type();
+        let fn_ty = i32_t.fn_type(&[ptr_t.into(), ptr_t.into()], false);
+        let f = self
+            .module
+            .add_function(&instance.create_symbol, fn_ty, Some(Linkage::External));
+        let saved_block = self.builder.get_insert_block();
+        let entry = self.context.append_basic_block(f, "entry");
+        let bad_arg = self.context.append_basic_block(f, "bad_arg");
+        let alloc = self.context.append_basic_block(f, "alloc");
+        let oom = self.context.append_basic_block(f, "oom");
+        let ok = self.context.append_basic_block(f, "ok");
+
+        self.builder.position_at_end(entry);
+        let ctx = f
+            .get_nth_param(0)
+            .ok_or_else(|| CodegenError::Llvm("create missing ctx".into()))?
+            .into_pointer_value();
+        let out = f
+            .get_nth_param(1)
+            .ok_or_else(|| CodegenError::Llvm("create missing out".into()))?
+            .into_pointer_value();
+        let ctx_null = self
+            .builder
+            .build_is_null(ctx, "ctx_null")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let out_null = self
+            .builder
+            .build_is_null(out, "out_null")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let invalid = self
+            .builder
+            .build_or(ctx_null, out_null, "create_bad_arg")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(invalid, bad_arg, alloc)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(bad_arg);
+        self.builder
+            .build_return(Some(&i32_t.const_int(TACIT_STATUS_BAD_ARGUMENT, false)))
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(alloc);
+        let instance_ptr = self
+            .builder
+            .build_malloc(runtime.instance_ty, "instance")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let is_null = self
+            .builder
+            .build_is_null(instance_ptr, "instance_null")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(is_null, oom, ok)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(oom);
+        self.builder
+            .build_return(Some(&i32_t.const_int(TACIT_STATUS_OUT_OF_MEMORY, false)))
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(ok);
+        self.builder
+            .build_store(instance_ptr, runtime.instance_ty.const_zero())
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_store(out, instance_ptr)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_return(Some(&i32_t.const_int(TACIT_STATUS_OK, false)))
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        if let Some(saved) = saved_block {
+            self.builder.position_at_end(saved);
+        }
+        Ok(())
+    }
+
+    fn compile_instance_destroy(
+        &mut self,
+        instance: &LibInstance,
+        runtime: &StateRuntime<'ctx>,
+    ) -> Result<()> {
+        let ptr_t = self.context.ptr_type(AddressSpace::default());
+        let i32_t = self.context.i32_type();
+        let fn_ty = i32_t.fn_type(&[ptr_t.into(), ptr_t.into()], false);
+        let f = self
+            .module
+            .add_function(&instance.destroy_symbol, fn_ty, Some(Linkage::External));
+        let saved_block = self.builder.get_insert_block();
+        let entry = self.context.append_basic_block(f, "entry");
+        let bad_arg = self.context.append_basic_block(f, "bad_arg");
+        let run = self.context.append_basic_block(f, "run");
+
+        self.builder.position_at_end(entry);
+        let instance_ptr = f
+            .get_nth_param(1)
+            .ok_or_else(|| CodegenError::Llvm("destroy missing instance".into()))?
+            .into_pointer_value();
+        let instance_null = self
+            .builder
+            .build_is_null(instance_ptr, "instance_null")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(instance_null, bad_arg, run)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(bad_arg);
+        self.builder
+            .build_return(Some(&i32_t.const_int(TACIT_STATUS_BAD_ARGUMENT, false)))
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(run);
+        self.emit_free_state_vec_fields(
+            instance_ptr,
+            runtime.instance_ty,
+            &runtime.fields,
+            f,
+            "destroy",
+        )?;
+        self.builder
+            .build_free(instance_ptr)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_return(Some(&i32_t.const_int(TACIT_STATUS_OK, false)))
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        if let Some(saved) = saved_block {
+            self.builder.position_at_end(saved);
+        }
+        Ok(())
+    }
+
+    fn emit_free_state_vec_fields(
+        &mut self,
+        base_ptr: PointerValue<'ctx>,
+        struct_ty: inkwell::types::StructType<'ctx>,
+        fields: &[StateFieldLayout<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+        name: &str,
+    ) -> Result<()> {
+        for (index, field) in fields.iter().enumerate() {
+            let field_ptr = self
+                .builder
+                .build_struct_gep(struct_ty, base_ptr, index as u32, &format!("{name}_field"))
+                .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+            match &field.ty {
+                StateFieldTy::Vec { slot_ty, .. } => {
+                    let data_pp = self
+                        .builder
+                        .build_struct_gep(*slot_ty, field_ptr, 0, &format!("{name}_vec_data_pp"))
+                        .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+                    let data = self
+                        .builder
+                        .build_load(
+                            self.context.ptr_type(AddressSpace::default()),
+                            data_pp,
+                            &format!("{name}_vec_data"),
+                        )
+                        .map_err(|e| CodegenError::Llvm(e.to_string()))?
+                        .into_pointer_value();
+                    let is_null = self
+                        .builder
+                        .build_is_null(data, &format!("{name}_vec_null"))
+                        .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+                    let free_bb = self
+                        .context
+                        .append_basic_block(cur_fn, &format!("{name}_vec_free"));
+                    let cont_bb = self
+                        .context
+                        .append_basic_block(cur_fn, &format!("{name}_vec_next"));
+                    self.builder
+                        .build_conditional_branch(is_null, cont_bb, free_bb)
+                        .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+                    self.builder.position_at_end(free_bb);
+                    self.builder
+                        .build_free(data)
+                        .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+                    self.builder
+                        .build_unconditional_branch(cont_bb)
+                        .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+                    self.builder.position_at_end(cont_bb);
+                    self.builder
+                        .build_store(field_ptr, slot_ty.const_zero())
+                        .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+                }
+                StateFieldTy::Record { struct_ty, fields } => {
+                    self.emit_free_state_vec_fields(
+                        field_ptr,
+                        *struct_ty,
+                        fields,
+                        cur_fn,
+                        &format!("{name}_record"),
+                    )?;
+                }
+                StateFieldTy::Scalar(_) => {}
+            }
+        }
+        Ok(())
+    }
+
+    fn state_runtime(&self) -> Result<StateRuntime<'ctx>> {
+        self.state_runtime.clone().ok_or(CodegenError::Unsupported(
+            "state primitive outside instance library",
+        ))
+    }
+
+    fn current_instance_ptr(&mut self, runtime: &StateRuntime<'ctx>) -> Result<PointerValue<'ctx>> {
+        self.builder
+            .build_load(
+                self.context.ptr_type(AddressSpace::default()),
+                runtime.instance_tls.as_pointer_value(),
+                "current_instance",
+            )
+            .map_err(|e| CodegenError::Llvm(e.to_string()))
+            .map(|value| value.into_pointer_value())
+    }
+
+    fn top_state_field(
+        runtime: &StateRuntime<'ctx>,
+        name: &str,
+    ) -> Result<(usize, StateFieldLayout<'ctx>)> {
+        runtime
+            .fields
+            .iter()
+            .cloned()
+            .enumerate()
+            .find(|(_, field)| field.name == name)
+            .ok_or_else(|| CodegenError::MissingField {
+                field: name.to_string(),
+            })
+    }
+
+    fn state_field_name_arg(node: &Node) -> Result<&str> {
+        match node {
+            Node::Sym { name } => Ok(name),
+            _ => Err(CodegenError::Unsupported(
+                "state field argument must be a literal symbol",
+            )),
+        }
+    }
+
+    fn state_field_ptr(
+        &mut self,
+        runtime: &StateRuntime<'ctx>,
+        name: &str,
+    ) -> Result<(PointerValue<'ctx>, StateFieldLayout<'ctx>)> {
+        let (index, field) = Self::top_state_field(runtime, name)?;
+        let instance = self.current_instance_ptr(runtime)?;
+        let ptr = self
+            .builder
+            .build_struct_gep(runtime.instance_ty, instance, index as u32, "state_field")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        Ok((ptr, field))
+    }
+
+    fn value_ty_for_state_field(ty: &StateFieldTy<'ctx>) -> Result<ValueTy> {
+        match ty {
+            StateFieldTy::Scalar(_) => Ok(ValueTy::Int),
+            StateFieldTy::Record { fields, .. } => fields
+                .iter()
+                .map(|field| {
+                    Ok((
+                        field.name.clone(),
+                        Self::value_ty_for_state_field(&field.ty)?,
+                    ))
+                })
+                .collect::<Result<Vec<_>>>()
+                .map(ValueTy::Record),
+            StateFieldTy::Vec { .. } => Err(CodegenError::UnsupportedValueType {
+                ty: "state vector handle".to_string(),
+            }),
+        }
+    }
+
+    fn emit_state_load(
+        &mut self,
+        args: &[&Node],
+        _env: &[Binding<'ctx>],
+        _cur_fn: FunctionValue<'ctx>,
+    ) -> Result<CompiledValue<'ctx>> {
+        let runtime = self.state_runtime()?;
+        let field_name = Self::state_field_name_arg(args[0])?;
+        let (field_ptr, field) = self.state_field_ptr(&runtime, field_name)?;
+        match field.ty {
+            StateFieldTy::Scalar(scalar) => {
+                let raw = self
+                    .builder
+                    .build_load(
+                        scalar_int_type(self.context, scalar),
+                        field_ptr,
+                        "state_load",
+                    )
+                    .map_err(|e| CodegenError::Llvm(e.to_string()))?
+                    .into_int_value();
+                let value =
+                    extend_scalar_to_i64(&self.builder, raw, self.context.i64_type(), scalar)?;
+                Ok(CompiledValue::int(value))
+            }
+            StateFieldTy::Record { struct_ty, fields } => {
+                let raw = self
+                    .builder
+                    .build_load(struct_ty, field_ptr, "state_load_record")
+                    .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+                Ok(CompiledValue {
+                    ty: ValueTy::Record(
+                        fields
+                            .iter()
+                            .map(|field| {
+                                Ok((
+                                    field.name.clone(),
+                                    Self::value_ty_for_state_field(&field.ty)?,
+                                ))
+                            })
+                            .collect::<Result<Vec<_>>>()?,
+                    ),
+                    value: raw,
+                })
+            }
+            StateFieldTy::Vec { .. } => Err(CodegenError::Unsupported(
+                "@state-load of a vector field must be the direct RHS of a let binding",
+            )),
+        }
+    }
+
+    fn emit_state_store(
+        &mut self,
+        args: &[&Node],
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<IntValue<'ctx>> {
+        let runtime = self.state_runtime()?;
+        let field_name = Self::state_field_name_arg(args[0])?;
+        let (field_ptr, field) = self.state_field_ptr(&runtime, field_name)?;
+        match field.ty {
+            StateFieldTy::Scalar(scalar) => {
+                let value = self.compile_expr(args[1], env, cur_fn)?;
+                let stored = trunc_i64_to_scalar(
+                    &self.builder,
+                    value,
+                    scalar_int_type(self.context, scalar),
+                    scalar,
+                )?;
+                self.builder
+                    .build_store(field_ptr, stored)
+                    .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+            }
+            StateFieldTy::Record { .. } => {
+                let value = self.compile_value_expr(args[1], env, cur_fn)?;
+                self.builder
+                    .build_store(field_ptr, value.value)
+                    .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+            }
+            StateFieldTy::Vec { .. } => {
+                return Err(CodegenError::Unsupported(
+                    "@state-store cannot store vector fields",
+                ));
+            }
+        }
+        Ok(self.context.i64_type().const_zero())
+    }
+
+    fn emit_state_alloc_vec(
+        &mut self,
+        args: &[&Node],
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<IntValue<'ctx>> {
+        let runtime = self.state_runtime()?;
+        let field_name = Self::state_field_name_arg(args[0])?;
+        let (field_ptr, field) = self.state_field_ptr(&runtime, field_name)?;
+        let StateFieldTy::Vec { elem, slot_ty } = field.ty else {
+            return Err(CodegenError::Unsupported(
+                "@state-alloc-vec requires vector field",
+            ));
+        };
+        let count = self.compile_expr(args[1], env, cur_fn)?;
+        let data_pp = self
+            .builder
+            .build_struct_gep(slot_ty, field_ptr, 0, "state_vec_data_pp")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let len_pp = self
+            .builder
+            .build_struct_gep(slot_ty, field_ptr, 1, "state_vec_len_pp")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let old_len = self
+            .builder
+            .build_load(self.context.i64_type(), len_pp, "state_vec_old_len")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?
+            .into_int_value();
+        let old_nonzero = self
+            .builder
+            .build_int_compare(
+                IntPredicate::NE,
+                old_len,
+                self.context.i64_type().const_zero(),
+                "state_vec_not_empty",
+            )
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let bad_bb = self.context.append_basic_block(cur_fn, "state_alloc_bad");
+        let alloc_bb = self.context.append_basic_block(cur_fn, "state_alloc");
+        let oom_bb = self.context.append_basic_block(cur_fn, "state_alloc_oom");
+        let ok_bb = self.context.append_basic_block(cur_fn, "state_alloc_ok");
+        let cont_bb = self.context.append_basic_block(cur_fn, "state_alloc_cont");
+        self.builder
+            .build_conditional_branch(old_nonzero, bad_bb, alloc_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(bad_bb);
+        self.store_runtime_status(&runtime, TACIT_STATUS_BAD_ARGUMENT)?;
+        self.builder
+            .build_unconditional_branch(cont_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(alloc_bb);
+        let elem_ty = self.llvm_int_type_for_width(elem.width);
+        let data = self
+            .builder
+            .build_array_malloc(elem_ty, count, "state_vec_alloc")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let data_null = self
+            .builder
+            .build_is_null(data, "state_vec_alloc_null")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(data_null, oom_bb, ok_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(oom_bb);
+        self.store_runtime_status(&runtime, TACIT_STATUS_OUT_OF_MEMORY)?;
+        self.builder
+            .build_unconditional_branch(cont_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(ok_bb);
+        self.builder
+            .build_store(data_pp, data)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_store(len_pp, count)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_unconditional_branch(cont_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(cont_bb);
+        Ok(self.context.i64_type().const_zero())
+    }
+
+    fn emit_state_free_vec(
+        &mut self,
+        args: &[&Node],
+        _env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<IntValue<'ctx>> {
+        let runtime = self.state_runtime()?;
+        let field_name = Self::state_field_name_arg(args[0])?;
+        let (field_ptr, field) = self.state_field_ptr(&runtime, field_name)?;
+        let StateFieldTy::Vec { slot_ty, .. } = field.ty else {
+            return Err(CodegenError::Unsupported(
+                "@state-free-vec requires vector field",
+            ));
+        };
+        let data_pp = self
+            .builder
+            .build_struct_gep(slot_ty, field_ptr, 0, "state_free_data_pp")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let data = self
+            .builder
+            .build_load(
+                self.context.ptr_type(AddressSpace::default()),
+                data_pp,
+                "state_free_data",
+            )
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?
+            .into_pointer_value();
+        let is_null = self
+            .builder
+            .build_is_null(data, "state_free_null")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let free_bb = self.context.append_basic_block(cur_fn, "state_free_do");
+        let cont_bb = self.context.append_basic_block(cur_fn, "state_free_cont");
+        self.builder
+            .build_conditional_branch(is_null, cont_bb, free_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder.position_at_end(free_bb);
+        self.builder
+            .build_free(data)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_unconditional_branch(cont_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder.position_at_end(cont_bb);
+        self.builder
+            .build_store(field_ptr, slot_ty.const_zero())
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        Ok(self.context.i64_type().const_zero())
+    }
+
+    fn store_runtime_status(&mut self, runtime: &StateRuntime<'ctx>, status: u64) -> Result<()> {
+        self.builder
+            .build_store(
+                runtime.status_tls.as_pointer_value(),
+                self.context.i32_type().const_int(status, false),
+            )
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        Ok(())
     }
 
     fn abi_record_struct_type(
@@ -8938,6 +9672,12 @@ impl<'ctx> Compiler<'ctx> {
         }
 
         let mut wrapper_params: Vec<BasicMetadataTypeEnum<'ctx>> = vec![ptr_t.into()];
+        let instance_param_offset = if export.instance_method {
+            wrapper_params.push(ptr_t.into());
+            1usize
+        } else {
+            0usize
+        };
         for param in &export.params {
             wrapper_params.push(self.abi_llvm_type(param)?.into());
         }
@@ -8964,8 +9704,23 @@ impl<'ctx> Compiler<'ctx> {
             .builder
             .build_is_null(ctx_in, "ctx_null")
             .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let invalid_arg = if export.instance_method {
+            let instance_in = wrapper_fn
+                .get_nth_param(1)
+                .ok_or_else(|| CodegenError::Llvm("wrapper missing instance".into()))?
+                .into_pointer_value();
+            let instance_null = self
+                .builder
+                .build_is_null(instance_in, "instance_null")
+                .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+            self.builder
+                .build_or(ctx_null, instance_null, "ctx_or_instance_null")
+                .map_err(|e| CodegenError::Llvm(e.to_string()))?
+        } else {
+            ctx_null
+        };
         self.builder
-            .build_conditional_branch(ctx_null, bad_arg_bb, run_bb)
+            .build_conditional_branch(invalid_arg, bad_arg_bb, run_bb)
             .map_err(|e| CodegenError::Llvm(e.to_string()))?;
 
         self.builder.position_at_end(bad_arg_bb);
@@ -8976,7 +9731,7 @@ impl<'ctx> Compiler<'ctx> {
 
         self.builder.position_at_end(run_bb);
         if has_out {
-            let out_idx = (1 + export.params.len()) as u32;
+            let out_idx = (1 + instance_param_offset + export.params.len()) as u32;
             let out_ptr = wrapper_fn
                 .get_nth_param(out_idx)
                 .ok_or_else(|| CodegenError::Llvm("wrapper missing out".into()))?
@@ -8995,7 +9750,7 @@ impl<'ctx> Compiler<'ctx> {
         let mut param_bindings = Vec::with_capacity(export.params.len());
         for (i, abi_ty) in export.params.iter().enumerate() {
             let raw_param = wrapper_fn
-                .get_nth_param((i + 1) as u32)
+                .get_nth_param((i + 1 + instance_param_offset) as u32)
                 .ok_or_else(|| CodegenError::Llvm(format!("wrapper missing param {i}")))?;
             match abi_ty {
                 LibAbiType::BorrowedVector(vec_ty) => {
@@ -9030,6 +9785,39 @@ impl<'ctx> Compiler<'ctx> {
         self.builder
             .build_store(tls_global.as_pointer_value(), ctx_in)
             .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let state_restore = if export.instance_method {
+            let runtime = self.state_runtime()?;
+            let instance_in = wrapper_fn
+                .get_nth_param(1)
+                .ok_or_else(|| CodegenError::Llvm("wrapper missing instance".into()))?
+                .into_pointer_value();
+            let prior_instance = self
+                .builder
+                .build_load(
+                    ptr_t,
+                    runtime.instance_tls.as_pointer_value(),
+                    "prior_instance",
+                )
+                .map_err(|e| CodegenError::Llvm(e.to_string()))?
+                .into_pointer_value();
+            let prior_status = self
+                .builder
+                .build_load(i32_t, runtime.status_tls.as_pointer_value(), "prior_status")
+                .map_err(|e| CodegenError::Llvm(e.to_string()))?
+                .into_int_value();
+            self.builder
+                .build_store(runtime.instance_tls.as_pointer_value(), instance_in)
+                .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+            self.builder
+                .build_store(
+                    runtime.status_tls.as_pointer_value(),
+                    i32_t.const_int(TACIT_STATUS_OK, false),
+                )
+                .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+            Some((runtime, prior_instance, prior_status))
+        } else {
+            None
+        };
 
         let mut body_env = Vec::with_capacity(param_bindings.len());
         for binding in param_bindings.into_iter().rev() {
@@ -9045,13 +9833,58 @@ impl<'ctx> Compiler<'ctx> {
             });
         }
 
+        let runtime_status = if let Some((runtime, _, _)) = &state_restore {
+            Some(
+                self.builder
+                    .build_load(
+                        i32_t,
+                        runtime.status_tls.as_pointer_value(),
+                        "runtime_status",
+                    )
+                    .map_err(|e| CodegenError::Llvm(e.to_string()))?
+                    .into_int_value(),
+            )
+        } else {
+            None
+        };
+
         // Restore TLS regardless of return path.
         self.builder
             .build_store(tls_global.as_pointer_value(), prior_ctx)
             .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        if let Some((runtime, prior_instance, prior_status)) = &state_restore {
+            self.builder
+                .build_store(runtime.instance_tls.as_pointer_value(), *prior_instance)
+                .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+            self.builder
+                .build_store(runtime.status_tls.as_pointer_value(), *prior_status)
+                .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        }
+
+        if let Some(status) = runtime_status {
+            let status_ok = self
+                .builder
+                .build_int_compare(
+                    IntPredicate::EQ,
+                    status,
+                    i32_t.const_int(TACIT_STATUS_OK, false),
+                    "runtime_status_ok",
+                )
+                .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+            let write_out_bb = self.context.append_basic_block(wrapper_fn, "write_out");
+            let status_ret_bb = self.context.append_basic_block(wrapper_fn, "status_return");
+            self.builder
+                .build_conditional_branch(status_ok, write_out_bb, status_ret_bb)
+                .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+            self.builder.position_at_end(status_ret_bb);
+            self.builder
+                .build_return(Some(&status))
+                .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+            self.builder.position_at_end(write_out_bb);
+        }
 
         if has_out {
-            let out_idx = (1 + export.params.len()) as u32;
+            let out_idx = (1 + instance_param_offset + export.params.len()) as u32;
             let out_ptr = wrapper_fn
                 .get_nth_param(out_idx)
                 .ok_or_else(|| CodegenError::Llvm("wrapper missing out".into()))?

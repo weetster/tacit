@@ -183,10 +183,10 @@ Exit criteria:
 
 ### Stage 3: Tacit-Owned Package Instances
 
-**Status:** Design accepted 2026-05-18 via
-[ADR 0094](../decisions/0094-stateful-host-bridge-package-instances.md);
-implementation deferred to a follow-up stage commit. Closes Q-SHB-2,
-Q-SHB-3, Q-SHB-4, Q-SHB-5.
+**Status:** Complete 2026-05-18 via
+[ADR 0094](../decisions/0094-stateful-host-bridge-package-instances.md)
+and the Stage 3 implementation. Closes Q-SHB-2, Q-SHB-3, Q-SHB-4,
+Q-SHB-5.
 
 **Purpose:** Add persistent state without arbitrary mutable globals.
 
@@ -222,12 +222,16 @@ Work items:
 
 Exit criteria:
 
-- A Tacit package can retain mutable vectors and records across calls.
-  Pending implementation.
+- A Tacit package can retain mutable vectors and records across calls. Done:
+  `(state ...)` declarations generate an opaque instance allocation, state
+  field storage, and `@state-load` / `@state-store` /
+  `@state-alloc-vec` / `@state-free-vec` / `@state-slice` lowering.
 - The host can create and destroy multiple independent instances of the same
-  package. Pending implementation.
-- No raw Tacit pointer or allocator detail crosses the boundary. Locked in by
-  ADR 0094; pending implementation evidence.
+  package. Done: generated C/Rust bindings expose create/destroy symbols and
+  instance-method wrappers with an opaque instance pointer.
+- No raw Tacit pointer or allocator detail crosses the boundary. Done:
+  `interface.json` emits only shape metadata and generated headers
+  forward-declare the opaque instance type.
 
 ### Stage 4: Host Capability Profiles
 

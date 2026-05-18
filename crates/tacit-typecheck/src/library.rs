@@ -15,6 +15,7 @@ use tacit_canonical::hash_node;
 use crate::error::Diagnostic;
 use crate::interface::{
     generate_host_interface, AbiType, HostInterface, HostTarget, InterfaceRecord,
+    InterfaceStateField,
 };
 use crate::package::PackageGraph;
 use crate::project::{project_definition_expression_with_leaves, ProjectEntryError};
@@ -100,6 +101,26 @@ pub struct LibRecordField {
     pub ty: LibAbiType,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LibInstance {
+    pub create_symbol: String,
+    pub destroy_symbol: String,
+    pub fields: Vec<LibStateField>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LibStateField {
+    pub name: String,
+    pub ty: LibStateType,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LibStateType {
+    Scalar(LibScalar),
+    Record(Vec<LibStateField>),
+    Vec(FixedIntTy),
+}
+
 #[derive(Debug, Clone)]
 pub struct LibraryExport {
     /// Definition hash (no `blake3:` prefix).
@@ -110,6 +131,7 @@ pub struct LibraryExport {
     /// are left as `Ref` nodes so codegen can lower them through the
     /// callback table.
     pub body: Node,
+    pub instance_method: bool,
     pub params: Vec<LibAbiType>,
     pub result: LibAbiType,
 }
@@ -133,6 +155,7 @@ pub struct PackageLibrary {
     /// Short identifier `tacit_p_<pkg64>` used for symbols and the per-package
     /// TLS context global.
     pub package_prefix: String,
+    pub instance: Option<LibInstance>,
     pub exports: Vec<LibraryExport>,
     pub imports: Vec<LibraryImport>,
     pub records: Vec<LibRecord>,
@@ -152,6 +175,18 @@ pub fn package_library(
         .collect();
 
     let mut diags: Vec<Diagnostic> = Vec::new();
+    let instance = match interface
+        .instance
+        .as_ref()
+        .map(library_instance)
+        .transpose()
+    {
+        Ok(instance) => instance,
+        Err(diag) => {
+            diags.push(diag);
+            None
+        }
+    };
 
     let mut import_index: BTreeMap<String, usize> = BTreeMap::new();
     let mut imports: Vec<LibraryImport> = Vec::new();
@@ -203,6 +238,7 @@ pub fn package_library(
                 hash,
                 symbol: export.symbol.clone(),
                 body,
+                instance_method: export.instance_method,
                 params,
                 result,
             }),
@@ -231,6 +267,7 @@ pub fn package_library(
     let library = PackageLibrary {
         package_hash,
         package_prefix,
+        instance,
         exports,
         imports,
         records,
@@ -329,11 +366,92 @@ fn library_record(
     })
 }
 
+fn library_instance(
+    instance: &crate::interface::InterfaceInstance,
+) -> Result<LibInstance, Diagnostic> {
+    let fields = instance
+        .state_fields
+        .iter()
+        .map(|field| library_state_field(field, &strip_prefix(&instance.type_hash)))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(LibInstance {
+        create_symbol: instance.create_symbol.clone(),
+        destroy_symbol: instance.destroy_symbol.clone(),
+        fields,
+    })
+}
+
+fn library_state_field(
+    field: &InterfaceStateField,
+    owner_hash: &str,
+) -> Result<LibStateField, Diagnostic> {
+    let ty = match field.kind.as_str() {
+        "scalar" => field
+            .name_type
+            .as_deref()
+            .and_then(scalar_from_name)
+            .map(LibStateType::Scalar)
+            .ok_or_else(|| {
+                library_diag(
+                    "abi-library-unsupported-type",
+                    owner_hash,
+                    format!("state scalar field `{}` has unsupported type", field.name),
+                )
+            })?,
+        "vec" => {
+            let element = field.element.as_deref().ok_or_else(|| {
+                library_diag(
+                    "abi-library-unsupported-type",
+                    owner_hash,
+                    format!("state vec field `{}` is missing element", field.name),
+                )
+            })?;
+            let int_ty = FixedIntTy::parse_name(element).ok_or_else(|| {
+                library_diag(
+                    "abi-library-unsupported-type",
+                    owner_hash,
+                    format!(
+                        "state vec field `{}` has unsupported element `{element}`",
+                        field.name
+                    ),
+                )
+            })?;
+            LibStateType::Vec(int_ty)
+        }
+        "record" => {
+            let fields = field
+                .fields
+                .iter()
+                .map(|nested| library_state_field(nested, owner_hash))
+                .collect::<Result<Vec<_>, _>>()?;
+            LibStateType::Record(fields)
+        }
+        _ => {
+            return Err(library_diag(
+                "abi-library-unsupported-type",
+                owner_hash,
+                format!(
+                    "state field `{}` has unsupported kind `{}`",
+                    field.name, field.kind
+                ),
+            ));
+        }
+    };
+    Ok(LibStateField {
+        name: field.name.clone(),
+        ty,
+    })
+}
+
 fn scalar_from_abi(abi: &AbiType) -> Option<LibScalar> {
     if abi.kind != "scalar" {
         return None;
     }
-    Some(match abi.name.as_deref()? {
+    scalar_from_name(abi.name.as_deref()?)
+}
+
+fn scalar_from_name(name: &str) -> Option<LibScalar> {
+    Some(match name {
         "bool" => LibScalar::Bool,
         "i8" => LibScalar::I8,
         "u8" => LibScalar::U8,
@@ -343,6 +461,7 @@ fn scalar_from_abi(abi: &AbiType) -> Option<LibScalar> {
         "u32" => LibScalar::U32,
         "i64" => LibScalar::I64,
         "u64" => LibScalar::U64,
+        "Int" => LibScalar::Int,
         _ => return None,
     })
 }

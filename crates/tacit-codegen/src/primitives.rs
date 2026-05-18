@@ -131,6 +131,16 @@ pub enum PrimKind {
     LoopStep,
     /// Loop termination directive (ADR 0093): `@exit value -> {tag,value}`.
     LoopExit,
+    /// Load a field from the current package instance (ADR 0094).
+    StateLoad,
+    /// Store a scalar/record field into the current package instance.
+    StateStore,
+    /// Allocate an instance-owned typed-vector field.
+    StateAllocVec,
+    /// Free an instance-owned typed-vector field.
+    StateFreeVec,
+    /// Borrow a u8 sub-slice from an instance-owned vector field.
+    StateSlice,
     /// Binary `i64 → i64 → i64` arithmetic, lowering as a single LLVM op.
     Arith(ArithOp),
     /// Binary `i64 → i64 → i64` comparison: emits `icmp` + `zext`.
@@ -211,6 +221,11 @@ impl PrimKind {
             "loop" => PrimKind::Loop,
             "loop-step" => PrimKind::LoopStep,
             "loop-exit" => PrimKind::LoopExit,
+            "state-load" => PrimKind::StateLoad,
+            "state-store" => PrimKind::StateStore,
+            "state-alloc-vec" => PrimKind::StateAllocVec,
+            "state-free-vec" => PrimKind::StateFreeVec,
+            "state-slice" => PrimKind::StateSlice,
             "add" => PrimKind::Arith(ArithOp::Add),
             "sub" => PrimKind::Arith(ArithOp::Sub),
             "mul" => PrimKind::Arith(ArithOp::Mul),
@@ -266,6 +281,9 @@ impl PrimKind {
             PrimKind::ForEach => 3,
             PrimKind::Loop => 2,
             PrimKind::LoopStep | PrimKind::LoopExit => 1,
+            PrimKind::StateLoad | PrimKind::StateFreeVec => 1,
+            PrimKind::StateStore | PrimKind::StateAllocVec => 2,
+            PrimKind::StateSlice => 3,
             PrimKind::Arith(_) | PrimKind::Cmp(_) => 2,
         }
     }

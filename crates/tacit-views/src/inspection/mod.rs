@@ -192,6 +192,9 @@ impl<'f> Ctx<'f> {
             }
             Node::Defs { defs } => self.render_defs(defs, sc, indent),
             Node::Def { sig, body } => self.render_def(sig, body, sc, indent),
+            Node::State { name, type_ } => {
+                Rendered::leaf(format!("state {} = {}", name, format_type_node_nice(type_)))
+            }
             Node::Sig { type_, eval_eff } => {
                 Rendered::leaf(format_signature_parts(type_, eval_eff))
             }
@@ -1082,6 +1085,17 @@ impl<'f> Ctx<'f> {
     fn render_defs(&mut self, defs: &[Node], sc: Option<&SidecarNode>, indent: usize) -> Rendered {
         let def_map = def_map_by_hash(defs);
         let mut text = String::from("defs");
+        let mut states: Vec<&Node> = defs
+            .iter()
+            .filter(|def| matches!(def, Node::State { .. }))
+            .collect();
+        states.sort_by_key(|state| hash_hex(state));
+        for state in states {
+            let r = self.render(state, sc, indent + 2);
+            text.push('\n');
+            text.push_str(&Self::pad(indent + 2));
+            text.push_str(&r.text);
+        }
         for (_, def) in def_map {
             let r = self.render(def, sc, indent + 2);
             text.push('\n');
@@ -1798,6 +1812,7 @@ fn collect_free_outer_indices(node: &Node, depth: u64, out: &mut BTreeSet<usize>
         | Node::HostImport { .. }
         | Node::Exports { .. }
         | Node::Export { .. }
+        | Node::State { .. }
         | Node::Sig { .. }
         | Node::Ref { .. }
         | Node::PatWild

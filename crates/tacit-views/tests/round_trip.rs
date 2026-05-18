@@ -411,6 +411,35 @@ fn parse_buf_alloc_sym() {
 }
 
 #[test]
+fn parse_unit_state_decl_and_state_field_arg() {
+    let (node, _) = parse_authoring(
+        b"unit Demo {state Self = {ram: u8vec, pc: Int}; export public set_pc : Int -> Int / {Mut} = lambda x. @state-store pc x}",
+    )
+    .unwrap();
+    let canonical = String::from_utf8(tacit_canonical::emit(&node)).unwrap();
+    assert!(
+        canonical.contains("(state Self (record pc (sym Int) ram (sym u8vec)))"),
+        "{canonical}"
+    );
+    assert!(
+        canonical.contains("(app (app (sym state-store) (sym pc)) (var 0))"),
+        "{canonical}"
+    );
+}
+
+#[test]
+fn state_field_arg_round_trips_without_at_prefix() {
+    let authoring =
+        "unit Demo {state Self = {ram: u8vec}; export public len : Int -> Int = lambda x. let v = @state-load ram in @u8vec-len v}";
+    let (node, sidecar) = parse_authoring(authoring.as_bytes()).unwrap();
+    let roundtripped = emit_authoring(&node, Some(&sidecar));
+    assert!(
+        roundtripped.contains("@state-load ram"),
+        "roundtrip should render state field as a bare field name: {roundtripped}"
+    );
+}
+
+#[test]
 fn parse_hole_recovery_unknown_token() {
     // An unexpected token in expression position should produce a Hole node, not a hard error.
     let result = parse_authoring("lambda x. => x".as_bytes());

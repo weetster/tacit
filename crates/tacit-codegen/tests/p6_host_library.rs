@@ -40,6 +40,10 @@ fn app(fn_: Node, arg: Node) -> Node {
     }
 }
 
+fn app2(head: &str, a: Node, b: Node) -> Node {
+    app(app(sym(head), a), b)
+}
+
 fn ann_int(value: &str, ty: &str) -> Node {
     Node::Ann {
         expr: Box::new(Node::Int {
@@ -317,4 +321,58 @@ fn library_codegen_accepts_borrowed_u8vec_host_callback_parameter() {
         "{ir}"
     );
     assert!(ir.contains("borrowed_vec_data"), "{ir}");
+}
+
+#[test]
+fn stateful_library_codegen_emits_instance_lifecycle_and_method_wrapper() {
+    let dir = tempfile::tempdir().unwrap();
+    let body = Node::Let {
+        rhs: Box::new(app2("state-alloc-vec", sym("ram"), Node::Var { index: 0 })),
+        body: Box::new(Node::Let {
+            rhs: Box::new(app(sym("state-load"), sym("ram"))),
+            body: Box::new(app(sym("u8vec-len"), Node::Var { index: 0 })),
+        }),
+    };
+    let export_def = Node::Def {
+        sig: Box::new(sig("Int", "Int", &["Alloc", "Mut"])),
+        body: Box::new(Node::Lam {
+            body: Box::new(body),
+        }),
+    };
+    let export_hash = hash(&export_def);
+    let unit = Node::Unit {
+        imports: vec![],
+        exports: vec![Node::Export {
+            visibility: "public".into(),
+            hash: export_hash,
+        }],
+        defs: vec![
+            Node::State {
+                name: "Self".into(),
+                type_: Box::new(record_ty(&[("ram", sym("u8vec"))])),
+            },
+            export_def,
+        ],
+    };
+    write_unit(dir.path(), &unit);
+
+    let package = load_package(dir.path()).expect("package loads");
+    let (interface, library) =
+        package_library(&package, HostTarget::Native).expect("library spec builds");
+    assert!(interface.instance.is_some());
+    assert!(interface.exports[0].instance_method);
+    assert!(library.instance.is_some());
+
+    let ir = compile_library_to_ir_string(&library, "stateful_lib").expect("library IR generates");
+    let prefix = &library.package_prefix;
+    assert!(ir.contains(&format!("{prefix}_current_instance")), "{ir}");
+    assert!(ir.contains(&format!("{prefix}_current_status")), "{ir}");
+    assert!(ir.contains(&format!("define i32 @{prefix}_create")), "{ir}");
+    assert!(
+        ir.contains(&format!("define i32 @{prefix}_destroy")),
+        "{ir}"
+    );
+    let export_symbol = &library.exports[0].symbol;
+    assert!(ir.contains(&format!("define i32 @{export_symbol}")), "{ir}");
+    assert!(ir.contains("state_vec_alloc"), "{ir}");
 }

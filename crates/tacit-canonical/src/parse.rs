@@ -304,13 +304,13 @@ fn build_form(tag: &str, args: &[SItem]) -> Result<Node, ParseError> {
         }
         "defs" => {
             if args.is_empty() {
-                return err("defs requires at least 1 def");
+                return err("defs requires at least 1 def or state");
             }
             let mut defs = Vec::with_capacity(args.len());
             for a in args {
                 let def = build(a)?;
-                if !matches!(def, Node::Def { .. }) {
-                    return err("defs children must be def nodes");
+                if !matches!(def, Node::Def { .. } | Node::State { .. }) {
+                    return err("defs children must be def or state nodes");
                 }
                 defs.push(def);
             }
@@ -325,6 +325,18 @@ fn build_form(tag: &str, args: &[SItem]) -> Result<Node, ParseError> {
             Ok(Node::Def {
                 sig: Box::new(sig),
                 body: Box::new(build(&args[1])?),
+            })
+        }
+        "state" => {
+            check_arity(tag, args, 2)?;
+            let name = bare_sym(&args[0], "state name")?;
+            let type_ = build(&args[1])?;
+            if !matches!(type_, Node::Record { .. }) {
+                return err("state child 1 must be a record type node");
+            }
+            Ok(Node::State {
+                name,
+                type_: Box::new(type_),
             })
         }
         "sig" => {

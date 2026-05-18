@@ -121,6 +121,7 @@ pub fn check_no_holes(node: &Node) -> Result<(), CodegenError> {
         | Node::HostImport { .. }
         | Node::Exports { .. }
         | Node::Export { .. }
+        | Node::State { .. }
         | Node::Sig { .. }
         | Node::Ref { .. }
         | Node::PatWild
@@ -216,6 +217,7 @@ pub fn check_closed(body: &Node, n: u64) -> Result<(), CodegenError> {
             | Node::HostImport { .. }
             | Node::Exports { .. }
             | Node::Export { .. }
+            | Node::State { .. }
             | Node::Sig { .. }
             | Node::Ref { .. }
             | Node::PatWild

@@ -484,6 +484,56 @@ impl Diagnostic {
         d
     }
 
+    pub fn state_multiple(path: &[usize]) -> Self {
+        Self::new(
+            "state-multiple",
+            "error",
+            path,
+            "unit declares more than one state entry".to_string(),
+        )
+    }
+
+    pub fn state_field_shape_invalid(path: &[usize], actual: &Ty) -> Self {
+        let mut d = Self::new(
+            "state-field-shape-invalid",
+            "error",
+            path,
+            format!(
+                "state field type is outside the Stage 3 state subset: {}",
+                actual
+            ),
+        );
+        d.actual = Some(ty_to_json(actual));
+        d
+    }
+
+    pub fn state_field_unknown(path: &[usize], field: &str) -> Self {
+        Self::new(
+            "state-field-unknown",
+            "error",
+            path,
+            format!("state field '{}' does not exist", field),
+        )
+    }
+
+    pub fn state_field_wrong_kind(path: &[usize], field: &str, message: &str) -> Self {
+        Self::new(
+            "state-field-wrong-kind",
+            "error",
+            path,
+            format!("state field '{}' has the wrong kind: {}", field, message),
+        )
+    }
+
+    pub fn state_access_outside_self(path: &[usize]) -> Self {
+        Self::new(
+            "state-access-outside-self",
+            "error",
+            path,
+            "state access primitive used outside a stateful unit".to_string(),
+        )
+    }
+
     pub fn integer_literal_out_of_range(path: &[usize], value: &str, target: FixedIntTy) -> Self {
         let mut d = Self::new(
             "integer-literal-out-of-range",

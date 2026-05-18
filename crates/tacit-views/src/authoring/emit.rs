@@ -235,6 +235,24 @@ impl EmitCtx {
             }
         }
 
+        let mut ordered_states: Vec<&Node> = defs
+            .iter()
+            .filter(|def| matches!(def, Node::State { .. }))
+            .collect();
+        ordered_states.sort_by_key(|state| hash_hex(state));
+        for state in ordered_states {
+            if let Node::State { name, type_ } = state {
+                if !first {
+                    out.push_str("; ");
+                }
+                first = false;
+                out.push_str("state ");
+                out.push_str(name);
+                out.push_str(" = ");
+                emit_type(type_, out);
+            }
+        }
+
         let export_vis = export_visibility_map(exports);
         let mut ordered_defs: Vec<(String, &Node)> = def_map_by_hash(defs).into_iter().collect();
         ordered_defs.sort_by(|a, b| a.0.cmp(&b.0));
@@ -339,7 +357,13 @@ impl EmitCtx {
                     self.emit_app_expr(fn_, fn_sc, out);
                 }
                 out.push(' ');
-                if needs_parens_as_arg(arg) {
+                if state_primitive_needs_field_arg(fn_) {
+                    if let Node::Sym { name } = arg.as_ref() {
+                        out.push_str(name);
+                    } else {
+                        self.emit_proj_atom(arg, arg_sc, out);
+                    }
+                } else if needs_parens_as_arg(arg) {
                     out.push('(');
                     self.emit_expr(arg, arg_sc, out);
                     out.push(')');
@@ -478,6 +502,7 @@ impl EmitCtx {
             | Node::Export { .. }
             | Node::Defs { .. }
             | Node::Def { .. }
+            | Node::State { .. }
             | Node::Sig { .. } => {
                 let canonical = tacit_canonical::emit::emit(node);
                 out.push_str(&String::from_utf8_lossy(&canonical));
@@ -630,6 +655,17 @@ fn unit_entry_hash(node: &Node) -> String {
         Node::HostImport { .. } => hash_hex(node),
         _ => String::new(),
     }
+}
+
+fn state_primitive_needs_field_arg(node: &Node) -> bool {
+    matches!(
+        node,
+        Node::Sym { name }
+            if matches!(
+                name.as_str(),
+                "state-load" | "state-store" | "state-alloc-vec" | "state-free-vec" | "state-slice"
+            )
+    )
 }
 
 fn hash_hex(node: &Node) -> String {

@@ -29,6 +29,16 @@ fn sig(arg: &str, ret: &str, effects: &[&str]) -> Node {
     }
 }
 
+fn app2(head: &str, a: Node, b: Node) -> Node {
+    Node::App {
+        fn_: Box::new(Node::App {
+            fn_: Box::new(Node::Sym { name: head.into() }),
+            arg: Box::new(a),
+        }),
+        arg: Box::new(b),
+    }
+}
+
 fn write_unit(root: &std::path::Path, unit: &Node) {
     let src = root.join("src");
     std::fs::create_dir_all(&src).unwrap();
@@ -157,4 +167,57 @@ fn function_value_parameter_is_not_abi_expressible() {
     assert!(diags
         .iter()
         .any(|diag| diag.kind == "abi-inexpressible-type"));
+}
+
+#[test]
+fn stateful_interface_emits_instance_metadata_and_bindings() {
+    let dir = tempfile::tempdir().unwrap();
+    let def = Node::Def {
+        sig: Box::new(sig("Int", "Int", &["Mut"])),
+        body: Box::new(Node::Lam {
+            body: Box::new(app2(
+                "state-store",
+                Node::Sym { name: "pc".into() },
+                Node::Var { index: 0 },
+            )),
+        }),
+    };
+    let def_hash = hash(&def);
+    let unit = Node::Unit {
+        imports: vec![],
+        exports: vec![Node::Export {
+            visibility: "public".into(),
+            hash: def_hash,
+        }],
+        defs: vec![
+            Node::State {
+                name: "Self".into(),
+                type_: Box::new(Node::Record {
+                    fields: vec![("pc".into(), sym("Int")), ("ram".into(), sym("u8vec"))],
+                }),
+            },
+            def,
+        ],
+    };
+    write_unit(dir.path(), &unit);
+
+    let package = load_package(dir.path()).expect("package loads");
+    let interface =
+        generate_host_interface(&package, HostTarget::Native).expect("interface generates");
+    let instance = interface.instance.as_ref().expect("instance metadata");
+    assert!(instance.create_symbol.contains("_create"));
+    assert!(instance.destroy_symbol.contains("_destroy"));
+    assert_eq!(instance.state_fields[0].name, "pc");
+    assert!(interface.exports[0].instance_method);
+
+    let header = emit_c_header(&interface);
+    assert!(
+        header.contains("TACIT_STATUS_OUT_OF_MEMORY = 4"),
+        "{header}"
+    );
+    assert!(header.contains("typedef struct tacit_p_"), "{header}");
+    assert!(header.contains("_instance *instance"), "{header}");
+    let rust = emit_rust_bindings(&interface);
+    assert!(rust.contains("pub struct Instance<'ctx>"), "{rust}");
+    assert!(rust.contains("impl Drop for Instance<'_>"), "{rust}");
 }

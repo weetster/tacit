@@ -12,7 +12,7 @@ use tacit_canonical::hash_node;
 use crate::error::Diagnostic;
 use crate::package::{check_package, PackageGraph};
 use crate::ty::{EffAtom, EffSet, FnEff, Subst, Ty};
-use crate::type_from_node::{eff_from_node, type_from_node};
+use crate::type_from_node::{child_path, eff_from_node, type_from_node};
 
 const INTERFACE_FORMAT: &str = "tacit-interface-v1";
 const HOST_ABI: &str = "tacit-host-abi-v1";
@@ -35,6 +35,8 @@ pub struct HostInterface {
     pub format: String,
     pub abi: String,
     pub package_hash: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub instance: Option<InterfaceInstance>,
     pub exports: Vec<InterfaceExport>,
     pub imports: Vec<InterfaceImport>,
     pub records: Vec<InterfaceRecord>,
@@ -44,9 +46,31 @@ pub struct HostInterface {
 pub struct InterfaceExport {
     pub hash: String,
     pub symbol: String,
+    #[serde(skip_serializing_if = "is_false")]
+    pub instance_method: bool,
     pub parameters: Vec<AbiType>,
     pub result: AbiType,
     pub effects: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct InterfaceInstance {
+    pub type_hash: String,
+    pub create_symbol: String,
+    pub destroy_symbol: String,
+    pub state_fields: Vec<InterfaceStateField>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct InterfaceStateField {
+    pub name: String,
+    pub kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub element: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub fields: Vec<InterfaceStateField>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -127,6 +151,8 @@ pub fn generate_host_interface(
 
     let package_hash = package.package_hash.clone();
     let package64 = short_hash(&package_hash);
+    let instance = package_instance(package, &package64)?;
+    let instance_method = instance.is_some();
     let definitions = linked_definitions(package);
     let host_imports = host_import_declarations(package);
     let public_exports = public_export_hashes(package);
@@ -180,6 +206,7 @@ pub fn generate_host_interface(
                 exports.push(InterfaceExport {
                     hash: prefixed(&hash),
                     symbol: format!("tacit_p_{}_e_{}", package64, short_hash(&hash)),
+                    instance_method,
                     parameters,
                     result,
                     effects: effect_strings(&function.effects),
@@ -242,6 +269,7 @@ pub fn generate_host_interface(
         format: INTERFACE_FORMAT.to_string(),
         abi: HOST_ABI.to_string(),
         package_hash: prefixed(&package_hash),
+        instance,
         exports,
         imports,
         records,
@@ -334,6 +362,12 @@ pub fn emit_c_header(interface: &HostInterface) -> String {
                 .first()
                 .map(|import| package_prefix_from_symbol(&import.callback))
         })
+        .or_else(|| {
+            interface
+                .instance
+                .as_ref()
+                .map(|instance| package_prefix_from_symbol(&instance.create_symbol))
+        })
         .unwrap_or_else(|| "tacit_p_unknown".to_string());
 
     let mut out = String::new();
@@ -344,7 +378,8 @@ pub fn emit_c_header(interface: &HostInterface) -> String {
     out.push_str("  TACIT_STATUS_OK = 0,\n");
     out.push_str("  TACIT_STATUS_BAD_ARGUMENT = 1,\n");
     out.push_str("  TACIT_STATUS_MISSING_IMPORT = 2,\n");
-    out.push_str("  TACIT_STATUS_HOST_ERROR = 3\n");
+    out.push_str("  TACIT_STATUS_HOST_ERROR = 3,\n");
+    out.push_str("  TACIT_STATUS_OUT_OF_MEMORY = 4\n");
     out.push_str("} tacit_status;\n\n");
     out.push_str("typedef struct tacit_unit { uint8_t _tacit_unit; } tacit_unit;\n\n");
     for name in ["i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64"] {
@@ -385,6 +420,20 @@ pub fn emit_c_header(interface: &HostInterface) -> String {
     out.push_str(&format!("  const {pkg}_callbacks *callbacks;\n"));
     out.push_str(&format!("}} {pkg}_context;\n\n"));
 
+    if let Some(instance) = &interface.instance {
+        out.push_str(&format!(
+            "typedef struct {pkg}_instance {pkg}_instance;\n\n"
+        ));
+        out.push_str(&format!(
+            "tacit_status {}({pkg}_context *ctx, {pkg}_instance **out);\n",
+            instance.create_symbol
+        ));
+        out.push_str(&format!(
+            "tacit_status {}({pkg}_context *ctx, {pkg}_instance *instance);\n\n",
+            instance.destroy_symbol
+        ));
+    }
+
     for export in &interface.exports {
         out.push_str(&format!(
             "tacit_status {}({});\n",
@@ -409,6 +458,12 @@ pub fn emit_rust_bindings(interface: &HostInterface) -> String {
                 .first()
                 .map(|import| package_prefix_from_symbol(&import.callback))
         })
+        .or_else(|| {
+            interface
+                .instance
+                .as_ref()
+                .map(|instance| package_prefix_from_symbol(&instance.create_symbol))
+        })
         .unwrap_or_else(|| "tacit_p_unknown".to_string());
     let mut out = String::new();
     out.push_str("#![allow(non_camel_case_types)]\n#![allow(non_snake_case)]\n\n");
@@ -419,6 +474,7 @@ pub fn emit_rust_bindings(interface: &HostInterface) -> String {
     out.push_str("    TACIT_STATUS_BAD_ARGUMENT = 1,\n");
     out.push_str("    TACIT_STATUS_MISSING_IMPORT = 2,\n");
     out.push_str("    TACIT_STATUS_HOST_ERROR = 3,\n");
+    out.push_str("    TACIT_STATUS_OUT_OF_MEMORY = 4,\n");
     out.push_str("}\n\n");
     out.push_str("#[repr(C)]\n#[derive(Clone, Copy, Default)]\npub struct tacit_unit { pub _tacit_unit: u8 }\n\n");
     for name in ["i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64"] {
@@ -462,7 +518,23 @@ pub fn emit_rust_bindings(interface: &HostInterface) -> String {
     out.push_str("    pub user: *mut c_void,\n");
     out.push_str(&format!("    pub callbacks: *const {pkg}_callbacks,\n"));
     out.push_str("}\n\n");
+    if interface.instance.is_some() {
+        out.push_str("#[repr(C)]\n");
+        out.push_str(&format!(
+            "pub struct {pkg}_instance {{ _private: [u8; 0] }}\n\n"
+        ));
+    }
     out.push_str("extern \"C\" {\n");
+    if let Some(instance) = &interface.instance {
+        out.push_str(&format!(
+            "    pub fn {}(ctx: *mut {pkg}_context, out: *mut *mut {pkg}_instance) -> tacit_status;\n",
+            instance.create_symbol
+        ));
+        out.push_str(&format!(
+            "    pub fn {}(ctx: *mut {pkg}_context, instance: *mut {pkg}_instance) -> tacit_status;\n",
+            instance.destroy_symbol
+        ));
+    }
     for export in &interface.exports {
         out.push_str(&format!(
             "    pub fn {}({}) -> tacit_status;\n",
@@ -471,6 +543,36 @@ pub fn emit_rust_bindings(interface: &HostInterface) -> String {
         ));
     }
     out.push_str("}\n");
+    if let Some(instance) = &interface.instance {
+        out.push_str(&format!(
+            "\npub struct Instance<'ctx> {{\n    ctx: &'ctx mut {pkg}_context,\n    raw: *mut {pkg}_instance,\n}}\n\n"
+        ));
+        out.push_str("impl<'ctx> Instance<'ctx> {\n");
+        out.push_str("    pub unsafe fn new(ctx: &'ctx mut ");
+        out.push_str(&pkg);
+        out.push_str("_context) -> Result<Self, tacit_status> {\n");
+        out.push_str("        let mut raw = core::ptr::null_mut();\n");
+        out.push_str(&format!(
+            "        let status = {}(ctx as *mut _, &mut raw);\n",
+            instance.create_symbol
+        ));
+        out.push_str("        if status == tacit_status::TACIT_STATUS_OK { Ok(Self { ctx, raw }) } else { Err(status) }\n");
+        out.push_str("    }\n");
+        out.push_str("    pub fn as_raw(&mut self) -> *mut ");
+        out.push_str(&pkg);
+        out.push_str("_instance { self.raw }\n");
+        out.push_str("}\n\n");
+        out.push_str("impl Drop for Instance<'_> {\n");
+        out.push_str("    fn drop(&mut self) {\n");
+        out.push_str("        unsafe {\n");
+        out.push_str(&format!(
+            "            let _ = {}(self.ctx as *mut _, self.raw);\n",
+            instance.destroy_symbol
+        ));
+        out.push_str("        }\n");
+        out.push_str("    }\n");
+        out.push_str("}\n");
+    }
     out
 }
 
@@ -741,6 +843,113 @@ fn public_export_hashes(package: &PackageGraph) -> Vec<String> {
     hashes.into_iter().collect()
 }
 
+fn package_instance(
+    package: &PackageGraph,
+    package64: &str,
+) -> Result<Option<InterfaceInstance>, Vec<Diagnostic>> {
+    let mut found: Option<(String, Node)> = None;
+    let mut diags = Vec::new();
+    for (unit_index, unit) in package.root.units.iter().enumerate() {
+        let Node::Unit { defs, .. } = &unit.node else {
+            continue;
+        };
+        for (def_index, def) in defs.iter().enumerate() {
+            let Node::State { type_, .. } = def else {
+                continue;
+            };
+            if found.is_some() {
+                diags.push(Diagnostic::state_multiple(&[unit_index, 2, def_index]));
+                continue;
+            }
+            found = Some((hash_hex(def), type_.as_ref().clone()));
+        }
+    }
+    if !diags.is_empty() {
+        return Err(diags);
+    }
+
+    let Some((type_hash, type_node)) = found else {
+        return Ok(None);
+    };
+    let mut subst = Subst::default();
+    let mut type_diags = Vec::new();
+    let ty = type_from_node(&type_node, &[], &[], &mut subst, &[], &mut type_diags);
+    let Ty::Record(fields) = subst.apply(&ty) else {
+        return Err(vec![Diagnostic::state_field_shape_invalid(&[], &ty)]);
+    };
+    let mut state_fields = Vec::new();
+    for (name, field_ty) in fields {
+        match state_field_metadata(&name, &field_ty, &[]) {
+            Ok(field) => state_fields.push(field),
+            Err(diag) => type_diags.push(diag),
+        }
+    }
+    if !type_diags.is_empty() {
+        return Err(type_diags);
+    }
+    Ok(Some(InterfaceInstance {
+        type_hash: prefixed(&type_hash),
+        create_symbol: format!("tacit_p_{package64}_create"),
+        destroy_symbol: format!("tacit_p_{package64}_destroy"),
+        state_fields,
+    }))
+}
+
+fn state_field_metadata(
+    name: &str,
+    ty: &Ty,
+    path: &[usize],
+) -> Result<InterfaceStateField, Diagnostic> {
+    match ty {
+        Ty::Int | Ty::IntLit => Ok(InterfaceStateField {
+            name: name.to_string(),
+            kind: "scalar".to_string(),
+            name_type: Some("Int".to_string()),
+            element: None,
+            fields: Vec::new(),
+        }),
+        Ty::Bool => Ok(InterfaceStateField {
+            name: name.to_string(),
+            kind: "scalar".to_string(),
+            name_type: Some("bool".to_string()),
+            element: None,
+            fields: Vec::new(),
+        }),
+        Ty::FixedInt(int_ty) => Ok(InterfaceStateField {
+            name: name.to_string(),
+            kind: "scalar".to_string(),
+            name_type: Some(int_ty.to_string()),
+            element: None,
+            fields: Vec::new(),
+        }),
+        Ty::Vec(int_ty) => Ok(InterfaceStateField {
+            name: name.to_string(),
+            kind: "vec".to_string(),
+            name_type: None,
+            element: Some(int_ty.to_string()),
+            fields: Vec::new(),
+        }),
+        Ty::Record(fields) => {
+            let mut rendered = Vec::new();
+            for (i, (field_name, field_ty)) in fields.iter().enumerate() {
+                rendered.push(state_field_metadata(
+                    field_name,
+                    field_ty,
+                    &child_path(path, i * 2 + 1),
+                )?);
+            }
+            Ok(InterfaceStateField {
+                name: name.to_string(),
+                kind: "record".to_string(),
+                name_type: None,
+                element: None,
+                fields: rendered,
+            })
+        }
+        other => Err(Diagnostic::state_field_shape_invalid(path, other)),
+    }
+}
+
 fn collect_reachable_host_imports(
     start_hash: &str,
     definitions: &BTreeMap<String, Node>,
@@ -989,6 +1198,9 @@ fn rust_scalar_for_name(name: &str) -> &'static str {
 
 fn export_params(pkg: &str, export: &InterfaceExport) -> String {
     let mut params = vec![format!("{pkg}_context *ctx")];
+    if export.instance_method {
+        params.push(format!("{pkg}_instance *instance"));
+    }
     for (i, param) in export.parameters.iter().enumerate() {
         params.push(format!("{} arg{}", c_type(param), i));
     }
@@ -1011,6 +1223,9 @@ fn callback_params(import: &InterfaceImport) -> String {
 
 fn rust_export_params(pkg: &str, export: &InterfaceExport) -> String {
     let mut params = vec![format!("ctx: *mut {pkg}_context")];
+    if export.instance_method {
+        params.push(format!("instance: *mut {pkg}_instance"));
+    }
     for (i, param) in export.parameters.iter().enumerate() {
         params.push(format!("arg{}: {}", i, rust_type(param)));
     }
@@ -1093,6 +1308,10 @@ fn io_diag(kind: &str, path: PathBuf, source: std::io::Error, message: &str) -> 
         format!("{} {}: {}", message, path.display(), source),
         serde_json::json!({"path": path}),
     )
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 impl fmt::Display for HostTarget {

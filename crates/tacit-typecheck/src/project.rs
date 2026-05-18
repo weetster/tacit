@@ -615,7 +615,11 @@ pub(crate) fn unit_boundary_hashes(
     let mut package_exports = BTreeSet::new();
 
     if let Node::Unit { exports, defs, .. } = unit {
-        definition_hashes = defs.iter().map(hex_hash_node).collect();
+        definition_hashes = defs
+            .iter()
+            .filter(|entry| matches!(entry, Node::Def { .. }))
+            .map(hex_hash_node)
+            .collect();
         definition_hashes.sort();
         for export in exports {
             if let Node::Export { visibility, hash } = export {
@@ -643,6 +647,9 @@ pub(crate) fn build_definition_index(units: &[ProjectUnit]) -> BTreeMap<String, 
             continue;
         };
         for def in defs {
+            if !matches!(def, Node::Def { .. }) {
+                continue;
+            }
             let hash = hex_hash_node(def);
             let visibility = unit_visibility_for_hash(unit, &hash);
             definitions

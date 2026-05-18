@@ -106,6 +106,17 @@ fn unit_ref_placeholder_alias(name: &str) -> Option<&str> {
     name.strip_prefix(UNIT_REF_PLACEHOLDER_PREFIX)
 }
 
+fn state_primitive_needs_field_arg(node: &Node) -> bool {
+    matches!(
+        node,
+        Node::Sym { name }
+            if matches!(
+                name.as_str(),
+                "state-load" | "state-store" | "state-alloc-vec" | "state-free-vec" | "state-slice"
+            )
+    )
+}
+
 impl Parser {
     fn peek(&self) -> Option<&Token> {
         self.tokens.get(self.pos)
@@ -312,6 +323,11 @@ impl Parser {
                 }
                 import_aliases.insert(alias, hash);
                 self.skip_to_decl_end()?;
+            } else if self.consume_ident_keyword("state") {
+                let _alias = self.consume_ident("state alias")?;
+                self.consume(&Token::Eq, "'='")?;
+                let _ty = self.parse_type_expr()?;
+                self.skip_to_decl_end()?;
             } else if self.consume_ident_keyword("private") {
                 let alias = self.consume_ident("definition alias")?;
                 if !seen_value_aliases.insert(alias.clone()) {
@@ -332,7 +348,7 @@ impl Parser {
                 self.skip_to_decl_end()?;
             } else {
                 return err(format!(
-                    "expected import, export, private, or '}}' in unit but got {:?}",
+                    "expected import, state, export, private, or '}}' in unit but got {:?}",
                     self.peek()
                 ));
             }
@@ -541,6 +557,7 @@ impl Parser {
 
         let mut imports = Vec::new();
         let mut import_alias_map = BTreeMap::new();
+        let mut states = Vec::new();
         let mut drafts = Vec::new();
 
         while !matches!(self.peek(), Some(Token::RBrace) | None) {
@@ -587,6 +604,14 @@ impl Parser {
                 };
                 imports.push(import);
                 import_alias_map.insert(hash, alias);
+            } else if self.consume_ident_keyword("state") {
+                let name = self.consume_ident("state alias")?;
+                self.consume(&Token::Eq, "'='")?;
+                let type_ = self.parse_type_expr()?;
+                states.push(Node::State {
+                    name,
+                    type_: Box::new(type_),
+                });
             } else if self.consume_ident_keyword("private") {
                 let draft = self.parse_unit_def_decl(None)?;
                 drafts.push(draft);
@@ -599,7 +624,7 @@ impl Parser {
                 drafts.push(draft);
             } else {
                 return err(format!(
-                    "expected import, export, private, or '}}' in unit but got {:?}",
+                    "expected import, state, export, private, or '}}' in unit but got {:?}",
                     self.peek()
                 ));
             }
@@ -620,7 +645,7 @@ impl Parser {
         }
 
         let resolved = resolve_unit_defs(drafts)?;
-        let mut defs = Vec::new();
+        let mut defs = states;
         let mut exports = Vec::new();
         let mut definition_aliases = BTreeMap::new();
         let mut export_aliases = BTreeMap::new();
@@ -1060,7 +1085,11 @@ impl Parser {
         let mut lhs = head_node;
         let mut lhs_sc = head_sc;
         while self.can_start_atom() {
-            let (rhs, rhs_sc, _) = self.parse_proj_atom()?;
+            let (rhs, rhs_sc, _) = if state_primitive_needs_field_arg(&lhs) {
+                self.parse_state_field_arg()?
+            } else {
+                self.parse_proj_atom()?
+            };
             let sc = SidecarNode {
                 children: Some(vec![Some(lhs_sc), Some(rhs_sc)]),
                 ..Default::default()
@@ -1072,6 +1101,26 @@ impl Parser {
             lhs_sc = sc;
         }
         Ok((lhs, lhs_sc))
+    }
+
+    fn parse_state_field_arg(&mut self) -> Result<(Node, SidecarNode, bool), ParseError> {
+        match self.peek().cloned() {
+            Some(Token::Ident(name)) => {
+                self.advance();
+                Ok((Node::Sym { name }, SidecarNode::default(), false))
+            }
+            Some(Token::Underscore) => {
+                self.advance();
+                Ok((
+                    Node::Sym {
+                        name: "_".to_string(),
+                    },
+                    SidecarNode::default(),
+                    false,
+                ))
+            }
+            _ => self.parse_proj_atom(),
+        }
     }
 
     /// Parse one atomic expression, then any `.field` projections.

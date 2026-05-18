@@ -19,6 +19,7 @@
 //! - Primitives (`@write`, `@read`, `@exit`): IO sits at the innermost
 //!   application (fully-applied call).
 
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 
 use tacit_canonical::ast::Node;
@@ -30,6 +31,19 @@ use crate::primitives::{
 };
 use crate::ty::{join_fn_eff, unify, EffAtom, EffSet, FixedIntTy, FnEff, IntSign, Subst, Ty};
 use crate::type_from_node::{child_path, type_from_node};
+
+thread_local! {
+    static STATE_CONTEXT: RefCell<Option<BTreeMap<String, Ty>>> = const { RefCell::new(None) };
+}
+
+pub fn with_state_context<R>(fields: Option<BTreeMap<String, Ty>>, f: impl FnOnce() -> R) -> R {
+    STATE_CONTEXT.with(|cell| {
+        let previous = cell.replace(fields);
+        let result = f();
+        cell.replace(previous);
+        result
+    })
+}
 
 /// Infer the type and eval-effect of a node given a variable context.
 ///
@@ -301,6 +315,7 @@ pub fn infer(
         | Node::Export { .. }
         | Node::Defs { .. }
         | Node::Def { .. }
+        | Node::State { .. }
         | Node::Sig { .. }
         | Node::Ref { .. } => (Ty::Unknown, FnEff::pure_()),
     }
@@ -438,6 +453,7 @@ fn collect_free_outer_indices(node: &Node, depth: u64, out: &mut BTreeSet<usize>
             }
         }
         Node::Def { body, .. } => collect_free_outer_indices(body, depth, out),
+        Node::State { .. } => {}
         Node::App { fn_, arg } => {
             collect_free_outer_indices(fn_, depth, out);
             collect_free_outer_indices(arg, depth, out);
@@ -624,6 +640,10 @@ fn infer_full_primitive_app(
         return None;
     };
 
+    if let Some(result) = infer_state_primitive_app(ctx, name, &args, subst, path, diags) {
+        return Some(result);
+    }
+
     if let Some(result) = infer_fixed_int_primitive_app(ctx, name, &args, subst, path, diags) {
         return Some(result);
     }
@@ -662,6 +682,118 @@ fn unfold_app_from_parts<'a>(fn_: &'a Node, arg: &'a Node) -> (&'a Node, Vec<&'a
                 return (head, args);
             }
         }
+    }
+}
+
+fn infer_state_primitive_app(
+    ctx: &[Ty],
+    name: &str,
+    args: &[&Node],
+    subst: &mut Subst,
+    path: &[usize],
+    diags: &mut Vec<Diagnostic>,
+) -> Option<(Ty, FnEff)> {
+    let expected_arity = match name {
+        "state-load" | "state-free-vec" => 1,
+        "state-store" | "state-alloc-vec" => 2,
+        "state-slice" => 3,
+        _ => return None,
+    };
+    if args.len() != expected_arity {
+        return None;
+    }
+
+    let Some(field) = state_field_symbol(args[0]) else {
+        diags.push(Diagnostic::state_field_unknown(
+            &child_path(path, 0),
+            "<non-symbol>",
+        ));
+        return Some((Ty::Unknown, FnEff::pure_()));
+    };
+
+    let field_ty = STATE_CONTEXT.with(|cell| {
+        cell.borrow()
+            .as_ref()
+            .and_then(|fields| fields.get(field).cloned())
+    });
+    let Some(field_ty) = field_ty else {
+        if STATE_CONTEXT.with(|cell| cell.borrow().is_none()) {
+            diags.push(Diagnostic::state_access_outside_self(path));
+        } else {
+            diags.push(Diagnostic::state_field_unknown(&child_path(path, 0), field));
+        }
+        return Some((Ty::Unknown, FnEff::pure_()));
+    };
+
+    match name {
+        "state-load" => Some((field_ty, FnEff::pure_())),
+        "state-store" => {
+            if matches!(subst.apply(&field_ty), Ty::Vec(_)) {
+                diags.push(Diagnostic::state_field_wrong_kind(
+                    &child_path(path, 0),
+                    field,
+                    "@state-store cannot store a vector field",
+                ));
+            }
+            let (value_ty, value_eff) = infer(ctx, args[1], subst, &child_path(path, 1), diags);
+            expect_type(&child_path(path, 1), &field_ty, &value_ty, subst, diags);
+            let eff = join_fn_eff(
+                &value_eff,
+                &FnEff::from_set(EffSet::of([EffAtom::Mut])),
+                subst,
+            );
+            Some((Ty::Int, eff))
+        }
+        "state-alloc-vec" => {
+            if !matches!(subst.apply(&field_ty), Ty::Vec(_)) {
+                diags.push(Diagnostic::state_field_wrong_kind(
+                    &child_path(path, 0),
+                    field,
+                    "@state-alloc-vec requires a vector field",
+                ));
+            }
+            let (count_ty, count_eff) = infer(ctx, args[1], subst, &child_path(path, 1), diags);
+            expect_type(&child_path(path, 1), &Ty::Int, &count_ty, subst, diags);
+            let eff = join_fn_eff(
+                &count_eff,
+                &FnEff::from_set(EffSet::of([EffAtom::Alloc, EffAtom::Mut])),
+                subst,
+            );
+            Some((Ty::Int, eff))
+        }
+        "state-free-vec" => {
+            if !matches!(subst.apply(&field_ty), Ty::Vec(_)) {
+                diags.push(Diagnostic::state_field_wrong_kind(
+                    &child_path(path, 0),
+                    field,
+                    "@state-free-vec requires a vector field",
+                ));
+            }
+            Some((Ty::Int, FnEff::from_set(EffSet::of([EffAtom::Mut]))))
+        }
+        "state-slice" => {
+            let u8_ty = FixedIntTy::new(IntSign::Unsigned, 8);
+            if !matches!(subst.apply(&field_ty), Ty::Vec(actual) if actual == u8_ty) {
+                diags.push(Diagnostic::state_field_wrong_kind(
+                    &child_path(path, 0),
+                    field,
+                    "@state-slice requires a u8vec field",
+                ));
+            }
+            let (off_ty, off_eff) = infer(ctx, args[1], subst, &child_path(path, 1), diags);
+            let (len_ty, len_eff) = infer(ctx, args[2], subst, &child_path(path, 2), diags);
+            expect_type(&child_path(path, 1), &Ty::Int, &off_ty, subst, diags);
+            expect_type(&child_path(path, 2), &Ty::Int, &len_ty, subst, diags);
+            Some((Ty::Vec(u8_ty), join_fn_eff(&off_eff, &len_eff, subst)))
+        }
+        _ => None,
+    }
+}
+
+fn state_field_symbol(node: &Node) -> Option<&str> {
+    match node {
+        Node::Sym { name } => Some(name.as_str()),
+        _ => None,
     }
 }
 

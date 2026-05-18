@@ -11,7 +11,7 @@ use tacit_canonical::{emit, hash_node};
 use tacit_views::sidecar::SidecarNode;
 
 use crate::error::Diagnostic;
-use crate::infer::infer;
+use crate::infer::{infer, with_state_context};
 use crate::ty::{unify, EffSet, FnEff, Subst, Ty};
 use crate::type_from_node::{eff_from_node, type_from_node};
 
@@ -201,6 +201,7 @@ fn check_unit_with_path(
 
     let mut diags = Vec::new();
     let local_defs = local_def_map(parts.defs);
+    let state_fields = validate_state_entries(parts.defs, path, &mut diags);
 
     let mut seen_imports = BTreeSet::new();
     let mut seen_host_imports = BTreeSet::new();
@@ -374,13 +375,15 @@ fn check_unit_with_path(
         let declared_ty = signature_type(sig, &mut subst, &mut local_diags);
         let declared_eval_eff = signature_eval_eff(sig, &mut subst, &mut local_diags);
         let rewritten_body = rewrite_refs(body, &ref_indices, 0);
-        let (body_ty, body_eff) = infer(
-            &ref_ctx,
-            &rewritten_body,
-            &mut subst,
-            &def_path,
-            &mut local_diags,
-        );
+        let (body_ty, body_eff) = with_state_context(state_fields.clone(), || {
+            infer(
+                &ref_ctx,
+                &rewritten_body,
+                &mut subst,
+                &def_path,
+                &mut local_diags,
+            )
+        });
 
         if !unify(&declared_ty, &body_ty, &mut subst) {
             let expected = subst.apply(&declared_ty);
@@ -447,8 +450,10 @@ fn unit_artifact_parts(node: &Node) -> Option<UnitArtifactParts<'_>> {
                     } if visibility == "public" || visibility == "package"
                 )
             });
-            let valid_defs =
-                !defs.is_empty() && defs.iter().all(|entry| matches!(entry, Node::Def { .. }));
+            let valid_defs = !defs.is_empty()
+                && defs
+                    .iter()
+                    .all(|entry| matches!(entry, Node::Def { .. } | Node::State { .. }));
 
             if valid_imports && valid_exports && valid_defs {
                 Some(UnitArtifactParts {
@@ -461,6 +466,68 @@ fn unit_artifact_parts(node: &Node) -> Option<UnitArtifactParts<'_>> {
             }
         }
         _ => None,
+    }
+}
+
+fn validate_state_entries(
+    defs: &[Node],
+    path: &[usize],
+    diags: &mut Vec<Diagnostic>,
+) -> Option<BTreeMap<String, Ty>> {
+    let mut state_fields = None;
+    let mut seen = false;
+    for (i, def) in defs.iter().enumerate() {
+        let Node::State { type_, .. } = def else {
+            continue;
+        };
+        let state_path = child_path(path, &[2, i]);
+        if seen {
+            diags.push(Diagnostic::state_multiple(&state_path));
+            continue;
+        }
+        seen = true;
+
+        let mut subst = Subst::default();
+        let mut local_diags = Vec::new();
+        let ty = type_from_node(
+            type_,
+            &[],
+            &[],
+            &mut subst,
+            &child_path(path, &[2, i, 1]),
+            &mut local_diags,
+        );
+        let resolved = subst.apply(&ty);
+        match resolved {
+            Ty::Record(fields) => {
+                for (field_index, (_name, field_ty)) in fields.iter().enumerate() {
+                    validate_state_field_type(
+                        field_ty,
+                        &child_path(path, &[2, i, 1, field_index * 2 + 1]),
+                        diags,
+                    );
+                }
+                state_fields = Some(fields);
+            }
+            Ty::Unknown => {}
+            other => diags.push(Diagnostic::state_field_shape_invalid(&state_path, &other)),
+        }
+        diags.extend(local_diags.into_iter().filter(|d| d.severity == "error"));
+    }
+    state_fields
+}
+
+fn validate_state_field_type(ty: &Ty, path: &[usize], diags: &mut Vec<Diagnostic>) {
+    match ty {
+        Ty::Int | Ty::IntLit | Ty::Bool | Ty::FixedInt(_) | Ty::Vec(_) | Ty::Unknown => {}
+        Ty::Record(fields) => {
+            for (i, field_ty) in fields.values().enumerate() {
+                validate_state_field_type(field_ty, &child_path(path, &[i * 2 + 1]), diags);
+            }
+        }
+        Ty::Str | Ty::Buf | Ty::I64Vec | Ty::Fn(_, _, _) | Ty::App(_, _) | Ty::Meta(_) => {
+            diags.push(Diagnostic::state_field_shape_invalid(path, ty));
+        }
     }
 }
 

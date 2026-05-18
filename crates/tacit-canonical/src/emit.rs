@@ -82,6 +82,13 @@ fn emit_into(node: &Node, out: &mut String) {
         Node::Export { visibility, hash } => emit_export(visibility, hash, out),
         Node::Defs { defs } => emit_defs(defs, out),
         Node::Def { sig, body } => emit_def(sig, body, out),
+        Node::State { name, type_ } => {
+            out.push_str("(state ");
+            out.push_str(name);
+            out.push(' ');
+            emit_into(type_, out);
+            out.push(')');
+        }
         Node::Sig { type_, eval_eff } => {
             out.push_str("(sig ");
             emit_into(type_, out);

@@ -59,6 +59,10 @@ pub enum Node {
         sig: Box<Node>,
         body: Box<Node>,
     },
+    State {
+        name: String,
+        type_: Box<Node>,
+    },
     Sig {
         type_: Box<Node>,
         eval_eff: Box<Node>,
