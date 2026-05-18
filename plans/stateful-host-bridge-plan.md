@@ -233,32 +233,64 @@ Exit criteria:
   `interface.json` emits only shape metadata and generated headers
   forward-declare the opaque instance type.
 
-### Stage 4: Host Capability Profiles
+### Stage 4: Host Callback Trait Codegen
 
-**Purpose:** Standardize the bridge shape without baking third-party
-libraries into Tacit.
+**Status:** Design complete 2026-05-18. Deliverable:
+[ADR 0095](../decisions/0095-host-callback-trait-codegen.md). Implementation
+deferred to a follow-up commit. Closes Q-SHB-6.
+
+**Purpose (revised):** Reduce host-side friction for Rust hosts that satisfy
+package-level host imports. The original framing ("standardize the bridge
+shape without baking third-party libraries into Tacit") proposed a
+conventional capability profile catalog; ADR 0095 narrows the stage to
+trait-shaped Rust binding ergonomics only and defers any stdlib catalog
+until a real second consumer appears.
 
 Work items:
 
 - Define conventional capability labels and signatures for video, audio,
-  input, monotonic time, logging, and storage.
+  input, monotonic time, logging, and storage. **Declined by
+  [ADR 0095](../decisions/0095-host-callback-trait-codegen.md):**
+  pre-shipping a stdlib capability catalog before a second consumer is
+  speculative. Capability labels remain project-local declarations under
+  ADR 0088.
 - Keep capabilities as typed host imports; do not add direct bindings to SDL
-  or any other library.
+  or any other library. **Preserved by
+  [ADR 0095](../decisions/0095-host-callback-trait-codegen.md):** status
+  quo from ADR 0088 retained.
 - Add source-level stdlib helpers for common bridge patterns, such as frame
   presentation, audio-buffer push, input-state polling, and ROM loading into
-  Tacit-owned memory.
+  Tacit-owned memory. **Declined by
+  [ADR 0095](../decisions/0095-host-callback-trait-codegen.md):** helper
+  packages move to project-local code (initially under Tacboy in Stage 5)
+  and may graduate to `stdlib/tacit/host/` only when a second consumer
+  needs the same helper.
 - Specify which callbacks may be called from long-running loops and what
-  effects they carry.
+  effects they carry. **Deferred to Stage 6 hardening:** loop-safety
+  classification becomes an optional `yielding-in-loop` lint rather than a
+  Stage 4 deliverable. The Lite effect lattice from ADR 0035 is unchanged.
 - Add generated binding ergonomics so Rust hosts can satisfy these capability
-  tables without manually copying hash-derived symbols.
+  tables without manually copying hash-derived symbols. **Done by
+  [ADR 0095](../decisions/0095-host-callback-trait-codegen.md):** per-package
+  `<Pkg>Callbacks` trait emission plus a `Context::bind_callbacks` helper.
+  Methods are named from operation labels; hash-derived symbols stay
+  internal to the binding crate.
 
 Exit criteria:
 
 - A host can implement a small capability table and avoid emulator-domain
-  state.
+  state. **Already met by ADR 0088** (status quo); ADR 0095 improves the
+  ergonomics of doing so.
 - Tacit packages can use conventional capability imports across projects.
+  **Declined by [ADR 0095](../decisions/0095-host-callback-trait-codegen.md):**
+  no conventional cross-project catalog is introduced. Capability labels
+  remain project-local. If real cross-consumer pressure appears later, a
+  future ADR may reopen profiles on top of trait codegen.
 - Generated bindings are stable enough that source hash churn does not force
-  hand edits in host code.
+  hand edits in host code. **Done by
+  [ADR 0095](../decisions/0095-host-callback-trait-codegen.md):** trait
+  method names derive from operation labels, not hashes; hosts no longer
+  copy hash-derived field names.
 
 ### Stage 5: Tacboy Vertical Slice
 
@@ -318,7 +350,7 @@ Exit criteria:
 | Q-SHB-3 | Are Tacit-owned heap vectors a new handle family or an extension of typed vectors? | Closed by [ADR 0094](../decisions/0094-stateful-host-bridge-package-instances.md): reuse existing typed-vec handles; ownership lives in the instance, the user always sees a call-local borrow. |
 | Q-SHB-4 | How are allocation failures represented across instance creation and method calls? | Closed by [ADR 0094](../decisions/0094-stateful-host-bridge-package-instances.md): new ABI status `TACIT_STATUS_OUT_OF_MEMORY`; no Tacit-level failure value. |
 | Q-SHB-5 | Can host callbacks receive Tacit-owned borrowed slices safely during a call? | Closed by [ADR 0094](../decisions/0094-stateful-host-bridge-package-instances.md): yes, symmetric Stage 1 call-local borrow rule. |
-| Q-SHB-6 | Which capability labels belong in a conventional profile versus project-local declarations? | Stage 4 ADR |
+| Q-SHB-6 | Which capability labels belong in a conventional profile versus project-local declarations? | Closed by [ADR 0095](../decisions/0095-host-callback-trait-codegen.md): none. Profiles are not introduced; capability labels remain project-local declarations. May be revisited if a second consumer of the same logical capability emerges. |
 | Q-SHB-7 | What is the minimum Tacboy milestone that proves the model without turning Tacit development into emulator development? | Stage 5 plan update |
 
 ## Recommended Sequence
