@@ -1242,6 +1242,9 @@ impl<'ctx> Compiler<'ctx> {
             PrimKind::ForEach => self
                 .emit_for_each_i64(args, env, cur_fn)
                 .map(CompiledValue::int),
+            PrimKind::Loop => self.emit_loop(args, env, cur_fn),
+            PrimKind::LoopStep => self.emit_loop_directive(args, env, cur_fn, 0),
+            PrimKind::LoopExit => self.emit_loop_directive(args, env, cur_fn, 1),
         }
     }
 
@@ -3591,6 +3594,155 @@ impl<'ctx> Compiler<'ctx> {
 
         self.builder.position_at_end(ret_bb);
         Ok(zero64)
+    }
+
+    /// `@loop init step` → bounded-stack iteration (ADR 0093).
+    ///
+    /// Lowers as a labeled basic-block loop with a PHI on the state value.
+    /// The step callback is invoked once per iteration through the closure
+    /// ABI; its stack frame is reclaimed on return. The back-edge is an LLVM
+    /// `br`, not a function call, so the loop's stack is bounded regardless
+    /// of iteration count.
+    fn emit_loop(
+        &mut self,
+        args: &[&Node],
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<CompiledValue<'ctx>> {
+        let init = self.compile_value_expr(args[0], env, cur_fn)?;
+        let state_ty = init.ty.clone();
+        // The step callback's type is `S -> {tag : Int, value : S}`.  Pass
+        // the expected closure type explicitly so that a bare `lambda s. ...`
+        // body sees the correct state type for `s` (and any record
+        // projections on it) without needing an annotation.
+        let directive_ty = ValueTy::Record(vec![
+            ("tag".to_string(), ValueTy::Int),
+            ("value".to_string(), state_ty.clone()),
+        ]);
+        let step_fn_ty = ValueTy::Fn(Box::new(state_ty.clone()), Box::new(directive_ty.clone()));
+        let step = match args[1] {
+            Node::Lam { .. } | Node::Ann { .. } => {
+                self.compile_closure_value(args[1], Some(step_fn_ty.clone()), env, cur_fn)?
+            }
+            _ => self.compile_value_expr(args[1], env, cur_fn)?,
+        };
+
+        let ValueTy::Fn(step_arg_ty, step_ret_ty) = step.ty.clone() else {
+            return Err(CodegenError::AppNonFunction);
+        };
+        if step_arg_ty.as_ref() != &state_ty {
+            return Err(CodegenError::ValueTypeMismatch {
+                expected: state_ty.to_string(),
+                actual: step_arg_ty.to_string(),
+            });
+        }
+        let ValueTy::Record(ret_fields) = step_ret_ty.as_ref() else {
+            return Err(CodegenError::Unsupported(
+                "@loop step callback must return a {tag, value} record",
+            ));
+        };
+        if ret_fields.len() != 2
+            || ret_fields[0].0 != "tag"
+            || ret_fields[0].1 != ValueTy::Int
+            || ret_fields[1].0 != "value"
+            || ret_fields[1].1 != state_ty
+        {
+            return Err(CodegenError::Unsupported(
+                "@loop step callback must return {tag : Int, value : S}",
+            ));
+        }
+
+        let entry_bb = self.builder.get_insert_block().unwrap();
+        let hdr_bb = self.context.append_basic_block(cur_fn, "loop_hdr");
+        let cont_bb = self.context.append_basic_block(cur_fn, "loop_cont");
+        let exit_bb = self.context.append_basic_block(cur_fn, "loop_exit");
+
+        self.builder
+            .build_unconditional_branch(hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(hdr_bb);
+        let state_llvm_ty = self.llvm_type(&state_ty)?;
+        let state_phi = self
+            .builder
+            .build_phi(state_llvm_ty, "loop_state")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let state_val = state_phi.as_basic_value();
+
+        let state_compiled = CompiledValue {
+            ty: state_ty.clone(),
+            value: state_val,
+        };
+        let rec = self.call_closure_value(step.clone(), &state_compiled)?;
+        let rec_struct = rec.value.into_struct_value();
+        let tag = self
+            .builder
+            .build_extract_value(rec_struct, 0, "loop_tag")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?
+            .into_int_value();
+        let next_value = self
+            .builder
+            .build_extract_value(rec_struct, 1, "loop_value")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        let zero64 = self.context.i64_type().const_zero();
+        let is_step = self
+            .builder
+            .build_int_compare(IntPredicate::EQ, tag, zero64, "loop_is_step")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_conditional_branch(is_step, cont_bb, exit_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        self.builder.position_at_end(cont_bb);
+        self.builder
+            .build_unconditional_branch(hdr_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+
+        state_phi.add_incoming(&[
+            (&init.value as &dyn BasicValue<'ctx>, entry_bb),
+            (&next_value as &dyn BasicValue<'ctx>, cont_bb),
+        ]);
+
+        self.builder.position_at_end(exit_bb);
+        Ok(CompiledValue {
+            ty: state_ty,
+            value: next_value,
+        })
+    }
+
+    /// `@loop-step value` / `@loop-exit value` → build the loop-directive
+    /// record `{ tag, value }` (ADR 0093). `tag` is 0 for step, 1 for exit.
+    fn emit_loop_directive(
+        &mut self,
+        args: &[&Node],
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+        tag: u64,
+    ) -> Result<CompiledValue<'ctx>> {
+        let value = self.compile_value_expr(args[0], env, cur_fn)?;
+        let value_ty = value.ty.clone();
+        let ty = ValueTy::Record(vec![
+            ("tag".to_string(), ValueTy::Int),
+            ("value".to_string(), value_ty),
+        ]);
+        let struct_ty = self.llvm_struct_type(&ty)?;
+        let tag_val = self.context.i64_type().const_int(tag, false);
+        let mut aggregate = struct_ty.get_undef();
+        aggregate = self
+            .builder
+            .build_insert_value(aggregate, tag_val, 0, "loop_dir_tag")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?
+            .into_struct_value();
+        aggregate = self
+            .builder
+            .build_insert_value(aggregate, value.value, 1, "loop_dir_value")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?
+            .into_struct_value();
+        Ok(CompiledValue {
+            ty,
+            value: aggregate.into(),
+        })
     }
 
     /// `@sort-i64 vec count` → stable insertion sort of `vec[0..count)`; return 0.
@@ -7938,7 +8090,23 @@ fn infer_value_ty(node: &Node, env: &[BindingTy]) -> Result<ValueTy> {
         Node::App { .. } => {
             let (head, args) = unfold_app(node);
             match head {
-                Node::Sym { name } => primitive_value_ty(name, args.len()),
+                Node::Sym { name } => {
+                    // ADR 0093: @loop and @loop-step / @loop-exit have
+                    // result types that depend on argument types, not a
+                    // fixed scalar.  Recurse to infer init/value types.
+                    match name.as_str() {
+                        "loop" if args.len() == 2 => return infer_value_ty(args[0], env),
+                        "loop-step" | "loop-exit" if args.len() == 1 => {
+                            let inner = infer_value_ty(args[0], env)?;
+                            return Ok(ValueTy::Record(vec![
+                                ("tag".to_string(), ValueTy::Int),
+                                ("value".to_string(), inner),
+                            ]));
+                        }
+                        _ => {}
+                    }
+                    primitive_value_ty(name, args.len())
+                }
                 Node::Var { index } => match lookup_binding_ty(env, *index)? {
                     BindingTy::Function { param_tys, ret_ty } => {
                         apply_fn_spine_ty(nested_fn_ty(param_tys, ret_ty.clone()), args.len())

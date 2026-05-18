@@ -144,27 +144,42 @@ Exit criteria:
 
 ### Stage 2: Explicit Bounded-Stack Loops
 
+**Status:** Complete 2026-05-18. Deliverable:
+[ADR 0093](../decisions/0093-bounded-stack-loop-primitive.md)
+
 **Purpose:** Give long-running kernels a reliable execution primitive.
 
 Work items:
 
 - Design an explicit loop surface or a mechanically guaranteed self-tail-call
-  lowering rule.
+  lowering rule. Done: standalone `@loop` primitive (ADR 0093). `rec` keeps
+  current semantics.
 - Prefer a minimal canonical expansion if it avoids adding a new AST node; add
   a new node only if the ADR shows the existing `rec` surface is not enough.
+  Done: no canonical-text-format change; recognition lives in the typecheck +
+  codegen primitive tables, following the [ADR 0074](../decisions/0074-p4-higher-order-combinators.md)
+  combinator pattern.
 - Ensure loop-carried scalar and record state can be updated without growing
-  stack.
+  stack. Done: state PHI on `Int` / `FixedInt` / record types; non-escapable
+  handles rejected by the `loop-state-shape-invalid` diagnostic.
 - Define effect behavior for loops: effects are the union of body effects,
   and possible nontermination remains represented by existing `Div` policy or
-  a narrowly amended policy.
+  a narrowly amended policy. Done: `@loop` adds `Div` to the union of init
+  and step-callback effects.
 - Add inspection rendering that makes loop-carried variables and effects clear.
+  The form is `(app (app (sym loop) init) step)` so existing inspection
+  handles it; no special renderer added.
 
 Exit criteria:
 
 - Tight loops over millions of iterations compile to bounded-stack native code.
+  Done: `loop_counts_to_one_million_without_stack_overflow` execution test
+  passes.
 - CPU-step and scanline-style loops can be written without depending on LLVM
-  optimization passes.
-- Existing recursive programs keep their semantics.
+  optimization passes. Done: codegen emits a labeled basic-block loop with a
+  PHI on state and a `br` back-edge — no optimizer pass involved.
+- Existing recursive programs keep their semantics. Done: `rec` lowering is
+  unchanged; ADR 0093 is purely additive.
 
 ### Stage 3: Tacit-Owned Package Instances
 

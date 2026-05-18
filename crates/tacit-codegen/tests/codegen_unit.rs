@@ -261,3 +261,67 @@ fn i64_combinators_lower_to_callback_loops() {
     assert!(ir.contains("map_i64_hdr"));
     assert!(ir.contains("closure_call"));
 }
+
+// ── ADR 0093: @loop primitive ─────────────────────────────────────────────────
+
+#[test]
+fn loop_lowers_to_basic_block_back_edge() {
+    let src = b"@loop 0 (lambda s. if @lt s 10 then @loop-step (@add s 1) else @loop-exit s)";
+    let (node, _) = parse_authoring(src).expect("parse");
+    let ir = compile_to_ir_string(&node, "loop_basic").expect("codegen");
+    assert!(ir.contains("loop_hdr"), "expected loop_hdr label:\n{ir}");
+    assert!(ir.contains("loop_cont"), "expected loop_cont label:\n{ir}");
+    assert!(ir.contains("loop_exit"), "expected loop_exit label:\n{ir}");
+    assert!(ir.contains("loop_state"), "expected state PHI:\n{ir}");
+    // The iteration back-edge must be an unconditional branch, not a call.
+    assert!(
+        ir.contains("br label %loop_hdr"),
+        "expected back-edge to header:\n{ir}"
+    );
+    // The step callback is invoked through the closure ABI per iteration.
+    assert!(ir.contains("closure_call"), "expected closure call:\n{ir}");
+}
+
+#[test]
+fn loop_step_and_exit_build_tag_value_records() {
+    // Use a runtime-sourced int so LLVM's IR builder cannot fold the value
+    // insertvalue / extractvalue pair into a constant.  The tag is still a
+    // compile-time constant 0 / 1, so the tag insert may fold into the
+    // initial aggregate (e.g. `{i64 0, i64 undef}`); check for the value
+    // insert which always lowers as an SSA op.
+    let src =
+        b"let xs = @i64-alloc 1 in let _ = @i64-set xs 0 42 in (@loop-step (@i64-get xs 0)).value";
+    let (node, _) = parse_authoring(src).expect("parse");
+    let ir = compile_to_ir_string(&node, "loop_step_value").expect("codegen");
+    assert!(
+        ir.contains("{ i64 0, i64 undef }") || ir.contains("loop_dir_tag"),
+        "expected directive tag in initial aggregate or as insertvalue:\n{ir}"
+    );
+    assert!(
+        ir.contains("loop_dir_value"),
+        "expected directive value insertion:\n{ir}"
+    );
+
+    let src =
+        b"let xs = @i64-alloc 1 in let _ = @i64-set xs 0 7 in (@loop-exit (@i64-get xs 0)).tag";
+    let (node, _) = parse_authoring(src).expect("parse");
+    let ir = compile_to_ir_string(&node, "loop_exit_tag").expect("codegen");
+    assert!(
+        ir.contains("{ i64 1, i64 undef }") || ir.contains("loop_dir_tag"),
+        "expected exit-directive tag=1 in initial aggregate or as insertvalue:\n{ir}"
+    );
+    assert!(ir.contains("loop_dir_value"));
+}
+
+#[test]
+fn loop_record_state_lowers_phi_over_struct() {
+    // State is {acc, i}; loop adds i to acc each iteration, decrementing i.
+    let src = b"(@loop {acc: 0, i: 5} (lambda s. if @lt 0 s.i then @loop-step {acc: @add s.acc s.i, i: @sub s.i 1} else @loop-exit s)).acc";
+    let (node, _) = parse_authoring(src).expect("parse");
+    let ir = compile_to_ir_string(&node, "loop_record_state").expect("codegen");
+    assert!(ir.contains("loop_hdr"));
+    assert!(
+        ir.contains("loop_state"),
+        "expected state PHI on struct:\n{ir}"
+    );
+}

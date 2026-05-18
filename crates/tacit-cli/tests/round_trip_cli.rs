@@ -44,9 +44,9 @@ fn version_json_reports_release_metadata() {
 
     let json: Value = serde_json::from_slice(&out.stdout).expect("version json");
     assert_eq!(json["format"], "tacit-version-v1");
-    assert_eq!(json["toolchain_version"], "0.7.4");
+    assert_eq!(json["toolchain_version"], "0.7.5");
     assert_eq!(json["manifest"]["format"], "tacit-toolchain-release-v1");
-    assert_eq!(json["manifest"]["toolchain_version"], "0.7.4");
+    assert_eq!(json["manifest"]["toolchain_version"], "0.7.5");
     assert_eq!(
         json["manifest"]["schemas"]["canonical"],
         "tacit-canonical-v1"
@@ -62,7 +62,7 @@ fn version_json_reports_release_metadata() {
     assert_eq!(json["manifest"]["assets"]["primer"]["id"], "tacit-lite");
     assert_eq!(
         json["manifest"]["assets"]["primer"]["toolchain_version"],
-        "0.7.4"
+        "0.7.5"
     );
     assert_eq!(
         json["manifest"]["assets"]["primer"]["path"],
@@ -76,7 +76,7 @@ fn version_json_reports_release_metadata() {
         json["manifest"]["assets"]["primer"]["tokenizer"],
         "o200k_base"
     );
-    assert_eq!(json["manifest"]["assets"]["primer"]["tokens"], 26340);
+    assert_eq!(json["manifest"]["assets"]["primer"]["tokens"], 26811);
     assert!(json["manifest"]["stdlib"]["tacit.text"]
         .as_str()
         .expect("tacit.text hash")
@@ -114,7 +114,7 @@ fn version_flag_uses_toolchain_version() {
         String::from_utf8_lossy(&out.stderr)
     );
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(stdout.contains("0.7.4"), "{stdout}");
+    assert!(stdout.contains("0.7.5"), "{stdout}");
 }
 
 #[test]
@@ -177,12 +177,12 @@ fn primer_json_reports_hash_and_tokens() {
     let json: Value = serde_json::from_slice(&out.stdout).expect("primer json");
     assert_eq!(json["format"], "tacit-primer-v1");
     assert_eq!(json["id"], "tacit-lite");
-    assert_eq!(json["version"], "0.7.4");
-    assert_eq!(json["toolchain_version"], "0.7.4");
+    assert_eq!(json["version"], "0.7.5");
+    assert_eq!(json["toolchain_version"], "0.7.5");
     assert_eq!(json["path"], "share/tacit/primer/tacit-lite.md");
     assert_eq!(json["metadata_path"], "share/tacit/primer/tacit-lite.toml");
     assert_eq!(json["tokenizer"], "o200k_base");
-    assert_eq!(json["tokens"], 26340);
+    assert_eq!(json["tokens"], 26811);
     let hash = json["hash"].as_str().expect("primer hash");
     assert!(
         hash.starts_with("blake3:") && hash.len() == "blake3:".len() + 64,
@@ -234,7 +234,7 @@ fn stdlib_list_json_reports_bundled_packages() {
 
     let json: Value = serde_json::from_slice(&out.stdout).expect("stdlib list json");
     assert_eq!(json["format"], "tacit-stdlib-v1");
-    assert_eq!(json["toolchain_version"], "0.7.4");
+    assert_eq!(json["toolchain_version"], "0.7.5");
     assert_eq!(json["cache_path"], "share/tacit/stdlib-cache");
     assert_eq!(json["source_path"], "share/tacit/stdlib-src/tacit");
     let packages = json["packages"].as_array().expect("packages");
@@ -513,7 +513,7 @@ fn check_fails_when_pin_toolchain_version_mismatches() {
     let pin = std::fs::read_to_string(&pin_path).unwrap();
     std::fs::write(
         &pin_path,
-        pin.replace("version = \"0.7.4\"\n", "version = \"99.0.0\"\n"),
+        pin.replace("version = \"0.7.5\"\n", "version = \"99.0.0\"\n"),
     )
     .unwrap();
 

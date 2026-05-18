@@ -125,6 +125,12 @@ pub enum PrimKind {
     Fold,
     /// I64Vec for-each (ADR 0074): `src count callback -> i64`.
     ForEach,
+    /// Bounded-stack iteration (ADR 0093): `@loop init step -> S`.
+    Loop,
+    /// Loop continuation directive (ADR 0093): `@step value -> {tag,value}`.
+    LoopStep,
+    /// Loop termination directive (ADR 0093): `@exit value -> {tag,value}`.
+    LoopExit,
     /// Binary `i64 → i64 → i64` arithmetic, lowering as a single LLVM op.
     Arith(ArithOp),
     /// Binary `i64 → i64 → i64` comparison: emits `icmp` + `zext`.
@@ -202,6 +208,9 @@ impl PrimKind {
             "map" => PrimKind::Map,
             "fold" => PrimKind::Fold,
             "for-each" => PrimKind::ForEach,
+            "loop" => PrimKind::Loop,
+            "loop-step" => PrimKind::LoopStep,
+            "loop-exit" => PrimKind::LoopExit,
             "add" => PrimKind::Arith(ArithOp::Add),
             "sub" => PrimKind::Arith(ArithOp::Sub),
             "mul" => PrimKind::Arith(ArithOp::Mul),
@@ -255,6 +264,8 @@ impl PrimKind {
             PrimKind::BufCopy | PrimKind::BufEq | PrimKind::I64Copy | PrimKind::TokenIndex => 5,
             PrimKind::TokenIndexAny => 6,
             PrimKind::ForEach => 3,
+            PrimKind::Loop => 2,
+            PrimKind::LoopStep | PrimKind::LoopExit => 1,
             PrimKind::Arith(_) | PrimKind::Cmp(_) => 2,
         }
     }
@@ -416,6 +427,9 @@ mod tests {
         assert_eq!(PrimKind::lookup("map"), Some(PrimKind::Map));
         assert_eq!(PrimKind::lookup("fold"), Some(PrimKind::Fold));
         assert_eq!(PrimKind::lookup("for-each"), Some(PrimKind::ForEach));
+        assert_eq!(PrimKind::lookup("loop"), Some(PrimKind::Loop));
+        assert_eq!(PrimKind::lookup("loop-step"), Some(PrimKind::LoopStep));
+        assert_eq!(PrimKind::lookup("loop-exit"), Some(PrimKind::LoopExit));
     }
 
     #[test]
@@ -461,6 +475,9 @@ mod tests {
         assert_eq!(PrimKind::Map.arity(), 4);
         assert_eq!(PrimKind::Fold.arity(), 4);
         assert_eq!(PrimKind::ForEach.arity(), 3);
+        assert_eq!(PrimKind::Loop.arity(), 2);
+        assert_eq!(PrimKind::LoopStep.arity(), 1);
+        assert_eq!(PrimKind::LoopExit.arity(), 1);
         assert_eq!(PrimKind::Arith(ArithOp::Add).arity(), 2);
         assert_eq!(PrimKind::Cmp(CmpOp::Lt).arity(), 2);
     }

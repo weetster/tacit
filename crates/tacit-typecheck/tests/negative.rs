@@ -657,3 +657,28 @@ fn neg_fold_rejects_effectful_first_callback_application() {
         "callback-effect-mismatch",
     );
 }
+
+// ── ADR 0093: @loop ──────────────────────────────────────────────────────────
+
+#[test]
+fn neg_loop_rejects_i64vec_state() {
+    expect_authoring_error(
+        "let xs = @i64-alloc 1 in
+         @loop xs (lambda s. @loop-exit s)",
+        "loop-state-shape-invalid",
+    );
+}
+
+#[test]
+fn neg_loop_rejects_buf_state() {
+    expect_authoring_error(
+        "let buf = @buf-alloc 4 in
+         @loop buf (lambda s. @loop-exit s)",
+        "loop-state-shape-invalid",
+    );
+}
+
+#[test]
+fn neg_loop_rejects_non_function_callback() {
+    expect_authoring_error("@loop 0 42", "loop-callback-shape-invalid");
+}

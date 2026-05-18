@@ -25,7 +25,8 @@ use tacit_canonical::ast::Node;
 
 use crate::error::Diagnostic;
 use crate::primitives::{
-    fixed_prim_type, is_arith, is_cmp, parse_fixed_prim, prim_type, FixedPrim, FixedShiftOp,
+    fixed_prim_type, is_arith, is_cmp, loop_result_ty, parse_fixed_prim, prim_type, FixedPrim,
+    FixedShiftOp,
 };
 use crate::ty::{join_fn_eff, unify, EffAtom, EffSet, FixedIntTy, FnEff, IntSign, Subst, Ty};
 use crate::type_from_node::{child_path, type_from_node};
@@ -636,6 +637,13 @@ fn infer_full_primitive_app(
         "map" if args.len() == 4 => Some(infer_map_app(ctx, &args, subst, path, diags)),
         "fold" if args.len() == 4 => Some(infer_fold_app(ctx, &args, subst, path, diags)),
         "for-each" if args.len() == 3 => Some(infer_for_each_app(ctx, &args, subst, path, diags)),
+        "loop" if args.len() == 2 => Some(infer_loop_app(ctx, &args, subst, path, diags)),
+        "loop-step" if args.len() == 1 => {
+            Some(infer_loop_directive_app(ctx, &args, subst, path, diags))
+        }
+        "loop-exit" if args.len() == 1 => {
+            Some(infer_loop_directive_app(ctx, &args, subst, path, diags))
+        }
         _ => None,
     }
 }
@@ -890,6 +898,105 @@ fn infer_for_each_app(
     eval_eff = join_fn_eff(&eval_eff, &callback_call_eff, subst);
 
     (Ty::Int, eval_eff)
+}
+
+/// `@loop init step` (ADR 0093).
+///
+/// Inference shape:
+/// - `init : S`
+/// - `step : S -> { tag : Int, value : S } / e`
+/// - result : `S / (e ∪ {Div})`
+fn infer_loop_app(
+    ctx: &[Ty],
+    args: &[&Node],
+    subst: &mut Subst,
+    path: &[usize],
+    diags: &mut Vec<Diagnostic>,
+) -> (Ty, FnEff) {
+    let (init_ty, init_eff) = infer(ctx, args[0], subst, &child_path(path, 0), diags);
+    let resolved_init = subst.apply(&init_ty);
+    if !resolved_init.is_unknown() && !is_loop_state_type(&resolved_init) {
+        diags.push(Diagnostic::loop_state_shape_invalid(
+            &child_path(path, 0),
+            &resolved_init,
+        ));
+    }
+
+    let callback_call_eff = subst.fresh_eff();
+    let expected = Ty::Fn(
+        Box::new(init_ty.clone()),
+        Box::new(loop_result_ty(&init_ty)),
+        callback_call_eff.clone(),
+    );
+    let (callback_ty, callback_eval_eff) =
+        infer_loop_callback(ctx, args[1], &init_ty, subst, &child_path(path, 1), diags);
+    if !unify(&expected, &callback_ty, subst) {
+        let e = subst.apply(&expected);
+        let a = subst.apply(&callback_ty);
+        if !a.is_unknown() {
+            diags.push(Diagnostic::loop_callback_shape_invalid(
+                &child_path(path, 1),
+                &e,
+                &a,
+            ));
+        }
+    }
+
+    let mut eval_eff = init_eff;
+    eval_eff = join_fn_eff(&eval_eff, &callback_eval_eff, subst);
+    eval_eff = join_fn_eff(&eval_eff, &callback_call_eff, subst);
+    eval_eff = join_fn_eff(
+        &eval_eff,
+        &FnEff::from_set(EffSet::of([EffAtom::Div])),
+        subst,
+    );
+
+    (subst.apply(&init_ty), eval_eff)
+}
+
+/// Infer an `@loop` step callback (ADR 0093) with the loop state type
+/// pre-seeded as the lambda's parameter type. This lets the body use record
+/// projection on the state without needing an annotation.
+fn infer_loop_callback(
+    ctx: &[Ty],
+    node: &Node,
+    state_ty: &Ty,
+    subst: &mut Subst,
+    path: &[usize],
+    diags: &mut Vec<Diagnostic>,
+) -> (Ty, FnEff) {
+    if let Node::Lam { body } = node {
+        validate_lambda_captures(ctx, body, 1, subst, path, diags);
+        let ctx_body = extend(ctx, state_ty.clone());
+        let (body_ty, body_eff) = infer(&ctx_body, body, subst, &lam_body_path(path, 1), diags);
+        let fn_ty = Ty::Fn(Box::new(subst.apply(state_ty)), Box::new(body_ty), body_eff);
+        (fn_ty, FnEff::pure_())
+    } else {
+        infer(ctx, node, subst, path, diags)
+    }
+}
+
+/// `@loop-step value` / `@loop-exit value` (ADR 0093). Both produce the
+/// loop-directive record `{ tag : Int, value : S }`.
+fn infer_loop_directive_app(
+    ctx: &[Ty],
+    args: &[&Node],
+    subst: &mut Subst,
+    path: &[usize],
+    diags: &mut Vec<Diagnostic>,
+) -> (Ty, FnEff) {
+    let (value_ty, value_eff) = infer(ctx, args[0], subst, &child_path(path, 0), diags);
+    (loop_result_ty(&value_ty), value_eff)
+}
+
+/// Loop-state shape per ADR 0093: Int, FixedInt, or a record of those.
+/// Buf / I64Vec / Vec / Fn / Str are rejected.
+fn is_loop_state_type(ty: &Ty) -> bool {
+    match ty {
+        Ty::Int | Ty::IntLit | Ty::Bool | Ty::FixedInt(_) | Ty::Meta(_) | Ty::Unknown => true,
+        Ty::Record(fields) => fields.values().all(is_loop_state_type),
+        Ty::Buf | Ty::I64Vec | Ty::Vec(_) | Ty::Str | Ty::Fn(_, _, _) | Ty::App(_, _) => false,
+    }
 }
 
 fn infer_i64_collection_arg(

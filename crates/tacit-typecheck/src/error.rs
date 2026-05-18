@@ -456,6 +456,34 @@ impl Diagnostic {
         d
     }
 
+    /// `@loop` state type is not a permitted shape (ADR 0093).
+    pub fn loop_state_shape_invalid(path: &[usize], actual: &Ty) -> Self {
+        let mut d = Self::new(
+            "loop-state-shape-invalid",
+            "error",
+            path,
+            format!(
+                "@loop state must be Int, FixedInt, or a record of those; got {}",
+                actual
+            ),
+        );
+        d.actual = Some(ty_to_json(actual));
+        d
+    }
+
+    /// `@loop` callback does not have shape `S -> {tag : Int, value : S}` (ADR 0093).
+    pub fn loop_callback_shape_invalid(path: &[usize], expected: &Ty, actual: &Ty) -> Self {
+        let mut d = Self::new(
+            "loop-callback-shape-invalid",
+            "error",
+            path,
+            format!("@loop callback must have type {}, got {}", expected, actual),
+        );
+        d.expected = Some(ty_to_json(expected));
+        d.actual = Some(ty_to_json(actual));
+        d
+    }
+
     pub fn integer_literal_out_of_range(path: &[usize], value: &str, target: FixedIntTy) -> Self {
         let mut d = Self::new(
             "integer-literal-out-of-range",

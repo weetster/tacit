@@ -244,6 +244,14 @@ pub fn prim_type(name: &str) -> Option<Ty> {
         "map" => map_i64_ty(),
         "fold" => fold_i64_ty(),
         "for-each" => for_each_i64_ty(),
+        // SHB STAGE 2 (ADR 0093): @loop is inferred specially in infer.rs to
+        // unify state types and propagate the step-callback effect.  Partial
+        // applications produce closures whose final result is the loop's
+        // state value; the standalone type here is a placeholder used by
+        // partial-application typing only.
+        "loop" => loop_ty(),
+        "loop-step" => loop_directive_ty(),
+        "loop-exit" => loop_directive_ty(),
         // ARITH: Int → Int → Int (pure)
         "add" | "sub" | "mul" | "div" | "mod" => fn2_pure(Ty::Int, Ty::Int, Ty::Int),
         // CMP: Int → Int → Bool (pure, ADR 0042)
@@ -638,6 +646,41 @@ fn fold_i64_ty() -> Ty {
         )),
         FnEff::pure_(),
     )
+}
+
+/// Standalone (partial-application) type for `@loop` (ADR 0093).
+/// Real applications go through `infer_loop_app` so the state type can be
+/// unified with `init` and the step callback effect can be threaded into
+/// the loop's overall effect; this entry only exists so a bare `@loop`
+/// reference or partial application has *some* type before reaching the
+/// special-case path.
+fn loop_ty() -> Ty {
+    let state = Ty::Unknown;
+    let step_ret = loop_result_ty(&state);
+    let callback = Ty::Fn(Box::new(state.clone()), Box::new(step_ret), full_eff());
+    Ty::Fn(
+        Box::new(state.clone()),
+        Box::new(Ty::Fn(Box::new(callback), Box::new(state), full_eff())),
+        FnEff::pure_(),
+    )
+}
+
+/// Standalone type for `@loop-step` / `@loop-exit` (ADR 0093).
+/// Both take a value and return the loop-directive record `{tag, value}`.
+fn loop_directive_ty() -> Ty {
+    Ty::Fn(
+        Box::new(Ty::Unknown),
+        Box::new(loop_result_ty(&Ty::Unknown)),
+        FnEff::pure_(),
+    )
+}
+
+/// Loop directive record `{ tag : Int, value : S }` (ADR 0093).
+pub fn loop_result_ty(state: &Ty) -> Ty {
+    let mut fields = BTreeMap::new();
+    fields.insert("tag".to_string(), Ty::Int);
+    fields.insert("value".to_string(), state.clone());
+    Ty::Record(fields)
 }
 
 fn for_each_i64_ty() -> Ty {

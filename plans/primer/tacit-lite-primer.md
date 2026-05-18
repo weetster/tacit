@@ -1225,6 +1225,53 @@ They must not capture the `I64Vec` or `Buf` handles themselves. If a callback
 needs indexed storage beyond the current element, use a direct recursive
 helper instead of a combinator.
 
+### Bounded-Stack Iteration
+
+`@loop init step` is the only canonical way to iterate with bounded stack.
+`rec` is for tree recursion (parsers, AST walkers); it may grow stack. Use
+`@loop` whenever you would write a `while` in Python or Rust.
+
+The step callback takes the current state and returns one of two directives:
+
+- `@loop-step new-state` — continue with `new-state` as the next iteration's
+  state.
+- `@loop-exit final-value` — terminate with `final-value` as the loop result.
+
+For Stage 2 the loop result and state have the same type. State may be an
+`Int`, a `FixedInt`, or a record of those. `Buf`, `I64Vec`, and typed-vector
+handles cannot be loop state; pass them by reference through the callback's
+captured environment instead.
+
+```tacit
+@loop 0 (lambda s.
+  if @lt s 1000000
+    then @loop-step (@add s 1)
+    else @loop-exit s)
+```
+
+The loop above runs one million iterations and returns `1000000` without
+growing the stack. Each iteration is a basic-block back-edge, not a function
+call.
+
+A record-state example: sum `1..=n` by carrying both an accumulator and a
+counter through the state:
+
+```tacit
+(@loop {acc: 0, i: 10} (lambda s.
+  if @lt 0 s.i
+    then @loop-step {acc: @add s.acc s.i, i: @sub s.i 1}
+    else @loop-exit s)).acc
+```
+
+Effects: the loop's evaluation effect is the union of `init`'s effects, the
+step callback's evaluation and call effects, plus `Div` (any loop may fail
+to terminate). The step body is an ordinary expression and may use any
+primitive whose effects fit the surrounding signature.
+
+`@loop-step` and `@loop-exit` are constructors that build the directive
+record `{tag, value}`. They can appear anywhere an expression of that type
+is valid; in practice they belong at the tail of the step callback's body.
+
 ### Program Boundary
 
 For a single executable expression, the program is authoring-view Tacit source.
