@@ -97,6 +97,38 @@ fn neg_capture_vec_handle_in_closure_rejected() {
 }
 
 #[test]
+fn loop_immediate_callback_may_use_u8vec_handle() {
+    let typed = infer_authoring(
+        "let buf = @u8vec-alloc 16 in
+         @loop 0 (lambda s.
+           if @lt s 16
+           then (let _ = @u8vec-set buf s 1 in @loop-step (@add s 1))
+           else @loop-exit s)",
+    );
+    assert_eq!(typed.ty, Ty::Int);
+    assert!(typed.effects.atoms.contains(&EffAtom::Alloc));
+    assert!(typed.effects.atoms.contains(&EffAtom::Mut));
+    assert!(typed.effects.atoms.contains(&EffAtom::Div));
+}
+
+#[test]
+fn loop_non_immediate_callback_still_rejects_u8vec_capture() {
+    let diags = infer_authoring_err(
+        "let buf = @u8vec-alloc 16 in
+         let step = lambda s.
+           if @lt s 16
+           then (let _ = @u8vec-set buf s 1 in @loop-step (@add s 1))
+           else @loop-exit s in
+         @loop 0 step",
+    );
+    assert!(
+        diags.iter().any(|d| d.kind == "invalid-capture"),
+        "expected invalid-capture, got: {:?}",
+        diags.iter().map(|d| &d.kind).collect::<Vec<_>>()
+    );
+}
+
+#[test]
 fn neg_wrong_vec_type_rejected() {
     let diags = infer_authoring_err(
         "let bytes = @u8vec-alloc 8 in

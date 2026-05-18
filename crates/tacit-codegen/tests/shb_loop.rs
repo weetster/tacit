@@ -77,3 +77,11 @@ fn loop_exits_immediately_on_first_iteration() {
     assert!(out.is_empty());
     assert_eq!(code, 99);
 }
+
+#[test]
+fn loop_immediate_callback_updates_u8vec() {
+    let src = b"let buf = @u8vec-alloc 16 in let _ = @loop 0 (lambda s. if @lt s 16 then (let _ = @u8vec-set buf s 7 in @loop-step (@add s 1)) else @loop-exit s) in @u8vec-get buf 15";
+    let (out, code) = build_and_run(src, "loop_u8vec_update");
+    assert!(out.is_empty());
+    assert_eq!(code, 7);
+}

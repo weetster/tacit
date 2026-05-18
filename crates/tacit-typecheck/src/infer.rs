@@ -1097,14 +1097,35 @@ fn infer_loop_callback(
     path: &[usize],
     diags: &mut Vec<Diagnostic>,
 ) -> (Ty, FnEff) {
-    if let Node::Lam { body } = node {
-        validate_lambda_captures(ctx, body, 1, subst, path, diags);
-        let ctx_body = extend(ctx, state_ty.clone());
-        let (body_ty, body_eff) = infer(&ctx_body, body, subst, &lam_body_path(path, 1), diags);
-        let fn_ty = Ty::Fn(Box::new(subst.apply(state_ty)), Box::new(body_ty), body_eff);
-        (fn_ty, FnEff::pure_())
-    } else {
-        infer(ctx, node, subst, path, diags)
+    match node {
+        // ADR 0096: an immediate lambda in `@loop init (lambda s. ...)` is a
+        // direct loop callback, not a first-class closure value. The body may
+        // access non-escapable outer handles; nested lambdas inside the body
+        // still run through ordinary capture validation when inferred.
+        Node::Lam { body } => {
+            let ctx_body = extend(ctx, state_ty.clone());
+            let (body_ty, body_eff) = infer(&ctx_body, body, subst, &lam_body_path(path, 1), diags);
+            let fn_ty = Ty::Fn(Box::new(subst.apply(state_ty)), Box::new(body_ty), body_eff);
+            (fn_ty, FnEff::pure_())
+        }
+        Node::Ann { expr, type_ } => {
+            let declared = type_from_node(type_, &[], &[], subst, &child_path(path, 1), diags);
+            let (inferred, eval_eff) =
+                infer_loop_callback(ctx, expr, state_ty, subst, &child_path(path, 0), diags);
+
+            if !declared.is_unknown()
+                && !inferred.is_unknown()
+                && !unify(&declared, &inferred, subst)
+            {
+                let d = subst.apply(&declared);
+                let i = subst.apply(&inferred);
+                push_type_mismatch(diags, path, &d, &i);
+            }
+            check_fn_effect_annotation(&declared, &inferred, subst, path, diags);
+
+            (subst.apply(&declared), eval_eff)
+        }
+        _ => infer(ctx, node, subst, path, diags),
     }
 }
 

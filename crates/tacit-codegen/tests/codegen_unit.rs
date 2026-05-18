@@ -278,8 +278,36 @@ fn loop_lowers_to_basic_block_back_edge() {
         ir.contains("br label %loop_hdr"),
         "expected back-edge to header:\n{ir}"
     );
-    // The step callback is invoked through the closure ABI per iteration.
-    assert!(ir.contains("closure_call"), "expected closure call:\n{ir}");
+    // ADR 0096: an immediate loop lambda is lowered as a direct callback, not
+    // through the first-class closure ABI.
+    assert!(
+        !ir.contains("closure_call"),
+        "did not expect closure call for immediate @loop lambda:\n{ir}"
+    );
+}
+
+#[test]
+fn loop_callback_value_still_uses_closure_abi() {
+    let src = b"let inc = 1 in let step = lambda s. if @lt s 10 then @loop-step (@add s inc) else @loop-exit s in @loop 0 step";
+    let (node, _) = parse_authoring(src).expect("parse");
+    let ir = compile_to_ir_string(&node, "loop_callback_value").expect("codegen");
+    assert!(ir.contains("loop_hdr"), "expected loop header:\n{ir}");
+    assert!(
+        ir.contains("closure_call"),
+        "expected closure call for non-immediate callback value:\n{ir}"
+    );
+}
+
+#[test]
+fn loop_immediate_lambda_can_touch_u8vec_handle() {
+    let src = b"let buf = @u8vec-alloc 16 in let _ = @loop 0 (lambda s. if @lt s 16 then (let _ = @u8vec-set buf s 7 in @loop-step (@add s 1)) else @loop-exit s) in @u8vec-get buf 15";
+    let (node, _) = parse_authoring(src).expect("parse");
+    let ir = compile_to_ir_string(&node, "loop_u8vec_handle").expect("codegen");
+    assert!(ir.contains("loop_hdr"), "expected loop header:\n{ir}");
+    assert!(
+        !ir.contains("closure_call"),
+        "did not expect closure call for direct loop callback:\n{ir}"
+    );
 }
 
 #[test]

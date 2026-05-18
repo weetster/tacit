@@ -3728,10 +3728,10 @@ impl<'ctx> Compiler<'ctx> {
     /// `@loop init step` → bounded-stack iteration (ADR 0093).
     ///
     /// Lowers as a labeled basic-block loop with a PHI on the state value.
-    /// The step callback is invoked once per iteration through the closure
-    /// ABI; its stack frame is reclaimed on return. The back-edge is an LLVM
-    /// `br`, not a function call, so the loop's stack is bounded regardless
-    /// of iteration count.
+    /// Immediate step lambdas lower inline as direct callbacks (ADR 0096);
+    /// non-immediate callback values still use the closure ABI. The back-edge
+    /// is an LLVM `br`, not a function call, so the loop's stack is bounded
+    /// regardless of iteration count.
     fn emit_loop(
         &mut self,
         args: &[&Node],
@@ -3748,38 +3748,44 @@ impl<'ctx> Compiler<'ctx> {
             ("tag".to_string(), ValueTy::Int),
             ("value".to_string(), state_ty.clone()),
         ]);
+        let direct_step_body = direct_loop_callback_body(args[1]);
         let step_fn_ty = ValueTy::Fn(Box::new(state_ty.clone()), Box::new(directive_ty.clone()));
-        let step = match args[1] {
-            Node::Lam { .. } | Node::Ann { .. } => {
-                self.compile_closure_value(args[1], Some(step_fn_ty.clone()), env, cur_fn)?
-            }
-            _ => self.compile_value_expr(args[1], env, cur_fn)?,
-        };
+        let step = if direct_step_body.is_some() {
+            None
+        } else {
+            let step = match args[1] {
+                Node::Lam { .. } | Node::Ann { .. } => {
+                    self.compile_closure_value(args[1], Some(step_fn_ty.clone()), env, cur_fn)?
+                }
+                _ => self.compile_value_expr(args[1], env, cur_fn)?,
+            };
 
-        let ValueTy::Fn(step_arg_ty, step_ret_ty) = step.ty.clone() else {
-            return Err(CodegenError::AppNonFunction);
+            let ValueTy::Fn(step_arg_ty, step_ret_ty) = step.ty.clone() else {
+                return Err(CodegenError::AppNonFunction);
+            };
+            if step_arg_ty.as_ref() != &state_ty {
+                return Err(CodegenError::ValueTypeMismatch {
+                    expected: state_ty.to_string(),
+                    actual: step_arg_ty.to_string(),
+                });
+            }
+            let ValueTy::Record(ret_fields) = step_ret_ty.as_ref() else {
+                return Err(CodegenError::Unsupported(
+                    "@loop step callback must return a {tag, value} record",
+                ));
+            };
+            if ret_fields.len() != 2
+                || ret_fields[0].0 != "tag"
+                || ret_fields[0].1 != ValueTy::Int
+                || ret_fields[1].0 != "value"
+                || ret_fields[1].1 != state_ty
+            {
+                return Err(CodegenError::Unsupported(
+                    "@loop step callback must return {tag : Int, value : S}",
+                ));
+            }
+            Some(step)
         };
-        if step_arg_ty.as_ref() != &state_ty {
-            return Err(CodegenError::ValueTypeMismatch {
-                expected: state_ty.to_string(),
-                actual: step_arg_ty.to_string(),
-            });
-        }
-        let ValueTy::Record(ret_fields) = step_ret_ty.as_ref() else {
-            return Err(CodegenError::Unsupported(
-                "@loop step callback must return a {tag, value} record",
-            ));
-        };
-        if ret_fields.len() != 2
-            || ret_fields[0].0 != "tag"
-            || ret_fields[0].1 != ValueTy::Int
-            || ret_fields[1].0 != "value"
-            || ret_fields[1].1 != state_ty
-        {
-            return Err(CodegenError::Unsupported(
-                "@loop step callback must return {tag : Int, value : S}",
-            ));
-        }
 
         let entry_bb = self.builder.get_insert_block().unwrap();
         let hdr_bb = self.context.append_basic_block(cur_fn, "loop_hdr");
@@ -3802,7 +3808,26 @@ impl<'ctx> Compiler<'ctx> {
             ty: state_ty.clone(),
             value: state_val,
         };
-        let rec = self.call_closure_value(step.clone(), &state_compiled)?;
+        let rec = if let Some(body) = direct_step_body {
+            let mut body_env = Vec::with_capacity(env.len() + 1);
+            body_env.push(Binding::Value(state_compiled));
+            body_env.extend_from_slice(env);
+            let rec = self.compile_value_expr(body, &body_env, cur_fn)?;
+            if rec.ty != directive_ty {
+                return Err(CodegenError::ValueTypeMismatch {
+                    expected: directive_ty.to_string(),
+                    actual: rec.ty.to_string(),
+                });
+            }
+            rec
+        } else {
+            self.call_closure_value(
+                step.as_ref()
+                    .expect("non-direct loop callback was compiled above")
+                    .clone(),
+                &state_compiled,
+            )?
+        };
         let rec_struct = rec.value.into_struct_value();
         let tag = self
             .builder
@@ -7978,6 +8003,14 @@ fn collect_annotated_lam_chain(node: &Node) -> Option<(usize, &Node, Option<&Nod
             collect_lam_chain(expr).map(|(arity, body)| (arity, body, Some(type_.as_ref())))
         }
         other => collect_lam_chain(other).map(|(arity, body)| (arity, body, None)),
+    }
+}
+
+fn direct_loop_callback_body(node: &Node) -> Option<&Node> {
+    match node {
+        Node::Lam { body } => Some(body.as_ref()),
+        Node::Ann { expr, .. } => direct_loop_callback_body(expr),
+        _ => None,
     }
 }
 

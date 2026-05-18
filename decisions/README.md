@@ -110,3 +110,5 @@ Keep ADRs short. They record the decision, not the full analysis that led to it.
 - [0092 — Rich boundary library codegen](0092-rich-boundary-library-codegen.md)
 - [0093 — Bounded-stack `@loop` primitive](0093-bounded-stack-loop-primitive.md)
 - [0094 — Tacit-owned package instances](0094-stateful-host-bridge-package-instances.md)
+- [0095 — Host callback trait codegen](0095-host-callback-trait-codegen.md)
+- [0096 — Direct `@loop` callbacks may access non-escapable handles](0096-direct-loop-callbacks.md)
