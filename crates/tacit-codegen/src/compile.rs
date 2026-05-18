@@ -110,11 +110,15 @@ pub struct Compiler<'ctx> {
     /// hoisting order; collisions across compilation units are not a
     /// Phase 1 concern (no link-step deduplication).
     next_fn_id: usize,
-    /// Stage 11 host-import dispatch functions, keyed by host_import_hash.
+    /// Host-import dispatch functions, keyed by host_import_hash.
     /// When `Ref { hash }` is encountered during expression compilation and
     /// the hash matches, the registered direct-call function lowers as a
     /// callback-table indirect call into the host context.
     host_imports: std::collections::BTreeMap<String, FunctionBinding<'ctx>>,
+    /// ABI-shaped host import dispatch functions. This preserves borrowed
+    /// vector parameters, which are not first-class Tacit values and cannot be
+    /// represented by `FunctionBinding::param_tys`.
+    host_import_abis: std::collections::BTreeMap<String, HostImportBinding<'ctx>>,
 }
 
 /// Per-binder entry on the binding stack. Innermost binder is `last`.
@@ -247,6 +251,13 @@ impl<'ctx> FunctionBinding<'ctx> {
 }
 
 #[derive(Clone)]
+struct HostImportBinding<'ctx> {
+    value: FunctionValue<'ctx>,
+    params: Vec<LibAbiType>,
+    result: LibAbiType,
+}
+
+#[derive(Clone)]
 struct ClosureTemplate<'ctx> {
     expr: Box<Node>,
     ty: ValueTy,
@@ -274,6 +285,7 @@ impl<'ctx> Compiler<'ctx> {
             builder,
             next_fn_id: 0,
             host_imports: std::collections::BTreeMap::new(),
+            host_import_abis: std::collections::BTreeMap::new(),
         }
     }
 
@@ -852,6 +864,11 @@ impl<'ctx> Compiler<'ctx> {
         match head {
             Node::Sym { name } => self.compile_primitive_call(name, &args, env, cur_fn),
             Node::Ref { hash } => {
+                if let Some(binding) = self.host_import_abis.get(hash).cloned() {
+                    if args.len() == binding.params.len() {
+                        return self.call_host_import_direct(&binding, &args, env, cur_fn);
+                    }
+                }
                 if let Some(binding) = self.host_imports.get(hash).cloned() {
                     let arg_vals = self.compile_call_args(&args, env, cur_fn)?;
                     if args.len() == binding.arity() {
@@ -961,8 +978,9 @@ impl<'ctx> Compiler<'ctx> {
                 Binding::Ptr { ptr, .. } => {
                     call_args.push(BasicMetadataValueEnum::PointerValue(*ptr))
                 }
-                Binding::VecHandle { ptr, .. } => {
-                    call_args.push(BasicMetadataValueEnum::PointerValue(*ptr))
+                Binding::VecHandle { ptr, len, .. } => {
+                    call_args.push(BasicMetadataValueEnum::PointerValue(*ptr));
+                    call_args.push(BasicMetadataValueEnum::IntValue(*len));
                 }
                 Binding::Function(_) | Binding::Unavailable => {}
             }
@@ -978,6 +996,56 @@ impl<'ctx> Compiler<'ctx> {
             .ok_or_else(|| CodegenError::Llvm("call returned no value".into()))?;
         Ok(CompiledValue {
             ty: fn_binding.ret_ty.clone(),
+            value: ret,
+        })
+    }
+
+    fn call_host_import_direct(
+        &mut self,
+        binding: &HostImportBinding<'ctx>,
+        args: &[&Node],
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<CompiledValue<'ctx>> {
+        if args.len() != binding.params.len() {
+            return Err(CodegenError::FunctionArity {
+                expected: binding.params.len(),
+                got: args.len(),
+            });
+        }
+
+        let mut call_args = Vec::new();
+        for (arg, abi_ty) in args.iter().zip(&binding.params) {
+            match abi_ty {
+                LibAbiType::BorrowedVector(vec_ty) => {
+                    let (ptr, len) = self.resolve_vec_arg(arg, env, *vec_ty)?;
+                    call_args.push(BasicMetadataValueEnum::PointerValue(ptr));
+                    call_args.push(BasicMetadataValueEnum::IntValue(len));
+                }
+                _ => {
+                    let value = self.compile_value_expr(arg, env, cur_fn)?;
+                    let expected = Self::internal_value_ty_for_abi(abi_ty)?;
+                    if value.ty != expected {
+                        return Err(CodegenError::ValueTypeMismatch {
+                            expected: expected.to_string(),
+                            actual: value.ty.to_string(),
+                        });
+                    }
+                    call_args.push(value.value.into());
+                }
+            }
+        }
+
+        let call = self
+            .builder
+            .build_call(binding.value, &call_args, "host_import")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let ret = call
+            .try_as_basic_value()
+            .basic()
+            .ok_or_else(|| CodegenError::Llvm("host import returned no value".into()))?;
+        Ok(CompiledValue {
+            ty: Self::internal_value_ty_for_abi(&binding.result)?,
             value: ret,
         })
     }
@@ -8071,7 +8139,7 @@ fn lookup_var<'a, 'ctx>(env: &'a [Binding<'ctx>], idx: u64) -> Result<&'a Bindin
 }
 
 // =========================================================================
-// Stage 11: Host-library emission per ADR 0088.
+// Host-library emission per ADR 0088 and ADR 0092.
 //
 // `compile_library_to_object` accepts a `PackageLibrary` (built by the
 // typechecker from a checked package + its host interface) and emits an
@@ -8081,7 +8149,7 @@ fn lookup_var<'a, 'ctx>(env: &'a [Binding<'ctx>], idx: u64) -> Result<&'a Bindin
 // =========================================================================
 
 use tacit_typecheck::library::{
-    LibReturn, LibScalar, LibraryExport, LibraryImport, PackageLibrary,
+    LibAbiType, LibRecord, LibScalar, LibraryExport, LibraryImport, PackageLibrary,
 };
 
 const TACIT_STATUS_OK: u64 = 0;
@@ -8145,6 +8213,288 @@ impl<'ctx> Compiler<'ctx> {
         Ok(())
     }
 
+    fn abi_llvm_type(&self, ty: &LibAbiType) -> Result<BasicTypeEnum<'ctx>> {
+        match ty {
+            LibAbiType::Unit => Ok(self
+                .context
+                .struct_type(&[self.context.i8_type().into()], false)
+                .into()),
+            LibAbiType::Scalar(scalar) => Ok(scalar_int_type(self.context, *scalar).into()),
+            LibAbiType::Record(record) => Ok(self.abi_record_struct_type(record)?.into()),
+            LibAbiType::BorrowedVector(_) => Ok(self.borrowed_vec_struct_type().into()),
+        }
+    }
+
+    fn borrowed_vec_struct_type(&self) -> inkwell::types::StructType<'ctx> {
+        let ptr_t = self.context.ptr_type(AddressSpace::default());
+        self.context
+            .struct_type(&[ptr_t.into(), self.context.i64_type().into()], false)
+    }
+
+    fn abi_record_struct_type(
+        &self,
+        record: &LibRecord,
+    ) -> Result<inkwell::types::StructType<'ctx>> {
+        let fields = record
+            .fields
+            .iter()
+            .map(|field| self.abi_llvm_type(&field.ty))
+            .collect::<Result<Vec<_>>>()?;
+        Ok(self.context.struct_type(&fields, false))
+    }
+
+    fn internal_value_ty_for_abi(ty: &LibAbiType) -> Result<ValueTy> {
+        match ty {
+            LibAbiType::Unit => Ok(ValueTy::Record(Vec::new())),
+            LibAbiType::Scalar(_) => Ok(ValueTy::Int),
+            LibAbiType::Record(record) => record
+                .fields
+                .iter()
+                .map(|field| {
+                    Ok((
+                        field.name.clone(),
+                        Self::internal_value_ty_for_abi(&field.ty)?,
+                    ))
+                })
+                .collect::<Result<Vec<_>>>()
+                .map(ValueTy::Record),
+            LibAbiType::BorrowedVector(vec_ty) => Err(CodegenError::UnsupportedValueType {
+                ty: format!("{}vec", vec_ty),
+            }),
+        }
+    }
+
+    fn internal_param_types_for_abi(
+        &self,
+        ty: &LibAbiType,
+        out: &mut Vec<BasicMetadataTypeEnum<'ctx>>,
+    ) -> Result<()> {
+        match ty {
+            LibAbiType::BorrowedVector(_) => {
+                out.push(BasicMetadataTypeEnum::PointerType(
+                    self.context.ptr_type(AddressSpace::default()),
+                ));
+                out.push(BasicMetadataTypeEnum::IntType(self.context.i64_type()));
+            }
+            _ => out.push(
+                self.llvm_type(&Self::internal_value_ty_for_abi(ty)?)?
+                    .into(),
+            ),
+        }
+        Ok(())
+    }
+
+    fn abi_to_internal_value(
+        &mut self,
+        abi_value: BasicValueEnum<'ctx>,
+        abi_ty: &LibAbiType,
+        name: &str,
+    ) -> Result<CompiledValue<'ctx>> {
+        match abi_ty {
+            LibAbiType::Unit => {
+                let internal_ty = ValueTy::Record(Vec::new());
+                let value = self.llvm_struct_type(&internal_ty)?.get_undef().into();
+                Ok(CompiledValue {
+                    ty: internal_ty,
+                    value,
+                })
+            }
+            LibAbiType::Scalar(scalar) => {
+                let raw = abi_value.into_int_value();
+                let value =
+                    extend_scalar_to_i64(&self.builder, raw, self.context.i64_type(), *scalar)?;
+                Ok(CompiledValue::int(value))
+            }
+            LibAbiType::Record(record) => {
+                let abi_struct = abi_value.into_struct_value();
+                let mut internal_fields = Vec::with_capacity(record.fields.len());
+                let mut internal_values = Vec::with_capacity(record.fields.len());
+                for (i, field) in record.fields.iter().enumerate() {
+                    let field_abi = self
+                        .builder
+                        .build_extract_value(abi_struct, i as u32, &format!("{name}_field"))
+                        .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+                    let field_value =
+                        self.abi_to_internal_value(field_abi, &field.ty, &field.name)?;
+                    internal_fields.push((field.name.clone(), field_value.ty.clone()));
+                    internal_values.push(field_value);
+                }
+                let internal_ty = ValueTy::Record(internal_fields);
+                let internal_struct_ty = self.llvm_struct_type(&internal_ty)?;
+                let mut aggregate = internal_struct_ty.get_undef();
+                for (i, field) in internal_values.into_iter().enumerate() {
+                    aggregate = self
+                        .builder
+                        .build_insert_value(aggregate, field.value, i as u32, "abi_record_in")
+                        .map_err(|e| CodegenError::Llvm(e.to_string()))?
+                        .into_struct_value();
+                }
+                Ok(CompiledValue {
+                    ty: internal_ty,
+                    value: aggregate.into(),
+                })
+            }
+            LibAbiType::BorrowedVector(vec_ty) => Err(CodegenError::UnsupportedValueType {
+                ty: format!("{}vec", vec_ty),
+            }),
+        }
+    }
+
+    fn internal_to_abi_value(
+        &mut self,
+        value: &CompiledValue<'ctx>,
+        abi_ty: &LibAbiType,
+        name: &str,
+    ) -> Result<BasicValueEnum<'ctx>> {
+        match abi_ty {
+            LibAbiType::Unit => {
+                let unit_ty = self.abi_llvm_type(abi_ty)?.into_struct_type();
+                let mut unit = unit_ty.get_undef();
+                unit = self
+                    .builder
+                    .build_insert_value(unit, self.context.i8_type().const_zero(), 0, "abi_unit")
+                    .map_err(|e| CodegenError::Llvm(e.to_string()))?
+                    .into_struct_value();
+                Ok(unit.into())
+            }
+            LibAbiType::Scalar(scalar) => {
+                let raw = value.clone().into_int()?;
+                let c_val = trunc_i64_to_scalar(
+                    &self.builder,
+                    raw,
+                    scalar_int_type(self.context, *scalar),
+                    *scalar,
+                )?;
+                Ok(c_val.into())
+            }
+            LibAbiType::Record(record) => {
+                let ValueTy::Record(internal_fields) = &value.ty else {
+                    return Err(CodegenError::ValueTypeMismatch {
+                        expected: "record".to_string(),
+                        actual: value.ty.to_string(),
+                    });
+                };
+                let internal_struct = value.value.into_struct_value();
+                let abi_struct_ty = self.abi_record_struct_type(record)?;
+                let mut aggregate = abi_struct_ty.get_undef();
+                for (abi_index, field) in record.fields.iter().enumerate() {
+                    let Some((internal_index, (_, field_ty))) = internal_fields
+                        .iter()
+                        .enumerate()
+                        .find(|(_, (name, _))| name == &field.name)
+                    else {
+                        return Err(CodegenError::MissingField {
+                            field: field.name.clone(),
+                        });
+                    };
+                    let raw_field = self
+                        .builder
+                        .build_extract_value(
+                            internal_struct,
+                            internal_index as u32,
+                            &format!("{name}_field"),
+                        )
+                        .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+                    let field_value = CompiledValue {
+                        ty: field_ty.clone(),
+                        value: raw_field,
+                    };
+                    let abi_field =
+                        self.internal_to_abi_value(&field_value, &field.ty, &field.name)?;
+                    aggregate = self
+                        .builder
+                        .build_insert_value(
+                            aggregate,
+                            abi_field,
+                            abi_index as u32,
+                            "abi_record_out",
+                        )
+                        .map_err(|e| CodegenError::Llvm(e.to_string()))?
+                        .into_struct_value();
+                }
+                Ok(aggregate.into())
+            }
+            LibAbiType::BorrowedVector(vec_ty) => Err(CodegenError::UnsupportedValueType {
+                ty: format!("{}vec", vec_ty),
+            }),
+        }
+    }
+
+    fn borrowed_vec_parts(
+        &mut self,
+        value: BasicValueEnum<'ctx>,
+        name: &str,
+    ) -> Result<(PointerValue<'ctx>, IntValue<'ctx>)> {
+        let vec = value.into_struct_value();
+        let ptr = self
+            .builder
+            .build_extract_value(vec, 0, &format!("{name}_data"))
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?
+            .into_pointer_value();
+        let len = self
+            .builder
+            .build_extract_value(vec, 1, &format!("{name}_len"))
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?
+            .into_int_value();
+        Ok((ptr, len))
+    }
+
+    fn borrowed_vec_value(
+        &mut self,
+        ptr: PointerValue<'ctx>,
+        len: IntValue<'ctx>,
+    ) -> Result<BasicValueEnum<'ctx>> {
+        let vec_ty = self.borrowed_vec_struct_type();
+        let mut value = vec_ty.get_undef();
+        value = self
+            .builder
+            .build_insert_value(value, ptr, 0, "borrowed_vec_data")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?
+            .into_struct_value();
+        value = self
+            .builder
+            .build_insert_value(value, len, 1, "borrowed_vec_len")
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?
+            .into_struct_value();
+        Ok(value.into())
+    }
+
+    fn validate_borrowed_vec(
+        &mut self,
+        cur_fn: FunctionValue<'ctx>,
+        ptr: PointerValue<'ctx>,
+        len: IntValue<'ctx>,
+        bad_arg_bb: BasicBlock<'ctx>,
+        name: &str,
+    ) -> Result<()> {
+        let i64_t = self.context.i64_type();
+        let len_nonzero = self
+            .builder
+            .build_int_compare(
+                IntPredicate::NE,
+                len,
+                i64_t.const_zero(),
+                &format!("{name}_len_nonzero"),
+            )
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let ptr_null = self
+            .builder
+            .build_is_null(ptr, &format!("{name}_ptr_null"))
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let invalid = self
+            .builder
+            .build_and(len_nonzero, ptr_null, &format!("{name}_invalid"))
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        let ok_bb = self
+            .context
+            .append_basic_block(cur_fn, &format!("{name}_ok"));
+        self.builder
+            .build_conditional_branch(invalid, bad_arg_bb, ok_bb)
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder.position_at_end(ok_bb);
+        Ok(())
+    }
+
     fn compile_host_import_trampoline(
         &mut self,
         import: &LibraryImport,
@@ -8155,14 +8505,17 @@ impl<'ctx> Compiler<'ctx> {
     ) -> Result<()> {
         let ptr_t = self.context.ptr_type(AddressSpace::default());
         let i32_t = self.context.i32_type();
-        let i64_t = self.context.i64_type();
 
-        // Trampoline LLVM signature uses the Tacit codegen's normalized i64
-        // for every scalar; the wrapper itself widens/narrows for the C ABI.
-        let param_count = import.params.len();
-        let trampoline_params: Vec<BasicMetadataTypeEnum<'ctx>> =
-            (0..param_count).map(|_| i64_t.into()).collect();
-        let trampoline_fn_ty = i64_t.fn_type(&trampoline_params, false);
+        // Trampoline LLVM signature uses Tacit's internal representation:
+        // scalars are normalized i64, records use internal record structs,
+        // and borrowed vectors are flattened as (ptr, i64 len).
+        let mut trampoline_params = Vec::new();
+        for param in &import.params {
+            self.internal_param_types_for_abi(param, &mut trampoline_params)?;
+        }
+        let trampoline_ret_ty =
+            self.llvm_type(&Self::internal_value_ty_for_abi(&import.result)?)?;
+        let trampoline_fn_ty = trampoline_ret_ty.fn_type(&trampoline_params, false);
         let trampoline_name = format!("{}_dispatch", import.callback);
         let trampoline_fn =
             self.module
@@ -8255,37 +8608,63 @@ impl<'ctx> Compiler<'ctx> {
 
         let mut c_param_metas: Vec<BasicMetadataTypeEnum<'ctx>> = vec![ptr_t.into()];
         let mut c_args: Vec<BasicMetadataValueEnum<'ctx>> = vec![user_ptr.into()];
-        for (i, scalar) in import.params.iter().enumerate() {
-            let c_ty = scalar_int_type(self.context, *scalar);
-            c_param_metas.push(c_ty.into());
-            let raw_arg = trampoline_fn
-                .get_nth_param(i as u32)
-                .ok_or_else(|| CodegenError::Llvm(format!("trampoline missing arg {i}")))?;
-            let i64_val = raw_arg.into_int_value();
-            let c_val = trunc_i64_to_scalar(&self.builder, i64_val, c_ty, *scalar)?;
-            c_args.push(c_val.into());
+        let mut internal_index = 0u32;
+        for (i, abi_ty) in import.params.iter().enumerate() {
+            c_param_metas.push(self.abi_llvm_type(abi_ty)?.into());
+            match abi_ty {
+                LibAbiType::BorrowedVector(_) => {
+                    let ptr = trampoline_fn
+                        .get_nth_param(internal_index)
+                        .ok_or_else(|| {
+                            CodegenError::Llvm(format!("trampoline missing vec ptr arg {i}"))
+                        })?
+                        .into_pointer_value();
+                    internal_index += 1;
+                    let len = trampoline_fn
+                        .get_nth_param(internal_index)
+                        .ok_or_else(|| {
+                            CodegenError::Llvm(format!("trampoline missing vec len arg {i}"))
+                        })?
+                        .into_int_value();
+                    internal_index += 1;
+                    c_args.push(self.borrowed_vec_value(ptr, len)?.into());
+                }
+                _ => {
+                    let raw_arg = trampoline_fn
+                        .get_nth_param(internal_index)
+                        .ok_or_else(|| CodegenError::Llvm(format!("trampoline missing arg {i}")))?;
+                    internal_index += 1;
+                    let internal = CompiledValue {
+                        ty: Self::internal_value_ty_for_abi(abi_ty)?,
+                        value: raw_arg,
+                    };
+                    c_args.push(
+                        self.internal_to_abi_value(&internal, abi_ty, "callback_arg")?
+                            .into(),
+                    );
+                }
+            }
         }
 
-        let result_out_alloca = match &import.result {
-            LibReturn::Unit => None,
-            LibReturn::Scalar(scalar) => {
-                let ty = scalar_int_type(self.context, *scalar);
-                c_param_metas.push(ptr_t.into());
-                let saved_ip = self.builder.get_insert_block().unwrap();
-                let alloca_bb = trampoline_fn.get_first_basic_block().unwrap();
-                if let Some(first_inst) = alloca_bb.get_first_instruction() {
-                    self.builder.position_before(&first_inst);
-                } else {
-                    self.builder.position_at_end(alloca_bb);
-                }
-                let alloca = self
-                    .builder
-                    .build_alloca(ty, "callback_out")
-                    .map_err(|e| CodegenError::Llvm(e.to_string()))?;
-                self.builder.position_at_end(saved_ip);
-                c_args.push(alloca.into());
-                Some((alloca, ty, *scalar))
+        let result_out_alloca = if import.result.is_unit() {
+            None
+        } else {
+            let ty = self.abi_llvm_type(&import.result)?;
+            c_param_metas.push(ptr_t.into());
+            let saved_ip = self.builder.get_insert_block().unwrap();
+            let alloca_bb = trampoline_fn.get_first_basic_block().unwrap();
+            if let Some(first_inst) = alloca_bb.get_first_instruction() {
+                self.builder.position_before(&first_inst);
+            } else {
+                self.builder.position_at_end(alloca_bb);
             }
+            let alloca = self
+                .builder
+                .build_alloca(ty, "callback_out")
+                .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+            self.builder.position_at_end(saved_ip);
+            c_args.push(alloca.into());
+            Some((alloca, ty))
         };
 
         let c_fn_ty = i32_t.fn_type(&c_param_metas, false);
@@ -8308,33 +8687,60 @@ impl<'ctx> Compiler<'ctx> {
             .map_err(|e| CodegenError::Llvm(e.to_string()))?;
 
         self.builder.position_at_end(read_out_bb);
-        let result_i64 = match result_out_alloca {
-            None => i64_t.const_zero(),
-            Some((alloca, ty, scalar)) => {
+        let result_value = match result_out_alloca {
+            None => {
+                let unit_ty = Self::internal_value_ty_for_abi(&LibAbiType::Unit)?;
+                CompiledValue {
+                    ty: unit_ty.clone(),
+                    value: self
+                        .llvm_type(&unit_ty)?
+                        .into_struct_type()
+                        .get_undef()
+                        .into(),
+                }
+            }
+            Some((alloca, ty)) => {
                 let raw = self
                     .builder
                     .build_load(ty, alloca, "result_raw")
-                    .map_err(|e| CodegenError::Llvm(e.to_string()))?
-                    .into_int_value();
-                extend_scalar_to_i64(&self.builder, raw, i64_t, scalar)?
+                    .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+                self.abi_to_internal_value(raw, &import.result, "callback_result")?
             }
         };
         self.builder
-            .build_return(Some(&result_i64))
+            .build_return(Some(&result_value.value))
             .map_err(|e| CodegenError::Llvm(e.to_string()))?;
 
         if let Some(saved) = saved_block {
             self.builder.position_at_end(saved);
         }
 
-        let binding = FunctionBinding {
+        let abi_binding = HostImportBinding {
             value: trampoline_fn,
-            param_tys: vec![ValueTy::Int; param_count],
-            ret_ty: ValueTy::Int,
-            captures: Vec::new(),
-            closure_template: None,
+            params: import.params.clone(),
+            result: import.result.clone(),
         };
-        self.host_imports.insert(import.hash.clone(), binding);
+        self.host_import_abis
+            .insert(import.hash.clone(), abi_binding);
+
+        if !import
+            .params
+            .iter()
+            .any(|param| matches!(param, LibAbiType::BorrowedVector(_)))
+        {
+            let binding = FunctionBinding {
+                value: trampoline_fn,
+                param_tys: import
+                    .params
+                    .iter()
+                    .map(Self::internal_value_ty_for_abi)
+                    .collect::<Result<Vec<_>>>()?,
+                ret_ty: Self::internal_value_ty_for_abi(&import.result)?,
+                captures: Vec::new(),
+                closure_template: None,
+            };
+            self.host_imports.insert(import.hash.clone(), binding);
+        }
         Ok(())
     }
 
@@ -8346,7 +8752,6 @@ impl<'ctx> Compiler<'ctx> {
     ) -> Result<()> {
         let ptr_t = self.context.ptr_type(AddressSpace::default());
         let i32_t = self.context.i32_type();
-        let i64_t = self.context.i64_type();
 
         // Peel any leading Ann nodes; the export body may carry an annotation
         // that helps the typechecker propagate signature info but is opaque
@@ -8364,14 +8769,11 @@ impl<'ctx> Compiler<'ctx> {
             });
         }
 
-        let param_tys: Vec<ValueTy> = (0..lam_arity).map(|_| ValueTy::Int).collect();
-        let hoisted = self.hoist_lambda(body, param_tys, ValueTy::Int, "lib_export", None)?;
-
         let mut wrapper_params: Vec<BasicMetadataTypeEnum<'ctx>> = vec![ptr_t.into()];
-        for scalar in &export.params {
-            wrapper_params.push(scalar_int_type(self.context, *scalar).into());
+        for param in &export.params {
+            wrapper_params.push(self.abi_llvm_type(param)?.into());
         }
-        let has_out = matches!(export.result, LibReturn::Scalar(_));
+        let has_out = !export.result.is_unit();
         if has_out {
             wrapper_params.push(ptr_t.into());
         }
@@ -8422,6 +8824,35 @@ impl<'ctx> Compiler<'ctx> {
             self.builder.position_at_end(do_call_bb);
         }
 
+        let mut param_bindings = Vec::with_capacity(export.params.len());
+        for (i, abi_ty) in export.params.iter().enumerate() {
+            let raw_param = wrapper_fn
+                .get_nth_param((i + 1) as u32)
+                .ok_or_else(|| CodegenError::Llvm(format!("wrapper missing param {i}")))?;
+            match abi_ty {
+                LibAbiType::BorrowedVector(vec_ty) => {
+                    let (ptr, len) = self.borrowed_vec_parts(raw_param, &format!("arg{i}"))?;
+                    self.validate_borrowed_vec(
+                        wrapper_fn,
+                        ptr,
+                        len,
+                        bad_arg_bb,
+                        &format!("arg{i}_vec"),
+                    )?;
+                    param_bindings.push(Binding::VecHandle {
+                        ptr,
+                        len,
+                        ty: *vec_ty,
+                    });
+                }
+                _ => {
+                    let value =
+                        self.abi_to_internal_value(raw_param, abi_ty, &format!("arg{i}"))?;
+                    param_bindings.push(Binding::Value(value));
+                }
+            }
+        }
+
         // Save prior TLS, install new, run, restore.
         let prior_ctx = self
             .builder
@@ -8432,41 +8863,35 @@ impl<'ctx> Compiler<'ctx> {
             .build_store(tls_global.as_pointer_value(), ctx_in)
             .map_err(|e| CodegenError::Llvm(e.to_string()))?;
 
-        let mut hoisted_args: Vec<CompiledValue<'ctx>> = Vec::with_capacity(export.params.len());
-        for (i, scalar) in export.params.iter().enumerate() {
-            let raw_param = wrapper_fn
-                .get_nth_param((i + 1) as u32)
-                .ok_or_else(|| CodegenError::Llvm(format!("wrapper missing param {i}")))?
-                .into_int_value();
-            let i64_val = extend_scalar_to_i64(&self.builder, raw_param, i64_t, *scalar)?;
-            hoisted_args.push(CompiledValue {
-                ty: ValueTy::Int,
-                value: i64_val.into(),
-            });
+        let mut body_env = Vec::with_capacity(param_bindings.len());
+        for binding in param_bindings.into_iter().rev() {
+            body_env.push(binding);
         }
 
-        let call_result = self.call_function(&hoisted, &hoisted_args)?;
-        let result_i64 = call_result.value.into_int_value();
+        let result_value = self.compile_value_expr(body, &body_env, wrapper_fn)?;
+        let expected_result = Self::internal_value_ty_for_abi(&export.result)?;
+        if result_value.ty != expected_result {
+            return Err(CodegenError::ValueTypeMismatch {
+                expected: expected_result.to_string(),
+                actual: result_value.ty.to_string(),
+            });
+        }
 
         // Restore TLS regardless of return path.
         self.builder
             .build_store(tls_global.as_pointer_value(), prior_ctx)
             .map_err(|e| CodegenError::Llvm(e.to_string()))?;
 
-        if let LibReturn::Scalar(scalar) = export.result {
+        if has_out {
             let out_idx = (1 + export.params.len()) as u32;
             let out_ptr = wrapper_fn
                 .get_nth_param(out_idx)
                 .ok_or_else(|| CodegenError::Llvm("wrapper missing out".into()))?
                 .into_pointer_value();
-            let truncated = trunc_i64_to_scalar(
-                &self.builder,
-                result_i64,
-                scalar_int_type(self.context, scalar),
-                scalar,
-            )?;
+            let abi_result =
+                self.internal_to_abi_value(&result_value, &export.result, "export_result")?;
             self.builder
-                .build_store(out_ptr, truncated)
+                .build_store(out_ptr, abi_result)
                 .map_err(|e| CodegenError::Llvm(e.to_string()))?;
         }
 

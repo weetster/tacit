@@ -114,6 +114,9 @@ Exit criteria:
 
 ### Stage 1: Complete Rich Boundary Codegen
 
+**Status:** Complete 2026-05-18. Deliverable:
+[ADR 0092](../decisions/0092-rich-boundary-library-codegen.md)
+
 **Purpose:** Make the already-designed ABI shapes usable in linkable
 libraries.
 
@@ -132,11 +135,12 @@ Work items:
 Exit criteria:
 
 - `tacit interface . --emit-library` accepts ABI records and borrowed vector
-  parameters when the metadata ABI accepts them.
+  parameters when the metadata ABI accepts them. Done by
+  [ADR 0092](../decisions/0092-rich-boundary-library-codegen.md).
 - A host can pass a ROM buffer or framebuffer buffer to Tacit as a borrowed
-  `u8vec`.
+  `u8vec`. Done for borrowed-vector export parameters.
 - A Tacit callback can pass a borrowed audio/frame slice to the host within
-  one call.
+  one call. Done for borrowed-vector host callback parameters.
 
 ### Stage 2: Explicit Bounded-Stack Loops
 

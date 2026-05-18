@@ -109,10 +109,10 @@ tacit interface .                    # write interface.json + C header + Rust bi
 tacit interface . --emit-library     # additionally produce a linkable .a
 ```
 
-The host-interface layer accepts only the scalar boundary types documented in
-the primer's host-interface section. Records and borrowed vectors at the
-boundary are rejected by `--emit-library` even when `interface.json` accepts
-them.
+The host-interface library backend accepts scalar boundary types, ABI records,
+and borrowed typed-vector parameters. Owned vector returns, vector fields
+inside records, function values, legacy `Buf` / `I64Vec`, strings, and
+arbitrary pointers remain outside the generated library ABI.
 
 ## Standalone executables and effects
 

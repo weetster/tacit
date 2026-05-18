@@ -124,9 +124,8 @@ enum Cmd {
         target: InterfaceTarget,
 
         /// Emit a linkable static library under .tacit/derived/.../host/.
-        /// Stage 11 supports scalar-only boundary types; records and borrowed
-        /// vectors at the boundary are diagnostics for the library backend
-        /// even when interface.json accepts them.
+        /// Supports scalar boundary types, ABI records, and borrowed typed
+        /// vector parameters. Owned vector returns remain outside the ABI.
         #[arg(long)]
         emit_library: bool,
     },

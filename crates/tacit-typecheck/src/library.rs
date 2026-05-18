@@ -1,8 +1,8 @@
-//! Stage 11 host-library specification.
+//! Host-library codegen specification.
 //!
 //! Translates a checked package plus its Stage 10 host interface into a
 //! codegen-friendly description: per-export expanded bodies (with host import
-//! refs left in place), scalar ABI types, and the host-import callback table
+//! refs left in place), ABI boundary types, and the host-import callback table
 //! layout described by ADR 0088.
 
 #![allow(clippy::result_large_err)]
@@ -13,17 +13,14 @@ use tacit_canonical::ast::Node;
 use tacit_canonical::hash_node;
 
 use crate::error::Diagnostic;
-use crate::interface::{generate_host_interface, HostInterface, HostTarget};
+use crate::interface::{
+    generate_host_interface, AbiType, HostInterface, HostTarget, InterfaceRecord,
+};
 use crate::package::PackageGraph;
 use crate::project::{project_definition_expression_with_leaves, ProjectEntryError};
+use crate::ty::FixedIntTy;
 
 /// One ABI-expressible scalar at the host boundary.
-///
-/// Stage 11 codegen restricts boundary types to scalars and the unit-like
-/// empty record. Records, borrowed vectors, and other ABI-expressible shapes
-/// remain valid in `interface.json` and the generated headers/bindings, but
-/// the linkable artifact rejects them with `abi-library-unsupported-type`
-/// until later codegen lands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LibScalar {
     Bool,
@@ -71,13 +68,36 @@ impl LibScalar {
     }
 }
 
-/// Result type at the host boundary.
+/// One codegen-supported ABI boundary type.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum LibReturn {
-    /// Empty record. Generated wrapper omits the out-parameter.
+pub enum LibAbiType {
+    /// Empty record. Export wrappers omit the out-parameter for this result.
     Unit,
-    /// Single scalar written through the out-parameter.
     Scalar(LibScalar),
+    Record(LibRecord),
+    /// Host-owned call-local borrowed typed vector parameter.
+    BorrowedVector(FixedIntTy),
+}
+
+impl LibAbiType {
+    pub fn is_unit(&self) -> bool {
+        matches!(self, LibAbiType::Unit)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LibRecord {
+    /// Record type hash without `blake3:`.
+    pub hash: String,
+    pub symbol: String,
+    pub fields: Vec<LibRecordField>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LibRecordField {
+    pub name: String,
+    pub c_name: String,
+    pub ty: LibAbiType,
 }
 
 #[derive(Debug, Clone)]
@@ -90,8 +110,8 @@ pub struct LibraryExport {
     /// are left as `Ref` nodes so codegen can lower them through the
     /// callback table.
     pub body: Node,
-    pub params: Vec<LibScalar>,
-    pub result: LibReturn,
+    pub params: Vec<LibAbiType>,
+    pub result: LibAbiType,
 }
 
 #[derive(Debug, Clone)]
@@ -103,8 +123,8 @@ pub struct LibraryImport {
     /// Sorted-by-hash index inside the callbacks struct. Determines the GEP
     /// offset codegen uses to load the function pointer.
     pub index: usize,
-    pub params: Vec<LibScalar>,
-    pub result: LibReturn,
+    pub params: Vec<LibAbiType>,
+    pub result: LibAbiType,
 }
 
 #[derive(Debug, Clone)]
@@ -115,6 +135,7 @@ pub struct PackageLibrary {
     pub package_prefix: String,
     pub exports: Vec<LibraryExport>,
     pub imports: Vec<LibraryImport>,
+    pub records: Vec<LibRecord>,
 }
 
 pub fn package_library(
@@ -136,14 +157,14 @@ pub fn package_library(
     let mut imports: Vec<LibraryImport> = Vec::new();
     for (index, import) in interface.imports.iter().enumerate() {
         let hash = strip_prefix(&import.hash);
-        let params = match library_param_scalars(&import.parameters, &hash) {
+        let params = match library_params(&interface, &import.parameters, &hash) {
             Ok(params) => params,
             Err(diag) => {
                 diags.push(diag);
                 continue;
             }
         };
-        let result = match library_result(&import.result, &hash) {
+        let result = match library_type(&interface, &import.result, &hash) {
             Ok(result) => result,
             Err(diag) => {
                 diags.push(diag);
@@ -163,14 +184,14 @@ pub fn package_library(
     let mut exports: Vec<LibraryExport> = Vec::new();
     for export in &interface.exports {
         let hash = strip_prefix(&export.hash);
-        let params = match library_param_scalars(&export.parameters, &hash) {
+        let params = match library_params(&interface, &export.parameters, &hash) {
             Ok(params) => params,
             Err(diag) => {
                 diags.push(diag);
                 continue;
             }
         };
-        let result = match library_result(&export.result, &hash) {
+        let result = match library_type(&interface, &export.result, &hash) {
             Ok(result) => result,
             Err(diag) => {
                 diags.push(diag);
@@ -198,57 +219,117 @@ pub fn package_library(
     }
 
     let package_hash = strip_prefix(&interface.package_hash);
+    let records = match interface
+        .records
+        .iter()
+        .map(|record| library_record(&interface, record, &package_hash))
+        .collect::<Result<Vec<_>, _>>()
+    {
+        Ok(records) => records,
+        Err(diag) => return Err(vec![diag]),
+    };
     let library = PackageLibrary {
         package_hash,
         package_prefix,
         exports,
         imports,
+        records,
     };
     Ok((interface, library))
 }
 
-fn library_param_scalars(
-    abi_params: &[crate::interface::AbiType],
+fn library_params(
+    interface: &HostInterface,
+    abi_params: &[AbiType],
     owner_hash: &str,
-) -> Result<Vec<LibScalar>, Diagnostic> {
+) -> Result<Vec<LibAbiType>, Diagnostic> {
     let mut params = Vec::with_capacity(abi_params.len());
     for abi in abi_params {
-        let scalar = scalar_from_abi(abi).ok_or_else(|| {
-            library_diag(
-                "abi-library-unsupported-type",
-                owner_hash,
-                format!(
-                    "stage 11 library codegen supports only scalar boundary types; got {}",
-                    abi_kind_description(abi)
-                ),
-            )
-        })?;
-        params.push(scalar);
+        params.push(library_type(interface, abi, owner_hash)?);
     }
     Ok(params)
 }
 
-fn library_result(
-    abi: &crate::interface::AbiType,
+fn library_type(
+    interface: &HostInterface,
+    abi: &AbiType,
     owner_hash: &str,
-) -> Result<LibReturn, Diagnostic> {
-    if abi.kind == "unit" {
-        return Ok(LibReturn::Unit);
+) -> Result<LibAbiType, Diagnostic> {
+    match abi.kind.as_str() {
+        "unit" => Ok(LibAbiType::Unit),
+        "scalar" => scalar_from_abi(abi)
+            .map(LibAbiType::Scalar)
+            .ok_or_else(|| unsupported_abi(owner_hash, abi)),
+        "record" => {
+            let hash = abi
+                .hash
+                .as_deref()
+                .map(strip_prefix)
+                .ok_or_else(|| unsupported_abi(owner_hash, abi))?;
+            let record = interface
+                .records
+                .iter()
+                .find(|record| strip_prefix(&record.hash) == hash)
+                .ok_or_else(|| {
+                    library_diag(
+                        "abi-library-unsupported-type",
+                        owner_hash,
+                        format!("record type blake3:{hash} is missing from interface metadata"),
+                    )
+                })?;
+            Ok(LibAbiType::Record(library_record(
+                interface, record, owner_hash,
+            )?))
+        }
+        "borrowed_vector" => {
+            let element = abi
+                .element
+                .as_deref()
+                .ok_or_else(|| unsupported_abi(owner_hash, abi))?;
+            let int_name = element.strip_suffix("vec").ok_or_else(|| {
+                library_diag(
+                    "abi-library-unsupported-type",
+                    owner_hash,
+                    format!("borrowed vector element `{element}` is malformed"),
+                )
+            })?;
+            let int_ty = FixedIntTy::parse_name(int_name).ok_or_else(|| {
+                library_diag(
+                    "abi-library-unsupported-type",
+                    owner_hash,
+                    format!("borrowed vector element `{element}` is outside the fixed-int set"),
+                )
+            })?;
+            Ok(LibAbiType::BorrowedVector(int_ty))
+        }
+        _ => Err(unsupported_abi(owner_hash, abi)),
     }
-    let scalar = scalar_from_abi(abi).ok_or_else(|| {
-        library_diag(
-            "abi-library-unsupported-type",
-            owner_hash,
-            format!(
-                "stage 11 library codegen supports only scalar boundary returns; got {}",
-                abi_kind_description(abi)
-            ),
-        )
-    })?;
-    Ok(LibReturn::Scalar(scalar))
 }
 
-fn scalar_from_abi(abi: &crate::interface::AbiType) -> Option<LibScalar> {
+fn library_record(
+    interface: &HostInterface,
+    record: &InterfaceRecord,
+    owner_hash: &str,
+) -> Result<LibRecord, Diagnostic> {
+    let fields = record
+        .fields
+        .iter()
+        .map(|field| {
+            Ok(LibRecordField {
+                name: field.name.clone(),
+                c_name: field.c_name.clone(),
+                ty: library_type(interface, &field.type_, owner_hash)?,
+            })
+        })
+        .collect::<Result<Vec<_>, Diagnostic>>()?;
+    Ok(LibRecord {
+        hash: strip_prefix(&record.hash),
+        symbol: record.symbol.clone(),
+        fields,
+    })
+}
+
+fn scalar_from_abi(abi: &AbiType) -> Option<LibScalar> {
     if abi.kind != "scalar" {
         return None;
     }
@@ -266,7 +347,18 @@ fn scalar_from_abi(abi: &crate::interface::AbiType) -> Option<LibScalar> {
     })
 }
 
-fn abi_kind_description(abi: &crate::interface::AbiType) -> String {
+fn unsupported_abi(owner_hash: &str, abi: &AbiType) -> Diagnostic {
+    library_diag(
+        "abi-library-unsupported-type",
+        owner_hash,
+        format!(
+            "library codegen does not support ABI boundary type {}",
+            abi_kind_description(abi)
+        ),
+    )
+}
+
+fn abi_kind_description(abi: &AbiType) -> String {
     match abi.kind.as_str() {
         "scalar" => abi.name.clone().unwrap_or_else(|| "scalar".to_string()),
         "record" => "record".to_string(),

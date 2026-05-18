@@ -107,3 +107,4 @@ Keep ADRs short. They record the decision, not the full analysis that led to it.
 - [0089 — Phase 6 frozen](0089-phase-6-frozen.md)
 - [0090 — Toolchain release contract](0090-toolchain-release-contract.md)
 - [0091 — Stateful host-bridge scope](0091-stateful-host-bridge-scope.md)
+- [0092 — Rich boundary library codegen](0092-rich-boundary-library-codegen.md)

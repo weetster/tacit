@@ -28,7 +28,8 @@ pub use interface::{
     HostInterface, HostInterfaceOutputs, HostTarget,
 };
 pub use library::{
-    package_library, LibReturn, LibScalar, LibraryExport, LibraryImport, PackageLibrary,
+    package_library, LibAbiType, LibRecord, LibRecordField, LibScalar, LibraryExport,
+    LibraryImport, PackageLibrary,
 };
 pub use package::{
     check_package, clear_package_cache, evict_package_cache, load_package, lock_package,
