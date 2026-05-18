@@ -183,31 +183,51 @@ Exit criteria:
 
 ### Stage 3: Tacit-Owned Package Instances
 
+**Status:** Design accepted 2026-05-18 via
+[ADR 0094](../decisions/0094-stateful-host-bridge-package-instances.md);
+implementation deferred to a follow-up stage commit. Closes Q-SHB-2,
+Q-SHB-3, Q-SHB-4, Q-SHB-5.
+
 **Purpose:** Add persistent state without arbitrary mutable globals.
 
 Work items:
 
 - Design a package-instance lifecycle in the host ABI: create, call methods,
-  and destroy.
+  and destroy. Done by ADR 0094: opaque `tacit_p_<pkg>_instance*` plus
+  `create`/`destroy` symbols plus per-export wrappers that take the instance
+  pointer between `ctx` and the source-level parameters.
 - Define an opaque instance handle at the generated C/Rust boundary. The host
-  may hold and pass the handle but may not inspect Tacit-owned memory.
+  may hold and pass the handle but may not inspect Tacit-owned memory. Done
+  by ADR 0094: forward-declared opaque struct; Rust binding uses `Drop` for
+  destroy and never exposes the inner layout.
 - Add Tacit-owned heap allocation for instance fields, including fixed-width
   vectors sized for RAM, VRAM, OAM, cartridge ROM/RAM, audio queues, and
-  framebuffers.
+  framebuffers. Done by ADR 0094: a new `(state RECORD-TY)` canonical entry
+  plus `@state-alloc-vec` / `@state-free-vec` primitives. Vec fields start at
+  zero length; the user allocates explicitly so that cartridge-controlled
+  sizes (ROM, external RAM) can be set per call.
 - Define destruction, failure cleanup, and ownership rules. If allocation can
   fail, define whether failure is represented as ABI status or a Tacit-level
-  result.
+  result. Done by ADR 0094: failure is the new `TACIT_STATUS_OUT_OF_MEMORY`
+  ABI status; partial allocations remain on the instance after a failed
+  method and are released by `destroy`.
 - Keep package identity content-addressed. Instance creation must not depend
-  on manifest-only semantic choices.
+  on manifest-only semantic choices. Done by ADR 0094: `(state ...)` is a
+  canonical-text node and contributes to the unit hash through its `defs`
+  position; manifests carry no instance-shaping information.
 - Decide whether state declarations live in canonical source, generated ABI
-  metadata, or both.
+  metadata, or both. Done by ADR 0094: canonical source is authoritative; the
+  generator emits a derived `instance` block in `interface.json` that
+  describes the shape without exposing layout offsets.
 
 Exit criteria:
 
 - A Tacit package can retain mutable vectors and records across calls.
+  Pending implementation.
 - The host can create and destroy multiple independent instances of the same
-  package.
-- No raw Tacit pointer or allocator detail crosses the boundary.
+  package. Pending implementation.
+- No raw Tacit pointer or allocator detail crosses the boundary. Locked in by
+  ADR 0094; pending implementation evidence.
 
 ### Stage 4: Host Capability Profiles
 
@@ -289,11 +309,11 @@ Exit criteria:
 
 | ID | Question | Resolution Point |
 | --- | --- | --- |
-| Q-SHB-1 | Is guaranteed self-tail-call lowering enough, or does Tacit need an explicit loop construct? | Stage 2 ADR |
-| Q-SHB-2 | What is the canonical representation for package-instance state declarations? | Stage 3 ADR |
-| Q-SHB-3 | Are Tacit-owned heap vectors a new handle family or an extension of typed vectors? | Stage 3 ADR |
-| Q-SHB-4 | How are allocation failures represented across instance creation and method calls? | Stage 3 ADR |
-| Q-SHB-5 | Can host callbacks receive Tacit-owned borrowed slices safely during a call? | Stage 3 or Stage 4 ADR |
+| Q-SHB-1 | Is guaranteed self-tail-call lowering enough, or does Tacit need an explicit loop construct? | Closed by [ADR 0093](../decisions/0093-bounded-stack-loop-primitive.md): standalone `@loop` primitive. |
+| Q-SHB-2 | What is the canonical representation for package-instance state declarations? | Closed by [ADR 0094](../decisions/0094-stateful-host-bridge-package-instances.md): new `(state name-sym record-ty)` entry inside the unit's `defs` list. |
+| Q-SHB-3 | Are Tacit-owned heap vectors a new handle family or an extension of typed vectors? | Closed by [ADR 0094](../decisions/0094-stateful-host-bridge-package-instances.md): reuse existing typed-vec handles; ownership lives in the instance, the user always sees a call-local borrow. |
+| Q-SHB-4 | How are allocation failures represented across instance creation and method calls? | Closed by [ADR 0094](../decisions/0094-stateful-host-bridge-package-instances.md): new ABI status `TACIT_STATUS_OUT_OF_MEMORY`; no Tacit-level failure value. |
+| Q-SHB-5 | Can host callbacks receive Tacit-owned borrowed slices safely during a call? | Closed by [ADR 0094](../decisions/0094-stateful-host-bridge-package-instances.md): yes, symmetric Stage 1 call-local borrow rule. |
 | Q-SHB-6 | Which capability labels belong in a conventional profile versus project-local declarations? | Stage 4 ADR |
 | Q-SHB-7 | What is the minimum Tacboy milestone that proves the model without turning Tacit development into emulator development? | Stage 5 plan update |
 

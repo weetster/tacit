@@ -109,3 +109,4 @@ Keep ADRs short. They record the decision, not the full analysis that led to it.
 - [0091 — Stateful host-bridge scope](0091-stateful-host-bridge-scope.md)
 - [0092 — Rich boundary library codegen](0092-rich-boundary-library-codegen.md)
 - [0093 — Bounded-stack `@loop` primitive](0093-bounded-stack-loop-primitive.md)
+- [0094 — Tacit-owned package instances](0094-stateful-host-bridge-package-instances.md)
