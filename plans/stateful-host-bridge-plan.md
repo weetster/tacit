@@ -1,6 +1,7 @@
 # Stateful Host-Bridge Plan
 
-**Status:** Draft
+**Status:** Draft; Stage 0 complete by
+[ADR 0091](../decisions/0091-stateful-host-bridge-scope.md)
 **Scope:** Future Tacit language and toolchain work to let Tacit own
 long-running application state while the host only bridges to third-party
 libraries and platform services.
@@ -86,6 +87,10 @@ registers, memory maps, or device state.
 
 ### Stage 0: Scope ADR And Benchmark Shape
 
+**Status:** Complete 2026-05-18. Deliverables:
+[ADR 0091](../decisions/0091-stateful-host-bridge-scope.md) and
+[stateful-host-bridge-benchmark.md](stateful-host-bridge-benchmark.md)
+
 **Purpose:** Lock the future phase boundary before implementation.
 
 Work items:
@@ -101,9 +106,11 @@ Work items:
 
 Exit criteria:
 
-- A scope ADR is accepted.
-- The benchmark shape is documented under `plans/`.
-- The non-goals above are explicitly preserved.
+- A scope ADR is accepted. Done:
+  [ADR 0091](../decisions/0091-stateful-host-bridge-scope.md).
+- The benchmark shape is documented under `plans/`. Done:
+  [stateful-host-bridge-benchmark.md](stateful-host-bridge-benchmark.md).
+- The non-goals above are explicitly preserved. Done.
 
 ### Stage 1: Complete Rich Boundary Codegen
 
