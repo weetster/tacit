@@ -217,6 +217,7 @@ closed by [ADR 0080](decisions/0080-phase-6-module-semantics.md) through
   arbitrary FFI, or broad package-tooling work; those are Phase 7+ unless a
   later ADR reopens a bounded slice.
 - When updating the Tacit-Lite primer, keep it prompt-facing and language-facing: do not include repository paths, phase/stage process notes, ADR references, CI/test instructions, corpus/evaluation logistics, or recipes tailored to known corpus tasks. Primer examples should teach general Tacit-Lite constructs and idioms, be compilable or clearly marked as explanatory snippets, and remain independent of repository layout and evaluation harness details. Re-baseline the `o200k_base` token count after primer edits and record the new count in the active phase plan when the plan tracks it.
+- When updating the bundled agent workflow (`share-assets/workflow/agent-workflow.md`), keep it toolchain-facing and project-facing, not repository-facing: do not include repository paths, phase/stage process notes, ADR references, CI/test instructions, corpus/evaluation logistics, upstream held-out-set warnings, or recipes tailored to this repository's development tasks. Workflow guidance should describe how an agent uses an installed Tacit toolchain in an arbitrary Tacit project, independent of this repository's layout and release process.
 - **After any primer byte change** (including prose-only edits), update the
   toolchain release metadata. A primer byte change requires a new released
   toolchain version, but do not mechanically bump an already-unreleased
