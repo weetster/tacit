@@ -1,0 +1,286 @@
+# Stateful Host-Bridge Plan
+
+**Status:** Draft
+**Scope:** Future Tacit language and toolchain work to let Tacit own
+long-running application state while the host only bridges to third-party
+libraries and platform services.
+
+## Context
+
+Phase 6 proved that Tacit packages can be checked, tested, compiled to a
+native static library, and called from a Rust host through a constrained ABI.
+It also added fixed-width integers, typed mutable vectors, records, package
+tests, host imports, generated C headers, and generated Rust bindings.
+
+That is enough for small scalar kernels and emulator-style examples, but it is
+not enough for a full emulator architecture where Tacit owns CPU state, RAM,
+VRAM, OAM, timers, PPU state, audio queues, and execution control across many
+host calls. The current constraints are:
+
+- linkable library codegen accepts scalar boundary types only, even though
+  interface metadata can describe records and borrowed vectors;
+- typed vectors allocated inside Tacit are stack-scoped and die at export
+  return;
+- there is no Tacit-owned package instance or persistent mutable state across
+  host calls;
+- long-running loops are encoded through recursion today, without a dedicated
+  loop-lowering contract suitable for millions of emulator steps;
+- host imports are callback capabilities, not arbitrary FFI, which is the
+  right model but needs richer bulk-data shapes for video, audio, input, and
+  ROM transfer.
+
+This plan treats a Game Boy emulator such as Tacboy as a representative stress
+test. The target architecture is:
+
+```text
+Rust/C host:
+  - owns SDL, audio device, window, OS files, timers, and controller plumbing
+  - creates a Tacit emulator instance
+  - forwards host callbacks to third-party libraries
+
+Tacit package:
+  - owns emulator state and memory
+  - executes CPU/PPU/APU/timer/interrupt semantics
+  - calls typed host capabilities for frame/audio/input/file bridge operations
+```
+
+No stage may use `corpus/sealed/` contents, paths, metadata, or feedback.
+
+## Goal
+
+Enable Tacit to own long-running stateful application logic while preserving
+the constrained host model: Tacit declares typed capabilities; the host
+satisfies those capabilities and bridges them to platform libraries. The host
+should not need to implement emulator semantics or manually hold emulator
+registers, memory maps, or device state.
+
+## Non-Goals
+
+- No arbitrary `extern "C"` declarations in Tacit source.
+- No direct Tacit bindings to SDL, OpenGL, Vulkan, ALSA, CoreAudio, filesystem
+  APIs, or other ecosystem libraries.
+- No untyped pointer escape hatches.
+- No unchecked memory access by default.
+- No global mutable variables without explicit package-instance ownership.
+- No concurrency model, green threads, actors, or async runtime in this plan.
+- No WASM backend commitment unless a later ADR explicitly scopes it.
+- No semantic-version package solver or public registry work.
+
+## Success Criteria
+
+- A Tacit package can allocate and retain emulator-sized state across host
+  calls without leaking or exposing raw pointers.
+- Host exports and callbacks can pass records and borrowed typed vectors
+  through generated linkable artifacts, not only through `interface.json`.
+- Long-running loops compile to bounded-stack machine code without relying on
+  optimizer luck.
+- A host can drive a Tacit-owned emulator through a small API such as
+  `create`, `load_rom`, `set_input`, `run_until_frame`, `read_frame`, and
+  `destroy`.
+- Bulk framebuffer/audio transfer avoids one scalar host call per pixel or
+  sample.
+- The host remains a bridge: platform resources and third-party library calls
+  are outside Tacit; domain state and emulator semantics are inside Tacit.
+
+## Stages
+
+### Stage 0: Scope ADR And Benchmark Shape
+
+**Purpose:** Lock the future phase boundary before implementation.
+
+Work items:
+
+- Write a scope ADR that names this as stateful host-bridge work, not general
+  FFI.
+- Define Tacboy as an open exemplar, not a frozen benchmark and not a
+  requirement to read or depend on sealed corpus data.
+- Define an emulator-shaped benchmark with CPU-step throughput, framebuffer
+  transfer throughput, audio-buffer transfer throughput, and host-call
+  overhead.
+- Decide which results are gates and which are descriptive.
+
+Exit criteria:
+
+- A scope ADR is accepted.
+- The benchmark shape is documented under `plans/`.
+- The non-goals above are explicitly preserved.
+
+### Stage 1: Complete Rich Boundary Codegen
+
+**Purpose:** Make the already-designed ABI shapes usable in linkable
+libraries.
+
+Work items:
+
+- Extend library codegen beyond scalar parameters and scalar results.
+- Support ABI records in generated wrappers, generated C headers, generated
+  Rust bindings, and wrapper status checks.
+- Support borrowed typed-vector parameters for exports and host callbacks.
+- Preserve the Stage 10 ownership rule: borrowed vectors are host-owned and
+  call-local.
+- Add tests for record parameters/results, borrowed `u8vec` parameters,
+  borrowed mutable vectors under `{Mut}`, and rejection of vector returns or
+  vector fields.
+
+Exit criteria:
+
+- `tacit interface . --emit-library` accepts ABI records and borrowed vector
+  parameters when the metadata ABI accepts them.
+- A host can pass a ROM buffer or framebuffer buffer to Tacit as a borrowed
+  `u8vec`.
+- A Tacit callback can pass a borrowed audio/frame slice to the host within
+  one call.
+
+### Stage 2: Explicit Bounded-Stack Loops
+
+**Purpose:** Give long-running kernels a reliable execution primitive.
+
+Work items:
+
+- Design an explicit loop surface or a mechanically guaranteed self-tail-call
+  lowering rule.
+- Prefer a minimal canonical expansion if it avoids adding a new AST node; add
+  a new node only if the ADR shows the existing `rec` surface is not enough.
+- Ensure loop-carried scalar and record state can be updated without growing
+  stack.
+- Define effect behavior for loops: effects are the union of body effects,
+  and possible nontermination remains represented by existing `Div` policy or
+  a narrowly amended policy.
+- Add inspection rendering that makes loop-carried variables and effects clear.
+
+Exit criteria:
+
+- Tight loops over millions of iterations compile to bounded-stack native code.
+- CPU-step and scanline-style loops can be written without depending on LLVM
+  optimization passes.
+- Existing recursive programs keep their semantics.
+
+### Stage 3: Tacit-Owned Package Instances
+
+**Purpose:** Add persistent state without arbitrary mutable globals.
+
+Work items:
+
+- Design a package-instance lifecycle in the host ABI: create, call methods,
+  and destroy.
+- Define an opaque instance handle at the generated C/Rust boundary. The host
+  may hold and pass the handle but may not inspect Tacit-owned memory.
+- Add Tacit-owned heap allocation for instance fields, including fixed-width
+  vectors sized for RAM, VRAM, OAM, cartridge ROM/RAM, audio queues, and
+  framebuffers.
+- Define destruction, failure cleanup, and ownership rules. If allocation can
+  fail, define whether failure is represented as ABI status or a Tacit-level
+  result.
+- Keep package identity content-addressed. Instance creation must not depend
+  on manifest-only semantic choices.
+- Decide whether state declarations live in canonical source, generated ABI
+  metadata, or both.
+
+Exit criteria:
+
+- A Tacit package can retain mutable vectors and records across calls.
+- The host can create and destroy multiple independent instances of the same
+  package.
+- No raw Tacit pointer or allocator detail crosses the boundary.
+
+### Stage 4: Host Capability Profiles
+
+**Purpose:** Standardize the bridge shape without baking third-party
+libraries into Tacit.
+
+Work items:
+
+- Define conventional capability labels and signatures for video, audio,
+  input, monotonic time, logging, and storage.
+- Keep capabilities as typed host imports; do not add direct bindings to SDL
+  or any other library.
+- Add source-level stdlib helpers for common bridge patterns, such as frame
+  presentation, audio-buffer push, input-state polling, and ROM loading into
+  Tacit-owned memory.
+- Specify which callbacks may be called from long-running loops and what
+  effects they carry.
+- Add generated binding ergonomics so Rust hosts can satisfy these capability
+  tables without manually copying hash-derived symbols.
+
+Exit criteria:
+
+- A host can implement a small capability table and avoid emulator-domain
+  state.
+- Tacit packages can use conventional capability imports across projects.
+- Generated bindings are stable enough that source hash churn does not force
+  hand edits in host code.
+
+### Stage 5: Tacboy Vertical Slice
+
+**Purpose:** Prove the design on a real stateful workload before broadening
+the language.
+
+Work items:
+
+- Port Tacboy from scalar toy-kernel shape to a Tacit-owned instance.
+- Keep the host limited to ROM file loading, input polling, window/frame
+  presentation, audio output, timing, and process lifecycle.
+- Implement CPU registers, memory map, instruction decode, timer, interrupt
+  state, and cartridge ROM/RAM ownership in Tacit.
+- Add PPU framebuffer production using bulk buffer transfer, not scalar
+  per-pixel polling.
+- Add package tests for pure CPU/decode helpers and host-driven integration
+  tests for instance lifecycle.
+- Record throughput against the Stage 0 benchmark.
+
+Exit criteria:
+
+- Tacboy can run a meaningful emulator loop with Tacit-owned state.
+- The host contains no CPU, PPU, timer, interrupt, or memory-map semantics.
+- Performance data identifies whether remaining bottlenecks are language,
+  ABI, codegen, or host-library issues.
+
+### Stage 6: Hardening And Freeze
+
+**Purpose:** Turn the experiment into a durable language/toolchain surface.
+
+Work items:
+
+- Audit diagnostics for state escape, invalid instance use, invalid vector
+  lifetime, missing destroy, bad borrowed-buffer arguments, and callback
+  failures.
+- Add inspection overlays for instance fields, persistent vectors, loops, and
+  host capabilities.
+- Update the primer only after the surface stabilizes, keeping it
+  language-facing and independent of repository logistics.
+- Add release notes and migration guidance from scalar-only Stage 11 host
+  libraries.
+- Freeze the accepted subset with an ADR.
+
+Exit criteria:
+
+- CI covers rich boundary codegen, bounded loops, package instances, and
+  capability callbacks.
+- The primer and workflow assets match the released toolchain hash.
+- The freeze ADR states which parts remain future work.
+
+## Open Design Questions
+
+| ID | Question | Resolution Point |
+| --- | --- | --- |
+| Q-SHB-1 | Is guaranteed self-tail-call lowering enough, or does Tacit need an explicit loop construct? | Stage 2 ADR |
+| Q-SHB-2 | What is the canonical representation for package-instance state declarations? | Stage 3 ADR |
+| Q-SHB-3 | Are Tacit-owned heap vectors a new handle family or an extension of typed vectors? | Stage 3 ADR |
+| Q-SHB-4 | How are allocation failures represented across instance creation and method calls? | Stage 3 ADR |
+| Q-SHB-5 | Can host callbacks receive Tacit-owned borrowed slices safely during a call? | Stage 3 or Stage 4 ADR |
+| Q-SHB-6 | Which capability labels belong in a conventional profile versus project-local declarations? | Stage 4 ADR |
+| Q-SHB-7 | What is the minimum Tacboy milestone that proves the model without turning Tacit development into emulator development? | Stage 5 plan update |
+
+## Recommended Sequence
+
+The highest-leverage first step is Stage 1. Rich boundary codegen is already
+partly designed by the existing host-interface ABI, and it immediately removes
+the worst scalar-call pressure for ROM, frame, and audio buffers.
+
+The second step should be Stage 2. Persistent state is not useful for emulator
+work if the main execution loop can still grow stack or depend on backend
+optimizer behavior.
+
+Only after those two are proven should Tacit add package instances. Instance
+state is the largest semantic expansion in this plan, so it should be designed
+against working bulk-boundary and loop evidence rather than speculation.
