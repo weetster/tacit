@@ -1786,6 +1786,7 @@ fn contains_hole(node: &tacit_canonical::ast::Node) -> bool {
             contains_hole(arg) || contains_hole(ret) || contains_hole(eff)
         }
         Node::Forall { body, .. } => contains_hole(body),
+        Node::State { type_, .. } => contains_hole(type_),
     }
 }
 

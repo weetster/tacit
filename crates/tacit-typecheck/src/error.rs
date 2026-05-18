@@ -680,6 +680,37 @@ impl Diagnostic {
         d.actual = Some(serde_json::json!({"hash": hash}));
         d
     }
+
+    pub fn callbacks_method_collision(method: &str, hashes: &[String]) -> Self {
+        let mut d = Self::new(
+            "callbacks-method-collision",
+            "error",
+            &[],
+            format!(
+                "host imports collide on Rust trait method `{}` even after capability-prefix disambiguation",
+                method
+            ),
+        );
+        d.actual = Some(serde_json::json!({
+            "method": method,
+            "hashes": hashes,
+        }));
+        d
+    }
+
+    pub fn callbacks_bad_alias(alias: &str, reason: &str) -> Self {
+        let mut d = Self::new(
+            "callbacks-bad-alias",
+            "warning",
+            &[],
+            format!(
+                "package alias `{}` is not a valid Rust trait identifier ({}); generated trait falls back to `PackageCallbacks`",
+                alias, reason
+            ),
+        );
+        d.actual = Some(serde_json::json!({"alias": alias, "reason": reason}));
+        d
+    }
 }
 
 fn blake3_display(hash: &str) -> String {

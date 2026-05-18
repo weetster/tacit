@@ -147,6 +147,27 @@ linkable archive; the host (typically a small Rust binary) satisfies host-
 import callbacks and calls the public Tacit export. `tacit compile .` is
 for pure transforms whose exit code is the whole result.
 
+For Rust hosts, the generated `tacit_host.rs` also emits a per-package
+callbacks trait so the host does not need to hand-write `unsafe extern "C"`
+forwarders. Implement the trait and bind it once:
+
+```rust
+impl MyPkgCallbacks for MyHost {
+    fn write_byte(&mut self, byte: u8) -> Result<i64, Error> {
+        self.log.push(byte);
+        Ok(byte as i64)
+    }
+}
+
+let mut ctx = my_pkg_context { user: ptr::null_mut(), callbacks: ptr::null() };
+ctx.bind_callbacks(MyHost::new());
+```
+
+The trait name is derived from the package's `tacit.toml` `[package].name`
+(suffixed with `Callbacks`); packages with no host imports do not emit a
+trait. Trait method names follow the host-import operation labels, so they
+do not churn when source hashes change.
+
 ## View tools
 
 ```

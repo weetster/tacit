@@ -40,6 +40,10 @@ pub struct HostInterface {
     pub exports: Vec<InterfaceExport>,
     pub imports: Vec<InterfaceImport>,
     pub records: Vec<InterfaceRecord>,
+    /// Advisory package display alias (from `tacit.toml` `[package].name`).
+    /// Used by Rust trait codegen; never serialized to `interface.json`.
+    #[serde(skip)]
+    pub package_alias: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -265,6 +269,13 @@ pub fn generate_host_interface(
     imports.sort_by(|a, b| a.hash.cmp(&b.hash));
     let records = collector.records.into_values().collect();
 
+    let package_alias = package
+        .manifest
+        .package
+        .as_ref()
+        .and_then(|meta| meta.name.clone())
+        .filter(|name| !name.is_empty());
+
     Ok(HostInterface {
         format: INTERFACE_FORMAT.to_string(),
         abi: HOST_ABI.to_string(),
@@ -273,6 +284,7 @@ pub fn generate_host_interface(
         exports,
         imports,
         records,
+        package_alias,
     })
 }
 
@@ -326,10 +338,8 @@ pub fn write_host_interface(
     })?;
     write_file(&metadata_path, metadata_json.as_bytes())?;
     write_file(&c_header_path, emit_c_header(&interface).as_bytes())?;
-    write_file(
-        &rust_bindings_path,
-        emit_rust_bindings(&interface).as_bytes(),
-    )?;
+    let rust_text = emit_rust_bindings(&interface)?;
+    write_file(&rust_bindings_path, rust_text.as_bytes())?;
 
     Ok((
         interface,
@@ -447,7 +457,7 @@ pub fn emit_c_header(interface: &HostInterface) -> String {
     out
 }
 
-pub fn emit_rust_bindings(interface: &HostInterface) -> String {
+pub fn emit_rust_bindings(interface: &HostInterface) -> Result<String, Vec<Diagnostic>> {
     let pkg = interface
         .exports
         .first()
@@ -465,6 +475,11 @@ pub fn emit_rust_bindings(interface: &HostInterface) -> String {
                 .map(|instance| package_prefix_from_symbol(&instance.create_symbol))
         })
         .unwrap_or_else(|| "tacit_p_unknown".to_string());
+    let trait_plan = if interface.imports.is_empty() {
+        None
+    } else {
+        Some(plan_callbacks_trait(interface)?)
+    };
     let mut out = String::new();
     out.push_str("#![allow(non_camel_case_types)]\n#![allow(non_snake_case)]\n\n");
     out.push_str("use core::ffi::c_void;\n\n");
@@ -573,7 +588,390 @@ pub fn emit_rust_bindings(interface: &HostInterface) -> String {
         out.push_str("    }\n");
         out.push_str("}\n");
     }
+    if let Some(plan) = trait_plan {
+        emit_callbacks_trait(&mut out, &pkg, interface, &plan);
+    }
+    Ok(out)
+}
+
+/// Per-import planning data for `<Pkg>Callbacks` trait emission.
+struct TraitMethodPlan {
+    /// Trait method name (already disambiguated when needed).
+    method: String,
+    /// Index back into `interface.imports`.
+    import_index: usize,
+    /// True when the import's effect set contains `Mut` (slice params become `&mut [T]`).
+    is_mut: bool,
+}
+
+struct TraitPlan {
+    /// Trait name, e.g. `TacboyCallbacks`. Falls back to `PackageCallbacks`.
+    trait_name: String,
+    methods: Vec<TraitMethodPlan>,
+}
+
+fn plan_callbacks_trait(interface: &HostInterface) -> Result<TraitPlan, Vec<Diagnostic>> {
+    let trait_name = trait_name_for_alias(interface.package_alias.as_deref());
+
+    // First pass: derive operation-label-based method names.
+    let mut base_names: Vec<String> = interface
+        .imports
+        .iter()
+        .map(|import| sanitize_method_ident(&import.operation))
+        .collect();
+
+    // Detect collisions on base names. For each colliding group, prefix with
+    // the last segment of the capability label, per ADR 0095.
+    let mut groups: BTreeMap<String, Vec<usize>> = BTreeMap::new();
+    for (i, name) in base_names.iter().enumerate() {
+        groups.entry(name.clone()).or_default().push(i);
+    }
+
+    let mut diagnostics: Vec<Diagnostic> = Vec::new();
+    for (_, indices) in groups.iter() {
+        if indices.len() < 2 {
+            continue;
+        }
+        let mut prefixed: BTreeMap<String, Vec<usize>> = BTreeMap::new();
+        for &i in indices {
+            let cap_segment = last_capability_segment(&interface.imports[i].capability);
+            let prefixed_name =
+                format!("{}_{}", sanitize_method_ident(&cap_segment), base_names[i]);
+            prefixed.entry(prefixed_name).or_default().push(i);
+        }
+        for (new_name, prefixed_indices) in prefixed {
+            if prefixed_indices.len() > 1 {
+                let hashes: Vec<String> = prefixed_indices
+                    .iter()
+                    .map(|&i| interface.imports[i].hash.clone())
+                    .collect();
+                diagnostics.push(Diagnostic::callbacks_method_collision(&new_name, &hashes));
+                continue;
+            }
+            base_names[prefixed_indices[0]] = new_name;
+        }
+    }
+
+    if !diagnostics.is_empty() {
+        return Err(diagnostics);
+    }
+
+    let mut methods = Vec::with_capacity(interface.imports.len());
+    for (i, import) in interface.imports.iter().enumerate() {
+        methods.push(TraitMethodPlan {
+            method: base_names[i].clone(),
+            import_index: i,
+            is_mut: import.effects.iter().any(|e| e == "Mut"),
+        });
+    }
+
+    Ok(TraitPlan {
+        trait_name,
+        methods,
+    })
+}
+
+fn emit_callbacks_trait(out: &mut String, pkg: &str, interface: &HostInterface, plan: &TraitPlan) {
+    let trait_name = &plan.trait_name;
+    out.push_str("\n#[derive(Clone, Copy, Debug, PartialEq, Eq)]\npub enum Error {\n");
+    out.push_str("    HostError(tacit_status),\n");
+    out.push_str("}\n\n");
+
+    out.push_str(&format!("pub trait {trait_name} {{\n"));
+    for method in &plan.methods {
+        let import = &interface.imports[method.import_index];
+        out.push_str(&format!(
+            "    fn {}({}) -> Result<{}, Error>;\n",
+            method.method,
+            trait_method_params(import, method.is_mut),
+            rust_result_type(&import.result),
+        ));
+    }
+    out.push_str("}\n\n");
+
+    // Internal sentinel struct that wraps the C-ABI callbacks table plus the
+    // host destructor. `table` is the first field, so a `*const tacit_..._callbacks`
+    // also points to the start of `BoundCallbacks`.
+    out.push_str(&format!(
+        "#[repr(C)]\nstruct BoundCallbacks {{\n    table: {pkg}_callbacks,\n    magic: u64,\n    drop_host: unsafe fn(*mut c_void),\n}}\n\n"
+    ));
+    out.push_str("const BOUND_MAGIC: u64 = 0xB14D_CA11_B14D_CA11;\n\n");
+
+    // Per-import forwarders. Each is monomorphised over the implementing host
+    // type so the `*mut c_void` user pointer can be cast back to `*mut H`.
+    for method in &plan.methods {
+        let import = &interface.imports[method.import_index];
+        emit_forwarder(out, trait_name, method, import);
+    }
+
+    out.push_str(
+        "unsafe fn drop_host_box<H>(user: *mut c_void) {\n    unsafe { drop(Box::from_raw(user as *mut H)); }\n}\n\n",
+    );
+
+    // Context method: bind_callbacks + Drop wiring.
+    out.push_str(&format!(
+        "impl {pkg}_context {{\n    pub fn bind_callbacks<H: {trait_name} + 'static>(&mut self, host: H) {{\n        unsafe {{ self.unbind_callbacks(); }}\n        let user_ptr = Box::into_raw(Box::new(host)) as *mut c_void;\n        let record = Box::new(BoundCallbacks {{\n            table: {pkg}_callbacks {{\n"
+    ));
+    if interface.imports.is_empty() {
+        out.push_str("                _unused: 0,\n");
+    } else {
+        for method in &plan.methods {
+            let import = &interface.imports[method.import_index];
+            out.push_str(&format!(
+                "                {}: Some({}::<H>),\n",
+                import.callback,
+                forwarder_name(&method.method)
+            ));
+        }
+    }
+    out.push_str(
+        "            },\n            magic: BOUND_MAGIC,\n            drop_host: drop_host_box::<H>,\n        });\n        let record_ptr = Box::into_raw(record);\n        self.user = user_ptr;\n        // SAFETY: `table` is the first field of `BoundCallbacks` (#[repr(C)]),\n        // so the pointer to `table` is equal to the pointer to the record.\n        self.callbacks = unsafe { &(*record_ptr).table as *const _ };\n    }\n",
+    );
+    out.push_str(
+        "\n    /// Free any previously bound callback table + host. Safe to call repeatedly.\n    /// # Safety\n    /// Caller must not have manually overwritten `self.callbacks` with a pointer\n    /// to non-`bind_callbacks` storage that happens to alias the magic sentinel.\n    pub unsafe fn unbind_callbacks(&mut self) {\n        if self.callbacks.is_null() {\n            return;\n        }\n        let record_ptr = self.callbacks as *mut BoundCallbacks;\n        unsafe {\n            if (*record_ptr).magic != BOUND_MAGIC {\n                return;\n            }\n            let drop_host = (*record_ptr).drop_host;\n            if !self.user.is_null() {\n                drop_host(self.user);\n                self.user = core::ptr::null_mut();\n            }\n            drop(Box::from_raw(record_ptr));\n            self.callbacks = core::ptr::null();\n        }\n    }\n}\n\n",
+    );
+    out.push_str(&format!(
+        "impl Drop for {pkg}_context {{\n    fn drop(&mut self) {{\n        unsafe {{ self.unbind_callbacks(); }}\n    }}\n}}\n"
+    ));
+}
+
+fn emit_forwarder(
+    out: &mut String,
+    trait_name: &str,
+    method: &TraitMethodPlan,
+    import: &InterfaceImport,
+) {
+    let fname = forwarder_name(&method.method);
+    let mut params = vec!["user: *mut c_void".to_string()];
+    for (i, param) in import.parameters.iter().enumerate() {
+        params.push(format!("arg{i}: {}", rust_type(param)));
+    }
+    if import.result.kind != "unit" {
+        params.push(format!("out: *mut {}", rust_type(&import.result)));
+    }
+    out.push_str(&format!(
+        "unsafe extern \"C\" fn {fname}<H: {trait_name}>({}) -> tacit_status {{\n",
+        params.join(", ")
+    ));
+    out.push_str("    let host: &mut H = unsafe { &mut *(user as *mut H) };\n");
+
+    // Build the Rust-side call: unpack borrowed-vector params into slices.
+    let mut call_args: Vec<String> = Vec::new();
+    let mut prelude = String::new();
+    for (i, param) in import.parameters.iter().enumerate() {
+        match param.kind.as_str() {
+            "borrowed_vector" => {
+                let element = param.element.as_deref().unwrap_or("u8vec");
+                let elem_rust = rust_scalar_for_name(element.trim_end_matches("vec")).to_string();
+                let local = format!("arg{i}_slice");
+                if method.is_mut {
+                    prelude.push_str(&format!(
+                        "    let {local}: &mut [{elem_rust}] = unsafe {{ if arg{i}.data.is_null() || arg{i}.len == 0 {{ &mut [] }} else {{ core::slice::from_raw_parts_mut(arg{i}.data as *mut {elem_rust}, arg{i}.len as usize) }} }};\n"
+                    ));
+                } else {
+                    prelude.push_str(&format!(
+                        "    let {local}: &[{elem_rust}] = unsafe {{ if arg{i}.data.is_null() || arg{i}.len == 0 {{ &[] }} else {{ core::slice::from_raw_parts(arg{i}.data as *const {elem_rust}, arg{i}.len as usize) }} }};\n"
+                    ));
+                }
+                call_args.push(local);
+            }
+            _ => {
+                call_args.push(format!("arg{i}"));
+            }
+        }
+    }
+    out.push_str(&prelude);
+    out.push_str(&format!(
+        "    match host.{}({}) {{\n",
+        method.method,
+        call_args.join(", ")
+    ));
+    if import.result.kind == "unit" {
+        out.push_str("        Ok(_) => tacit_status::TACIT_STATUS_OK,\n");
+    } else {
+        out.push_str("        Ok(value) => {\n");
+        out.push_str("            if !out.is_null() { unsafe { *out = value; } }\n");
+        out.push_str("            tacit_status::TACIT_STATUS_OK\n");
+        out.push_str("        }\n");
+    }
+    out.push_str("        Err(Error::HostError(code)) => code,\n");
+    out.push_str("    }\n");
+    out.push_str("}\n\n");
+}
+
+fn forwarder_name(method: &str) -> String {
+    format!("forward_{method}")
+}
+
+fn trait_method_params(import: &InterfaceImport, is_mut: bool) -> String {
+    let mut parts = vec!["&mut self".to_string()];
+    for (i, param) in import.parameters.iter().enumerate() {
+        parts.push(format!("arg{}: {}", i, trait_rust_type(param, is_mut)));
+    }
+    parts.join(", ")
+}
+
+fn trait_rust_type(ty: &AbiType, is_mut: bool) -> String {
+    match ty.kind.as_str() {
+        "borrowed_vector" => {
+            let element = ty.element.as_deref().unwrap_or("u8vec");
+            let elem_rust = rust_scalar_for_name(element.trim_end_matches("vec")).to_string();
+            if is_mut {
+                format!("&mut [{elem_rust}]")
+            } else {
+                format!("&[{elem_rust}]")
+            }
+        }
+        _ => rust_type(ty),
+    }
+}
+
+fn rust_result_type(ty: &AbiType) -> String {
+    match ty.kind.as_str() {
+        "unit" => "()".to_string(),
+        _ => rust_type(ty),
+    }
+}
+
+fn trait_name_for_alias(alias: Option<&str>) -> String {
+    let Some(alias) = alias else {
+        return "PackageCallbacks".to_string();
+    };
+    let pascal = pascal_case_from_alias(alias);
+    if pascal.is_empty() || !is_valid_rust_ident(&pascal) || is_rust_keyword(&pascal) {
+        return "PackageCallbacks".to_string();
+    }
+    format!("{pascal}Callbacks")
+}
+
+fn pascal_case_from_alias(alias: &str) -> String {
+    let mut out = String::new();
+    let mut capitalize = true;
+    for ch in alias.chars() {
+        if ch.is_ascii_alphanumeric() {
+            if capitalize {
+                for upper in ch.to_uppercase() {
+                    out.push(upper);
+                }
+                capitalize = false;
+            } else {
+                out.push(ch);
+            }
+        } else {
+            capitalize = true;
+        }
+    }
     out
+}
+
+fn sanitize_method_ident(name: &str) -> String {
+    let mut out = String::new();
+    let mut prev_underscore = false;
+    for (i, ch) in name.chars().enumerate() {
+        let mapped = if ch.is_ascii_alphanumeric() {
+            ch.to_ascii_lowercase()
+        } else {
+            '_'
+        };
+        if i == 0 && mapped.is_ascii_digit() {
+            out.push('_');
+        }
+        if mapped == '_' {
+            if !prev_underscore && !out.is_empty() {
+                out.push('_');
+                prev_underscore = true;
+            }
+        } else {
+            out.push(mapped);
+            prev_underscore = false;
+        }
+    }
+    while out.ends_with('_') {
+        out.pop();
+    }
+    if out.is_empty() {
+        out.push('_');
+    }
+    if is_rust_keyword(&out) {
+        out.push('_');
+    }
+    out
+}
+
+fn last_capability_segment(capability: &str) -> String {
+    capability
+        .rsplit(['.', '/', ':'])
+        .next()
+        .unwrap_or(capability)
+        .to_string()
+}
+
+fn is_valid_rust_ident(s: &str) -> bool {
+    let mut chars = s.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if !(first.is_ascii_alphabetic() || first == '_') {
+        return false;
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+fn is_rust_keyword(s: &str) -> bool {
+    matches!(
+        s,
+        "as" | "break"
+            | "const"
+            | "continue"
+            | "crate"
+            | "else"
+            | "enum"
+            | "extern"
+            | "false"
+            | "fn"
+            | "for"
+            | "if"
+            | "impl"
+            | "in"
+            | "let"
+            | "loop"
+            | "match"
+            | "mod"
+            | "move"
+            | "mut"
+            | "pub"
+            | "ref"
+            | "return"
+            | "self"
+            | "Self"
+            | "static"
+            | "struct"
+            | "super"
+            | "trait"
+            | "true"
+            | "type"
+            | "unsafe"
+            | "use"
+            | "where"
+            | "while"
+            | "async"
+            | "await"
+            | "dyn"
+            | "abstract"
+            | "become"
+            | "box"
+            | "do"
+            | "final"
+            | "macro"
+            | "override"
+            | "priv"
+            | "typeof"
+            | "unsized"
+            | "virtual"
+            | "yield"
+            | "try"
+            | "union"
+    )
 }
 
 impl AbiType {

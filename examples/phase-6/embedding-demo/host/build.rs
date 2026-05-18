@@ -42,8 +42,10 @@ fn main() {
     // file in via `include!`, so strip those inner attrs (and the stray
     // `use core::ffi::c_void` they precede, which we add ourselves through
     // the `c_void as DemoUser` alias in main.rs).
+    let rust_bindings = emit_rust_bindings(&interface)
+        .unwrap_or_else(|diags| panic_with_diags("rust bindings", diags));
     let mut bindings_src = String::new();
-    for line in emit_rust_bindings(&interface).lines() {
+    for line in rust_bindings.lines() {
         let trimmed = line.trim_start();
         if trimmed.starts_with("#![allow") || trimmed.starts_with("#![warn") {
             continue;

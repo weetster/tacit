@@ -235,9 +235,9 @@ Exit criteria:
 
 ### Stage 4: Host Callback Trait Codegen
 
-**Status:** Design complete 2026-05-18. Deliverable:
+**Status:** Complete 2026-05-18. Design:
 [ADR 0095](../decisions/0095-host-callback-trait-codegen.md). Implementation
-deferred to a follow-up commit. Closes Q-SHB-6.
+landed in this Stage 4 commit. Closes Q-SHB-6.
 
 **Purpose (revised):** Reduce host-side friction for Rust hosts that satisfy
 package-level host imports. The original framing ("standardize the bridge
@@ -274,7 +274,12 @@ Work items:
   [ADR 0095](../decisions/0095-host-callback-trait-codegen.md):** per-package
   `<Pkg>Callbacks` trait emission plus a `Context::bind_callbacks` helper.
   Methods are named from operation labels; hash-derived symbols stay
-  internal to the binding crate.
+  internal to the binding crate. Implementation lives in
+  `crates/tacit-typecheck/src/interface.rs::emit_rust_bindings` and emits the
+  trait, per-import monomorphised forwarders, a `BoundCallbacks` sentinel
+  record (`#[repr(C)]`, first field is the C-ABI callbacks table), an
+  `unbind_callbacks` helper, and a `Drop` impl on the context struct that
+  reclaims both boxed allocations.
 
 Exit criteria:
 
