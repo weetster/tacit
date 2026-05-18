@@ -6,9 +6,8 @@ language primer (`share/tacit/primer/tacit-lite.md`) and is intended to be
 injected only when an agent needs to use Tacit tools, not when an agent is only
 reading or producing Tacit-Lite source.
 
-Per ADR 0090 the workflow doc, like the primer, is byte-pinned to the
-installed toolchain: any change to its bytes requires a new toolchain release
-hash. Treat it as part of the agent-facing contract.
+The workflow doc, like the primer, is byte-pinned to the installed toolchain.
+Treat it as part of the agent-facing contract for that toolchain release.
 
 ## What the installed toolchain looks like
 
@@ -57,13 +56,12 @@ tacit init my-project --with-stdlib
 ```
 
 `tacit init` writes `tacit-toolchain.toml`, `tacit.toml`, `tacit.lock`,
-`AGENTS.md`, `CLAUDE.md`, and a canonical `src/main.tac` + `src/main.tacd`
+agent instruction files, and a canonical `src/main.tac` + `src/main.tacd`
 pair. It never writes `.taca` files.
 
 For an existing project: read `tacit-toolchain.toml` at the project root.
-Mismatched pins are hard errors; a missing pin is a warning for now per
-ADR 0090, but you should treat it as a request to run `tacit init` (or to
-write the pin manually) before invasive changes.
+Mismatched pins are hard errors. Treat a missing pin as a request to run
+`tacit init` or write the pin manually before invasive changes.
 
 ## The core authoring loop
 
@@ -214,7 +212,3 @@ Before handing changes back, in this order:
 4. `tacit test . --format json` and confirm `outcome: "pass"`.
 5. `tacit compile .` if LLVM support is available and the project has a
    binary entry.
-
-Do not run experimental tooling against `corpus/sealed/` if such a directory
-exists in the host project — it is the held-out evaluation set in upstream
-Tacit and must remain unread by the agent.

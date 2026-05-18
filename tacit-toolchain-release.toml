@@ -11,7 +11,7 @@ source_path = "plans/primer/tacit-lite-primer.md"
 path = "share/tacit/primer/tacit-lite.md"
 metadata_path = "share/tacit/primer/tacit-lite.toml"
 tokenizer = "o200k_base"
-tokens = 26878
+tokens = 26967
 
 [workflow]
 source_path = "share-assets/workflow/agent-workflow.md"

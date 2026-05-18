@@ -77,7 +77,7 @@ fn version_json_reports_release_metadata() {
         json["manifest"]["assets"]["primer"]["tokenizer"],
         "o200k_base"
     );
-    assert_eq!(json["manifest"]["assets"]["primer"]["tokens"], 26878);
+    assert_eq!(json["manifest"]["assets"]["primer"]["tokens"], 26967);
     assert!(json["manifest"]["stdlib"]["tacit.text"]
         .as_str()
         .expect("tacit.text hash")
@@ -183,7 +183,7 @@ fn primer_json_reports_hash_and_tokens() {
     assert_eq!(json["path"], "share/tacit/primer/tacit-lite.md");
     assert_eq!(json["metadata_path"], "share/tacit/primer/tacit-lite.toml");
     assert_eq!(json["tokenizer"], "o200k_base");
-    assert_eq!(json["tokens"], 26878);
+    assert_eq!(json["tokens"], 26967);
     let hash = json["hash"].as_str().expect("primer hash");
     assert!(
         hash.starts_with("blake3:") && hash.len() == "blake3:".len() + 64,

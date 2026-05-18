@@ -187,7 +187,7 @@ fn assert_success_block_valid(block: &Block, module_name: &str) {
 fn stdlib_appendix(markdown: &str) -> &str {
     let start = markdown
         .find(STDLIB_APPENDIX_HEADING)
-        .expect("missing I64Vec stdlib appendix");
+        .expect("missing stdlib appendix");
     let rest = &markdown[start..];
     let after_heading = &rest[STDLIB_APPENDIX_HEADING.len()..];
     if let Some(next_heading) = after_heading.find("\n## ") {
@@ -258,7 +258,7 @@ fn primer_tacit_fences_validate() {
 fn primer_stdlib_appendix_examples_validate() {
     let primer = fs::read_to_string(primer_path()).expect("read primer");
     let appendix = stdlib_appendix(&primer);
-    assert!(appendix.contains("`I64Vec`"));
+    assert!(appendix.contains("`i64vec`"));
     assert!(appendix.contains("`@line-index text len table`"));
     assert!(appendix.contains("`@token-index text off len delim table`"));
     assert!(appendix.contains("`@token-index-any text off len delims delim_count table`"));
@@ -296,6 +296,7 @@ fn primer_stdlib_appendix_examples_validate() {
 
     let appendix_primitives = [
         "@i64-",
+        "@i64vec",
         "@line-index",
         "@token-index",
         "@range-",

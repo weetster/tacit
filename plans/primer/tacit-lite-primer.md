@@ -47,14 +47,14 @@ prefer direct output over building a large abstract result.
    pass `pass` as an explicit parameter to `inner` (and to all call sites of
    `inner`), or inline the inner loop into `bubble`'s body.
 
-4. **Cap allocations at ~1 MB.** Calls like `@buf-alloc 16777216` (16 MB) or
-   `@i64-alloc 2097152` (also 16 MB; each cell is 8 bytes) crash before the
-   program runs. Unless the task statement explicitly requires more, cap
-   `@buf-alloc` counts at `1048576` and `@i64-alloc` counts at `131072`. A full
-   Unicode codepoint table (`@i64-alloc 1114112` or larger) is over the cap;
-   sort decoded codepoints with `@sort-i64` instead, or compute the count from
-   the input length. Static allocations (tuples, records) do not have this
-   constraint.
+4. **Cap allocations at ~1 MB.** Calls like `@u8vec-alloc 16777216` (16 MB)
+   or `@i64vec-alloc 2097152` (also 16 MB; each cell is 8 bytes) crash before
+   the program runs. Unless the task statement explicitly requires more, cap
+   byte-vector counts at `1048576` and `i64vec` counts at `131072`. A full
+   Unicode codepoint table (`@i64vec-alloc 1114112` or larger) is over the cap;
+   sort decoded codepoints in a bounded `i64vec` instead, or compute the count
+   from the input length. Static allocations (tuples, records) do not have
+   this constraint.
 
 5. **String literal escapes are limited to `\n`, `\t`, `\r`, `\\`, `\"`, and
    `\u{HEX}`.** Inside `"..."`, the only recognized escapes are those six.
@@ -89,29 +89,28 @@ buffer/IO work and return an `Int` status.
 
 Type inference is local. Standalone examples in this primer rely on
 inference. The base runtime values are `Int`, fixed-width integers
-(`i8`/`u8` through `i64`/`u64`), `Bool`, `Str`, `Buf`, `I64Vec`, typed vector
-handles such as `u8vec` and `u32vec`, records, constructors, and lambdas.
+(`i8`/`u8` through `i64`/`u64`), `Bool`, `Str`, typed vector handles such as
+`u8vec`, `u32vec`, and `i64vec`, records, constructors, and lambdas.
 Lambdas are function values: they can be passed, returned, stored in records,
 and called through variables. The effect lattice has four atoms: `Alloc`,
 `Mut`, `IO`, and `Div`. Pure code has `{}`. Allocation of stack buffers or
-typed vectors adds `Alloc`; buffer, vector, and formatting writes add `Mut`;
+typed vectors adds `Alloc`; byte storage, vector, and formatting writes add `Mut`;
 `@read`, `@write`, `@exit`, and host calls add `IO`; recursive calls and
 division-like primitives can add `Div`.
 
 There is no implicit mutable state. Mutation is explicit through storage
-handles. Legacy `Buf` and `I64Vec` remain valid; new code should prefer
-typed vectors when the element width matters. A `u8vec` is a length-carrying
-byte vector with bounds-checked access and byte-bus load/store helpers. A
-`u32vec` stores `u32` cells directly. Keep counters, offsets, indexes, and
-other large `Int` values in lambda parameters or `let` bindings, not in byte
-cells. Closures capture ordinary first-class values by value, but `Buf`,
-`I64Vec`, and typed-vector handles are region-limited: direct `rec` helpers
-may use them from the surrounding scope, while first-class closures may not
-capture them. There is no general heap buffer, hash map, object system, type
-class, effect handler, user-defined effect, arbitrary FFI, or untyped pointer
-escape in Tacit-Lite. If a program needs those, write the direct Tacit-Lite
-shape with the available primitives or put host-owned behavior behind a typed
-host import.
+handles. New code should prefer typed vectors for indexed storage. A `u8vec`
+is a length-carrying byte vector with bounds-checked access and byte-bus
+load/store helpers. A `u32vec` stores `u32` cells directly, and an `i64vec`
+stores signed 64-bit cells for integer tables. Keep counters, offsets,
+indexes, and other large `Int` values in lambda parameters or `let` bindings,
+not in byte cells. Closures capture ordinary first-class values by value, but
+storage handles are region-limited: direct `rec` helpers may use them from the
+surrounding scope, while first-class closures may not capture them. There is
+no general heap buffer, hash map, object system, type class, effect handler,
+user-defined effect, arbitrary FFI, or untyped pointer escape in Tacit-Lite.
+If a program needs those, write the direct Tacit-Lite shape with the available
+primitives or put host-owned behavior behind a typed host import.
 
 A single executable program may still be one expression. A package is a set of
 hash-addressed `unit` artifacts. Units declare imports, private definitions,
@@ -344,7 +343,7 @@ rec {even = lambda n. if n then odd (@sub n 1) else 1; odd = lambda n. if n then
 Put mutually recursive helpers in the same `rec` group. The whole group is
 one recursive atom for identity and lowering.
 
-### Pair 9: Buffer Read/Write
+### Pair 9: Typed-Vector Read/Write
 
 Python:
 
@@ -366,14 +365,14 @@ fn main() -> i64 {
 Tacit:
 
 ```tacit
-let buf = @buf-alloc 2 in
-let _ = @buf-set buf 0 40 in
-let _ = @buf-set buf 1 2 in
-@add (@buf-get buf 0) (@buf-get buf 1)
+let data = @i64vec-alloc 2 in
+let _ = @i64vec-set data 0 40 in
+let _ = @i64vec-set data 1 2 in
+@i64-add-wrap (@i64vec-get data 0) (@i64vec-get data 1)
 ```
 
-`Buf` is Tacit-Lite's mutable byte buffer. Bind writes to `_` when only the
-mutation matters.
+Typed vectors are the normal mutable indexed-storage shape. Bind writes to
+`_` when only the mutation matters.
 
 ### Pair 10: Parse Bytes as an Integer
 
@@ -478,18 +477,20 @@ in this order:
 3. Replace loops with recursive helpers or with a fixed sequence of buffer
    operations when the size is static. Tacit-Lite has no `while` or `for`
    keyword.
-4. Replace Python lists, bytearrays, and Rust arrays with `Buf` only when the
-   stored values are bytes or small flags. Use explicit offsets. Keep full
-   `Int` values in recursive state, records, `I64Vec`, typed vectors, or
-   local bindings. Use `u8vec` for bounds-checked byte memory and `u32vec`,
-   `i16vec`, or the matching typed-vector family when the stored width is part
-   of the problem.
+4. Replace Python lists, bytearrays, and Rust arrays with typed vectors when
+   indexed storage is actually needed. Use `u8vec` for bounds-checked byte
+   memory, `i64vec` for signed integer tables, and `u32vec`, `i16vec`, or the
+   matching typed-vector family when the stored width is part of the problem.
+   Use the older byte-buffer primitives only for APIs that still require
+   byte-oriented scratch storage, such as `@read`, `@write`, `@parse-i64`,
+   `@fmt-i64`, and stream/text helpers.
 5. Replace standard-library parsing and formatting with `@parse-i64` and
    `@fmt-i64`. Do not hand-roll those unless the program is specifically about
    parsing or formatting internals.
-6. Use records for small named bundles and `@map`, `@fold`, or `@for-each`
-   for straight-line `I64Vec` traversal before writing a custom recursive
-   loop.
+6. Use records for small named bundles and `@loop` or a direct `rec` helper
+   for typed-vector traversal. The older `@map`, `@fold`, and `@for-each`
+   combinators target compatibility integer-vector storage; prefer explicit
+   typed-vector loops in new code.
 7. Use fixed-width primitives when overflow, bit layout, byte order, or ABI
    width is semantically important. Do not use legacy `@add` or `@sub` on
    fixed-width values; use explicit names such as `@u8-add-wrap`,
@@ -566,13 +567,13 @@ let ops = {bump: lambda x. @add x 1, double: lambda x. @mul x 2} in
 ops.bump 41
 ```
 
-`Buf`, `I64Vec`, and typed-vector handles such as `u8vec` and `u32vec` are
-the important exception. They are region-limited handles and cannot be
-captured by first-class closures:
+Storage handles such as `u8vec`, `u32vec`, and `i64vec` are the important
+exception. They are region-limited handles and cannot be captured by
+first-class closures:
 
 ```tacit fail=invalid-capture
-let buf = @buf-alloc 1 in
-let get = lambda i. @buf-get buf i in
+let bytes = @u8vec-alloc 1 in
+let get = lambda i. @u8vec-get bytes i in
 get 0
 ```
 
@@ -580,8 +581,8 @@ When a helper needs a buffer or vector from the surrounding expression, make
 it a direct `rec` member instead:
 
 ```tacit
-let buf = @buf-alloc 1 in
-rec {get = lambda i. @buf-get buf i} in get 0
+let bytes = @u8vec-alloc 1 in
+rec {get = lambda i. @u8vec-get bytes i} in get 0
 ```
 
 This direct `rec` shape may use earlier runtime values such as `buf`, `xs`,
@@ -644,12 +645,11 @@ let add_five = add 5 in
 add_five 37
 ```
 
-Avoid partially applying a `rec` member whose hidden context includes `Buf`,
-`I64Vec`, or a typed-vector handle; call it directly with all arguments
-instead. If a branch chooses behavior, either select between same-typed
-function values that capture only first-class data, or pass a mode flag such
-as `want_even`, `ascending`, or `emit_separator` and branch inside the helper
-body.
+Avoid partially applying a `rec` member whose hidden context includes a
+storage handle; call it directly with all arguments instead. If a branch
+chooses behavior, either select between same-typed function values that
+capture only first-class data, or pass a mode flag such as `want_even`,
+`ascending`, or `emit_separator` and branch inside the helper body.
 
 ### Branch Syntax Traps
 
@@ -668,12 +668,12 @@ match arm closes.
 Correct compound then-branch:
 
 ```tacit
-let out = @buf-alloc 2 in
+let out = @u8vec-alloc 2 in
 let _ = if @eq 1 1 then
-  (let _ = @buf-set out 0 65 in
-   @buf-set out 1 10)
+  (let _ = @u8vec-set out 0 65 in
+   @u8vec-set out 1 10)
 else 0 in
-@buf-get out 0
+@u8vec-get out 0
 ```
 
 Wrong shape: `if cond then let x = ... in ... else ...`. The parser reads the
@@ -686,7 +686,7 @@ Wrong shape, expanded:
 
 ```text
 if @eq b 10 then
-  let _ = @buf-set out o b in
+  let _ = @u8vec-set out o b in
   process (@add i 1) (@add o 1) 1
 else if @eq b 32 then
   ...
@@ -698,10 +698,10 @@ treats only the first atom as the branch, then misaligns every subsequent
 
 ```text
 if @eq b 10 then
-  (let _ = @buf-set out o b in
+  (let _ = @u8vec-set out o b in
    process (@add i 1) (@add o 1) 1)
 else (if @eq b 32 then
-  (let _ = @buf-set out o b in
+  (let _ = @u8vec-set out o b in
    process (@add i 1) (@add o 1) 1)
 else ...)
 ```
@@ -734,32 +734,24 @@ integer matching is useful for sentinels, parser states, and compact
 zero/non-zero cases where the branch names are clearer than nested
 comparisons.
 
-### Buffer Rules
+### Typed-Vector And Byte Scratch Rules
 
-Treat `Buf` as a capability-like handle scoped by `let`. A buffer is created
-by `@buf-alloc` or `@buf-alloc-dyn`, then passed explicitly to every read or
-write primitive. There is no implicit current buffer and no indexing sugar.
-The index is always an integer argument. A buffer cell stores a byte value,
-not a full arbitrary `Int`; use buffers for input bytes, output bytes, and
-small flags, and use recursive parameters for large numeric state. Because
-the buffer handle is not a general heap object, keep it inside the expression
-that owns it; do not try to return a closure that stores a buffer for later
-use.
+Use typed vectors for normal indexed storage. The eight families are `i8vec`,
+`u8vec`, `i16vec`, `u16vec`, `i32vec`, `u32vec`, `i64vec`, and `u64vec`. Each
+has `@<ty>vec-alloc`, `@<ty>vec-len`, `@<ty>vec-get`, and `@<ty>vec-set`. The
+handle stores its length, and every access is bounds-checked. A bad index
+traps rather than silently corrupting memory, but the typechecker still
+expects the program to guard offsets before it reads or writes.
 
-Do not build an integer array with `@buf-set vals i value` unless `value` is
-known to stay in `0..255`. Negative numbers and values above 255 will not be
-stored as full integers. For sorting or indexed access to parsed integers,
-use `I64Vec` storage when it is available. For tiny programs, rescanning the
-input or carrying the few needed integer values in recursive state can still
-be simpler.
-
-When the element width is part of the program, use a typed vector instead of a
-legacy buffer. The eight families are `i8vec`, `u8vec`, `i16vec`, `u16vec`,
-`i32vec`, `u32vec`, `i64vec`, and `u64vec`. Each has `@<ty>vec-alloc`,
-`@<ty>vec-len`, `@<ty>vec-get`, and `@<ty>vec-set`. The handle stores its
-length, and every access is bounds-checked. A bad index traps rather than
-silently corrupting memory, but the typechecker still expects the program to
-guard offsets before it reads or writes.
+Byte-buffer primitives such as `@buf-alloc`, `@buf-get`, and `@buf-set` remain
+part of the low-level IO/text surface. Use them only when a primitive requires
+that byte-oriented scratch handle: `@read`, `@write`, `@parse-i64`,
+`@fmt-i64`, `@line-index`, `@token-index`, `@stdin-slurp`, `@write-range`,
+`@buf-rev`, `@utf8-decode`, and `@utf8-encode`. For byte arrays, flags, and
+memory buses in new code, prefer `u8vec`. For signed integer tables, sorting,
+or indexed access to parsed integers, prefer `i64vec`. For tiny programs,
+rescanning the input or carrying the few needed integer values in recursive
+state can still be simpler.
 
 ```tacit
 let regs = @u32vec-alloc 4 in
@@ -783,14 +775,14 @@ Writes through the parent and the slice can observe each other. Use slices for
 local views, not for values returned from functions, stored in records, or
 captured by closures.
 
-Fresh buffers are not guaranteed to contain zeroes. If you later read a cell,
-write that cell first. This is especially important for flags such as
-`seen`, `used`, `visited`, and `order`: initialize the byte range you will
-inspect before the main algorithm. If initialization would be large, avoid
-read-before-write by carrying a `first` flag, a logical length, or an explicit
-sentinel in recursive state.
+Fresh typed vectors and byte scratch buffers are not guaranteed to contain
+zeroes. If you later read a cell, write that cell first. This is especially
+important for flags such as `seen`, `used`, `visited`, and `order`: initialize
+the range you will inspect before the main algorithm. If initialization would
+be large, avoid read-before-write by carrying a `first` flag, a logical
+length, or an explicit sentinel in recursive state.
 
-Avoid giant stack-sized buffers. A buffer such as `@buf-alloc 16777216` can
+Avoid giant local allocations. A vector such as `@u8vec-alloc 16777216` can
 crash before the algorithm starts. Prefer the smallest practical bound for the
 input shape: 32 bytes for one formatted integer, a few thousand bytes for tiny
 examples, 65536 bytes for many line-oriented programs, and at most about one
@@ -798,44 +790,37 @@ megabyte unless the input contract clearly requires more. Dynamic allocation is
 still local scratch storage, so it is not a reason to allocate hundreds of
 megabytes.
 
-For recursive scans over a buffer, allocate the buffer outside the `rec` group
-and refer to that buffer by name inside the helper. Use source-level helper
-parameters for changing integer state: offsets, lengths, counters, flags, and
-accumulators. Do not make the buffer itself a lambda parameter in a recursive
-helper. A source-level helper parameter is an integer parameter; shapes such
-as `lambda mat. @buf-get mat i` are not the right executable pattern. If you
-need the same logic for two buffers, duplicate the small helper or use
-separate helpers named for each buffer.
+For recursive scans over storage, allocate the vector or byte scratch handle
+outside the `rec` group and refer to that handle by name inside the helper.
+Use source-level helper parameters for changing integer state: offsets,
+lengths, counters, flags, and accumulators. Do not make the storage handle
+itself a lambda parameter in a recursive helper. A source-level helper
+parameter is an integer parameter; shapes such as `lambda mat. @u8vec-get mat
+i` are not the right executable pattern. If you need the same logic for two
+vectors, duplicate the small helper or use separate helpers named for each
+vector.
 
 ```text
-let buf = @buf-alloc-dyn n in
-rec {scan = lambda i. lambda acc. ... @buf-get buf i ... scan next_i next_acc} in scan 0 0
+let bytes = @u8vec-alloc n in
+rec {scan = lambda i. lambda acc. ... @u8vec-get bytes i ... scan next_i next_acc} in scan 0 0
 ```
 
-When a buffer must store indexes or offsets, store a fixed-width byte
-encoding, not the raw integer. For inputs below one million bytes, three cells
-are enough for an index. Allocate `3 * max_items` cells; this small example
-stores up to 1000 indexes:
+When a table must store indexes or offsets, use a typed integer vector instead
+of packing integers into bytes. This small example stores up to 1000 indexes:
 
 ```text
-let idx = @buf-alloc 3000 in
+let idx = @i64vec-alloc 1000 in
 rec {
   set_idx = lambda pos. lambda val.
-    let off = @mul pos 3 in
-    let _ = @buf-set idx off (@mod val 256) in
-    let _ = @buf-set idx (@add off 1) (@mod (@div val 256) 256) in
-    @buf-set idx (@add off 2) (@div val 65536);
+    @i64vec-set idx pos val;
   get_idx = lambda pos.
-    let off = @mul pos 3 in
-    @add (@buf-get idx off)
-      (@add (@mul (@buf-get idx (@add off 1)) 256)
-            (@mul (@buf-get idx (@add off 2)) 65536))
+    @i64vec-get idx pos
 } in ...
 ```
 
-Use a separate concrete pair such as `set_aux`/`get_aux` for a second buffer.
-Do not write a generic `get b pos` helper that takes the buffer as a
-parameter; executable helpers should close over concrete buffers bound before
+Use a separate concrete pair such as `set_aux`/`get_aux` for a second vector.
+Do not write a generic `get v pos` helper that takes the vector as a
+parameter; executable helpers should close over concrete handles bound before
 the `rec` group.
 
 If you need to output a slice that starts at a nonzero offset, do not overwrite
@@ -843,20 +828,20 @@ the input buffer while later scans still need it. Either copy the slice into a
 separate output buffer with `@buf-copy out 0 input start len` and then write
 `out len`, or emit one byte at a time through a one-byte scratch buffer.
 
-### Stack And Buffer Safety
+### Stack And Storage Safety
 
-The typechecker does not catch out-of-range buffer or range-table access, and
+The typechecker does not catch out-of-range scratch-buffer or range-table access, and
 allocation primitives reserve stack space. The following rules prevent the
 most common runtime failures:
 
-- Do not allocate multi-megabyte buffers or `I64Vec`s. A call such as
-  `@buf-alloc 16777216` or `@i64-alloc 16777216` can crash before the program
-  runs. Pick the smallest size that fits the input contract: 32 bytes for one
-  formatted integer, a few thousand bytes for tiny inputs, 65536 bytes for
-  most line-oriented inputs, and at most about one megabyte unless the input
-  contract clearly requires more.
+- Do not allocate multi-megabyte scratch buffers or typed vectors. A call such
+  as `@buf-alloc 16777216`, `@u8vec-alloc 16777216`, or `@i64vec-alloc
+  16777216` can crash before the program runs. Pick the smallest size that
+  fits the input contract: 32 bytes for one formatted integer, a few thousand
+  bytes for tiny inputs, 65536 bytes for most line-oriented inputs, and at most
+  about one megabyte unless the input contract clearly requires more.
 - For a range table built by `@line-index`, `@token-index`, or
-  `@token-index-any`, allocate two `I64Vec` slots per possible row. For
+  `@token-index-any`, allocate two integer-vector slots per possible row. For
   counted range groups built by `@count-equal-ranges`, allocate three slots
   per possible output row. The text length is a safe upper bound on the
   number of rows.
@@ -945,35 +930,35 @@ behind friendlier names unless the helper also adds real logic.
 @mul (@add 2 3) (@sub 10 4)
 ```
 
-Use buffers with explicit size, offset, and length. The primitive names state
-what mutates.
+Use typed vectors with explicit size, offset, and length. The primitive names
+state what mutates.
 
 ```tacit
-let a = @buf-alloc 2 in
-let b = @buf-alloc 2 in
-let _ = @buf-set a 0 65 in
-let _ = @buf-copy b 0 a 0 1 in
-@buf-eq a 0 b 0 1
+let a = @u8vec-alloc 2 in
+let b = @u8vec-alloc 2 in
+let _ = @u8vec-set a 0 65 in
+let _ = @u8vec-copy b 0 a 0 1 in
+if @u8vec-eq a 0 b 0 1 then 0 else 1
 ```
 
-Use `@scan-byte` when a byte search is the job. A missing byte returns a
-sentinel defined by the primitive contract.
+Use `@u8vec-scan` when a byte-vector search is the job. A missing byte returns
+a sentinel defined by the primitive contract.
 
 ```tacit
-let buf = @buf-alloc 3 in
-let _ = @buf-set buf 0 65 in
-let _ = @buf-set buf 1 66 in
-let _ = @buf-set buf 2 67 in
-@scan-byte buf 0 3 66
+let bytes = @u8vec-alloc 3 in
+let _ = @u8vec-set bytes 0 65 in
+let _ = @u8vec-set bytes 1 66 in
+let _ = @u8vec-set bytes 2 67 in
+@u8vec-scan bytes 0 3 66
 ```
 
 Use dynamic allocation when the size is computed at runtime.
 
 ```tacit
 let n = @add 2 3 in
-let buf = @buf-alloc-dyn n in
-let _ = @buf-set buf 0 7 in
-@buf-get buf 0
+let bytes = @u8vec-alloc n in
+let _ = @u8vec-set bytes 0 7 in
+@u8vec-get bytes 0
 ```
 
 Use annotations sparingly in authoring examples. A base annotation is written
@@ -1054,9 +1039,9 @@ let ops = {inc: lambda x. @add x 1, dec: lambda x. @sub x 1} in
 ops.inc 41
 ```
 
-Do not store `Buf` or `I64Vec` handles in records or capture them in closures.
-Keep those handles in direct `let` or `rec` scope and pass ordinary integers
-or records of integers across function-value boundaries.
+Do not store storage handles in records or capture them in closures. Keep
+those handles in direct `let` or `rec` scope and pass ordinary integers or
+records of integers across function-value boundaries.
 
 ### Constructors And Patterns
 
@@ -1075,7 +1060,10 @@ Comparison: `@eq`, `@ne`, `@lt`, `@le`, `@gt`, `@ge`.
 
 IO: `@read`, `@write`, `@exit`.
 
-Allocation: `@buf-alloc`, `@buf-alloc-dyn`, `@i64-alloc`.
+Compatibility allocation: `@buf-alloc`, `@buf-alloc-dyn`, `@i64-alloc`.
+Prefer `@u8vec-alloc` for byte storage and `@i64vec-alloc` for signed
+integer tables unless a listed primitive specifically requires the older
+handle.
 
 Buffer mutation and inspection: `@buf-get`, `@buf-set`, `@buf-copy`,
 `@buf-eq`, `@scan-byte`. Note that `@buf-eq buf1 off1 buf2 off2 len` returns
@@ -1084,7 +1072,8 @@ result directly: `if @buf-eq buf1 o1 buf2 o2 len then equal_branch else
 unequal_branch`. Do not invert the return value with `if @eq (@buf-eq ...) 0
 then ...`, as this inverts the meaning.
 
-Integer vector storage: `@i64-get`, `@i64-set`, `@i64-swap`, `@i64-copy`.
+Compatibility integer-vector storage: `@i64-get`, `@i64-set`, `@i64-swap`,
+`@i64-copy`. Prefer `i64vec` storage for new indexed integer data.
 
 Higher-order integer-vector traversal: `@map`, `@fold`, `@for-each`.
 
@@ -1183,9 +1172,12 @@ if r.ok then r.value else 7
 
 ### Higher-Order Combinators
 
-`@map`, `@fold`, and `@for-each` traverse an `I64Vec` prefix. They do not
-work on `Buf`, strings, records, or general lists. The count is separate from
-the handle, and the visited range is `0 .. count - 1`.
+`@map`, `@fold`, and `@for-each` are compatibility combinators over the older
+integer-vector prefix allocated by `@i64-alloc`. They do not work on strings,
+records, typed vectors, byte-buffer scratch handles, or general lists. The
+count is separate from the handle, and the visited range is `0 .. count - 1`.
+For new typed-vector code, prefer an immediate `@loop` callback over `i64vec`
+or the specific vector width you need.
 
 ```tacit
 let xs = @i64-alloc 3 in
@@ -1221,9 +1213,9 @@ returns `0`. Use it when the callback is effectful:
 ```
 
 Combinator callbacks may capture first-class values such as `offset` above.
-They must not capture the `I64Vec` or `Buf` handles themselves. If a callback
-needs indexed storage beyond the current element, use a direct recursive
-helper instead of a combinator.
+They must not capture storage handles themselves. If a callback needs indexed
+storage beyond the current element, use an immediate `@loop` callback or a
+direct recursive helper instead of a combinator.
 
 ### Bounded-Stack Iteration
 
@@ -1237,12 +1229,12 @@ The step callback takes the current state and returns one of two directives:
   state.
 - `@loop-exit final-value` — terminate with `final-value` as the loop result.
 
-For Stage 2 the loop result and state have the same type. State may be an
-`Int`, a `FixedInt`, or a record of those. `Buf`, `I64Vec`, and typed-vector
-handles cannot be loop state. When the step callback is written immediately
-as the second argument to `@loop`, it is a direct loop callback and may access
-those handles from the surrounding scope. Callback values passed indirectly
-are still first-class closures and must not capture those handles.
+In the current loop form, the loop result and state have the same type. State
+may be an `Int`, a `FixedInt`, or a record of those. Storage handles cannot be
+loop state. When the step callback is written immediately as the second
+argument to `@loop`, it is a direct loop callback and may access those handles
+from the surrounding scope. Callback values passed indirectly are still
+first-class closures and must not capture those handles.
 
 ```tacit
 @loop 0 (lambda s.
@@ -1471,10 +1463,10 @@ raw pointers, or call platform libraries directly.
 Public package exports are the host-export candidates. Host-boundary types
 must be ABI-expressible: scalars, structural records whose fields are
 ABI-expressible, and typed-vector handles only as borrowed function
-parameters. Function values, closures, legacy `Buf`/`I64Vec` handles, raw
-pointers, heap strings, and typed-vector return values do not cross the host
-boundary. Scalars and records are copied by value; borrowed vectors are valid
-only during the call.
+parameters. Function values, closures, older byte-buffer or integer-vector
+handles, raw pointers, heap strings, and typed-vector return values do not
+cross the host boundary. Scalars and records are copied by value; borrowed
+vectors are valid only during the call.
 
 ## 5. Effect Reasoning
 
@@ -1580,11 +1572,13 @@ not important.
 
 `let b = @buf-alloc 32 in @fmt-i64 b 0 42`: `{Alloc, Mut}`.
 
-`let xs = @i64-alloc 2 in @i64-set xs 0 7`: `{Alloc, Mut}`.
+`let xs = @i64vec-alloc 2 in @i64vec-set xs 0 7`: `{Alloc, Mut}`.
 
+Compatibility combinator:
 `let xs = @i64-alloc 1 in @fold xs 1 0 (lambda acc. lambda x. @add acc x)`:
 `{Alloc}`.
 
+Compatibility combinator:
 `let xs = @i64-alloc 1 in let ys = @i64-alloc 1 in @map xs 1 (lambda x. x) ys`:
 `{Alloc, Mut}`.
 
@@ -1708,7 +1702,9 @@ Buffer primitive called with an integer where a buffer is required:
 @buf-get 0 0
 ```
 
-Diagnostic kind: `type-mismatch`. Fix: allocate or receive a `Buf`.
+Diagnostic kind: `type-mismatch`. Fix: allocate or receive the byte scratch
+handle that `@buf-get` expects, or use `@u8vec-get` for new byte-vector
+storage.
 
 ```tacit
 let buf = @buf-alloc 1 in @buf-get buf 0
@@ -1779,23 +1775,24 @@ wider integer type.
 @u8-shl 1 7
 ```
 
-Capturing a region-limited buffer in a first-class closure:
+Capturing a region-limited storage handle in a first-class closure:
 
 ```tacit fail=invalid-capture
-let buf = @buf-alloc 1 in
-let get = lambda i. @buf-get buf i in
+let bytes = @u8vec-alloc 1 in
+let get = lambda i. @u8vec-get bytes i in
 get 0
 ```
 
-Diagnostic kind: `invalid-capture`. Fix: keep buffer access in a direct
-helper.
+Diagnostic kind: `invalid-capture`. Fix: keep vector access in a direct
+helper or immediate `@loop` callback.
 
 ```tacit
-let buf = @buf-alloc 1 in
-rec {get = lambda i. @buf-get buf i} in get 0
+let bytes = @u8vec-alloc 1 in
+rec {get = lambda i. @u8vec-get bytes i} in get 0
 ```
 
-Capturing a typed-vector handle in a first-class closure has the same shape:
+Capturing another typed-vector handle in a first-class closure has the same
+shape:
 
 ```tacit fail=invalid-capture
 let regs = @u32vec-alloc 4 in
@@ -1889,10 +1886,10 @@ effect sets instead.
 `buf-escape`: a buffer handle is used outside the scope where the checker can
 prove it is valid. Keep buffer use inside the `let` body that owns it.
 
-`invalid-capture`: a first-class closure captures a non-escapable value such
-as `Buf`, `I64Vec`, or a typed-vector handle. Use a direct `rec` helper or
-an immediate `@loop` callback when the handle is needed inside bounded
-iteration; otherwise pass ordinary integer state.
+`invalid-capture`: a first-class closure captures a non-escapable storage
+handle. Use a direct `rec` helper or an immediate `@loop` callback when the
+handle is needed inside bounded iteration; otherwise pass ordinary integer
+state.
 
 `vec-alloc-not-in-let`: a typed-vector allocation appeared somewhere other
 than the direct right-hand side of a `let` binding. Bind the vector first,
@@ -1911,8 +1908,8 @@ first curried application. Put effects in the final element-consuming body.
 
 `invalid-accumulator-shape`: a `@fold` accumulator is not an `Int`.
 
-`unsupported-collection-shape`: a combinator collection argument is not an
-`I64Vec`.
+`unsupported-collection-shape`: a compatibility combinator collection
+argument is not the older integer-vector handle that those combinators expect.
 
 `parse-error`, `unexpected-token`, `expected-expr`, `unclosed-paren`,
 `expected-pattern`, `unbound-name`, and `arity-mismatch` come from parser
@@ -1932,9 +1929,9 @@ When a program fails, use this sequence:
 4. Branch mismatch: make both branches return the same type.
 5. Fixed-width failure: check literal ranges, signedness, shift counts, and
    whether legacy `Int` arithmetic was used on a fixed-width value.
-6. Closure capture failure: move `Buf`, `I64Vec`, or typed-vector work into a
-   direct `rec` helper, or pass only ordinary first-class state into the
-   closure.
+6. Closure capture failure: move storage-handle work into a direct `rec`
+   helper or immediate `@loop` callback, or pass only ordinary first-class
+   state into the closure.
 7. Combinator callback failure: check the callback arity and accumulator
    order.
 8. Effect violation: update the boundary effect set to match source behavior.
@@ -1964,8 +1961,8 @@ let add_ten = make_adder 10 in
 add_ten 32
 ```
 
-Combinators remove boilerplate when the traversal is exactly over an
-`I64Vec` prefix:
+Compatibility combinators remove boilerplate when traversal is exactly over
+the older integer-vector prefix:
 
 ```tacit
 let xs = @i64-alloc 3 in
@@ -2032,7 +2029,8 @@ as the exclusive upper bound. A helper with state `i` should inspect
 
 Copying a slice: use `@buf-copy dst dst_off src src_off len`. Remember that
 the first buffer is the destination. Many wrong answers reverse `dst` and
-`src`; the typechecker cannot catch that because both are `Buf`.
+`src`; the typechecker cannot catch that because both arguments have the same
+byte scratch-handle type.
 
 Ordering a fixed tiny buffer: direct buffer reads and writes can be clearer
 than a general recursive ordering routine. For integer vectors, prefer
@@ -2168,7 +2166,7 @@ import, but the receiving program must not assume one exists. The portable
 pattern is:
 
 ```text
-read stdin bytes -> parse or scan -> compute Int/Buf result -> format/write
+read stdin bytes -> parse or scan -> compute an integer or byte result -> format/write
 ```
 
 The final expression should normally be `0` after successful output. If the
@@ -2205,10 +2203,11 @@ the program is otherwise too awkward under the current surface.
 ### Failure Triage Examples
 
 If the checker reports `type-mismatch` at a `@buf-get`, inspect the first
-argument. It must be a `Buf`, not an integer length or file descriptor. For
-`@read`, the first argument is the file descriptor and the second is the
-buffer; for `@buf-get`, the first argument is the buffer and the second is
-the offset.
+argument. It must be the byte scratch handle allocated for that API, not an
+integer length or file descriptor. For `@read`, the first argument is the file
+descriptor and the second is the buffer; for `@buf-get`, the first argument is
+the buffer and the second is the offset. For new byte-vector storage, use
+`@u8vec-get` instead.
 
 If the checker reports `operator-overload-failure`, inspect both operands
 after any comparison call. A common mistake is to feed a boolean from `@eq`
@@ -2221,13 +2220,13 @@ one of the allowed primitive names.
 
 If a program uses an unsupported executable shape, simplify toward the
 current executable subset. Prefer integer results at the program boundary,
-buffers, `I64Vec`, or typed vectors for explicit storage, records for small
+typed vectors or byte scratch buffers for explicit storage, records for small
 named bundles, closures over first-class values, `let`, `if`, `match`,
-`lambda`, `rec`, combinators, and primitive calls.
+`lambda`, `rec`, compatibility combinators, and primitive calls.
 
 If an executable rejects a function value, inspect its capture set and call
-shape. A closure that captures `Buf`, `I64Vec`, or a typed-vector handle
-should become a direct `rec` helper. A recursive helper whose changing state
+shape. A closure that captures a storage handle should become a direct `rec`
+helper or immediate `@loop` callback. A recursive helper whose changing state
 is hidden in nested closures is usually clearer when lifted into one `rec`
 group with explicit parameters.
 
@@ -2487,7 +2486,7 @@ resolution, a global registry, or a hidden prelude. Host imports do not imply
 arbitrary `extern "C"`, raw pointers, dynamic library loading, or direct
 bindings to platform libraries.
 If the program needs a table, encode the needed state directly with byte
-buffers, `I64Vec`, typed vectors, or recursive integer state. If the program
+scratch buffers, typed vectors, or recursive integer state. If the program
 needs a string operation, use byte buffers, range tables, source stdlib
 helpers when imported, and the primitives listed in this primer.
 If a shorter solution would need a missing abstraction, write the explicit
@@ -2503,18 +2502,17 @@ expect. The conventional source package names are `tacit.core`, `tacit.bytes`,
 source wrappers are preferred when they make intent clearer, but the compiler
 primitives below remain valid compatibility and low-level building blocks.
 
-Use `I64Vec` when a program needs indexed storage for full integer values.
-Byte-oriented buffers still handle raw input/output bytes; an `I64Vec` keeps
-signed and large values intact. Allocate it with a count, write cells before
-reading them, and thread the count separately because the handle does not
-store a length.
+Use `i64vec` when a program needs typed indexed storage for signed 64-bit
+values. Byte-oriented scratch buffers still handle raw input/output bytes,
+while `i64vec` keeps signed and large values intact and carries its own
+length. Allocate it with a count and write cells before reading them.
 
 ```tacit
-let xs = @i64-alloc 3 in
-let _ = @i64-set xs 0 7 in
-let _ = @i64-set xs 1 -2 in
-let _ = @i64-set xs 2 10 in
-@add (@i64-get xs 0) (@i64-get xs 2)
+let xs = @i64vec-alloc 3 in
+let _ = @i64vec-set xs 0 7 in
+let _ = @i64vec-set xs 1 -2 in
+let _ = @i64vec-set xs 2 10 in
+@i64-add-wrap (@i64vec-get xs 0) (@i64vec-get xs 2)
 ```
 
 The handle is scoped like other allocation handles: allocate it in a `let`,
@@ -2523,19 +2521,19 @@ vector directly when the allocation surrounds the `rec`.
 
 ```tacit
 let n = 3 in
-let xs = @i64-alloc n in
+let xs = @i64vec-alloc n in
 rec {fill = lambda i.
   if @eq i n then 0 else
-    let _ = @i64-set xs i i in
+    let _ = @i64vec-set xs i (@i64-from-int-wrap i) in
     fill (@add i 1)
 } in fill 0
 ```
 
-First-class closures and records must not capture or store the `I64Vec`
-handle. When traversal is just element-wise, prefer the combinators:
-`@map` writes to an explicit output vector, `@fold` returns an integer
-accumulator, and `@for-each` is for effectful callbacks whose result is
-ignored.
+First-class closures and records must not capture or store vector handles.
+When traversal is element-wise, prefer an immediate `@loop` callback over the
+typed vector. The older `@map`, `@fold`, and `@for-each` combinators remain
+available for their compatibility integer-vector storage, but new code should
+not choose that storage just to use the combinators.
 
 To store paired ranges or other two-column data, use two consecutive slots per
 row. For row `i`, the first slot is `2*i` and the second slot is `2*i+1`.
@@ -2558,8 +2556,9 @@ into output bytes, then write the byte count returned by formatting.
 
 `@line-index text len table` scans `text[0..len)` into line ranges. A line
 range excludes the LF byte. Empty lines between LF bytes are kept; a final LF
-does not add one more empty row. Allocate two `I64Vec` slots per possible
-row, then use the returned count as the row bound.
+does not add one more empty row. This compatibility range-table primitive
+expects the older integer table allocated by `@i64-alloc`; allocate two slots
+per possible row, then use the returned count as the row bound.
 
 ```tacit
 let text = @buf-alloc 128 in
@@ -2590,8 +2589,9 @@ input range has exactly one separator byte; `delim` contributes its low byte.
 
 `@sort-i64 xs count` sorts `xs[0..count)` in ascending signed integer order.
 It mutates only that prefix; cells at and beyond `count` are untouched. Use it
-after parsing numbers into an `I64Vec`, then read or format the sorted cells
-normally.
+only when you are already using the compatibility integer-vector storage. For
+new typed-vector storage, sort with an explicit `@loop` or import a source
+stdlib helper that matches the vector type.
 
 ```tacit
 let xs = @i64-alloc 3 in
@@ -2629,8 +2629,9 @@ Reading `values 0` returns `200` because `200` was paired with key `10` in
 input order.
 
 `@lower-bound-i64 xs count value` returns the first index in a sorted
-ascending `I64Vec` prefix where `value` can be inserted without moving earlier
-equal values. If every element is less than `value`, it returns `count`.
+ascending compatibility integer-vector prefix where `value` can be inserted
+without moving earlier equal values. If every element is less than `value`, it
+returns `count`.
 
 ```tacit
 let xs = @i64-alloc 4 in
@@ -2649,8 +2650,8 @@ for in-place compaction.
 
 `@count-equal-ranges text table count out` scans the same adjacent runs and
 writes triples (start, length, count): one triple per run of equal bytes.
-Allocate three `I64Vec` slots per possible output row and read triple fields
-with `@i64-get`.
+Allocate three compatibility integer-vector slots per possible output row and
+read triple fields with `@i64-get`.
 
 ```tacit
 let text = @buf-alloc 128 in
@@ -2664,7 +2665,7 @@ let grouped = @i64-alloc (@mul row_count 3) in
 
 `@stdin-slurp buf cap` reads stdin into `buf` until EOF or `cap` bytes;
 returns bytes written. Prefer it over a one-byte read loop. `@write-range
-fd buf off len` takes a `Buf` (not a `Str` literal); it writes
+fd buf off len` takes a byte scratch handle (not a `Str` literal); it writes
 `buf[off..off+len)` to fd `fd` and returns 0. For literal strings such as
 `" "`, `"true"`, or `"\n"`, use `@write fd "..." len` with the literal byte
 length instead. `@buf-rev buf off len` reverses bytes `buf[off..off+len)` in
