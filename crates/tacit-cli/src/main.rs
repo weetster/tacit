@@ -9,11 +9,11 @@ use tacit_canonical::ast::Node;
 
 use tacit_typecheck::ty::EffAtom;
 use tacit_typecheck::{
-    check_package, check_unit_with_sidecar, clear_package_cache, emit_project_inspection,
-    evict_package_cache, infer_module, load_package, load_project, lock_package,
-    materialize_package_derived, package_entry_expression, package_test_entry_expression,
-    write_host_interface, CheckedUnit, DefinitionEnv, DiagOutput, Diagnostic, EffSet, HostTarget,
-    PackageTest, Ty,
+    check_package, check_project, check_unit_with_sidecar, clear_package_cache,
+    emit_project_inspection, evict_package_cache, infer_module, load_package, load_project,
+    lock_package, materialize_package_derived, package_entry_expression,
+    package_test_entry_expression, write_host_interface, CheckedUnit, DefinitionEnv, DiagOutput,
+    Diagnostic, EffSet, HostTarget, PackageTest, Ty,
 };
 use tacit_views::authoring::{emit_authoring, parse_authoring};
 use tacit_views::sidecar::{Sidecar, SidecarNode};
@@ -982,7 +982,16 @@ fn cmd_check(input: PathBuf, format: CheckFormat) -> Result<(), Box<dyn std::err
         enforce_project_pin(&input);
         match load_package(&input) {
             Ok(package) => check_package(&package).map(|_| ()),
-            Err(diags) => Err(diags),
+            Err(mut diags) => {
+                if should_run_body_check_after_package_errors(&diags) {
+                    if let Ok(graph) = load_project(&input) {
+                        if let Err(mut body_diags) = check_project(&graph) {
+                            diags.append(&mut body_diags);
+                        }
+                    }
+                }
+                Err(diags)
+            }
         }
     } else {
         let (node, sidecar) = load_canonical(&input)?;
@@ -1015,6 +1024,12 @@ fn cmd_check(input: PathBuf, format: CheckFormat) -> Result<(), Box<dyn std::err
         }
     }
     Ok(())
+}
+
+fn should_run_body_check_after_package_errors(diags: &[Diagnostic]) -> bool {
+    diags
+        .iter()
+        .any(|diag| matches!(diag.kind.as_str(), "lockfile-drift" | "unresolved-entry"))
 }
 
 // ---------------------------------------------------------------------------

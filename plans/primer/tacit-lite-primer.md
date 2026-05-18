@@ -1239,8 +1239,10 @@ The step callback takes the current state and returns one of two directives:
 
 For Stage 2 the loop result and state have the same type. State may be an
 `Int`, a `FixedInt`, or a record of those. `Buf`, `I64Vec`, and typed-vector
-handles cannot be loop state; pass them by reference through the callback's
-captured environment instead.
+handles cannot be loop state. When the step callback is written immediately
+as the second argument to `@loop`, it is a direct loop callback and may access
+those handles from the surrounding scope. Callback values passed indirectly
+are still first-class closures and must not capture those handles.
 
 ```tacit
 @loop 0 (lambda s.
@@ -1802,7 +1804,8 @@ get 0
 ```
 
 Diagnostic kind: `invalid-capture`. Fix: keep vector access in direct storage
-scope, or use a direct `rec` helper when recursion is actually needed.
+scope, use an immediate `@loop` callback for bounded iteration, or use a
+direct `rec` helper when recursion is actually needed.
 
 ```tacit
 let regs = @u32vec-alloc 4 in
@@ -1888,7 +1891,8 @@ prove it is valid. Keep buffer use inside the `let` body that owns it.
 
 `invalid-capture`: a first-class closure captures a non-escapable value such
 as `Buf`, `I64Vec`, or a typed-vector handle. Use a direct `rec` helper or
-pass ordinary integer state instead.
+an immediate `@loop` callback when the handle is needed inside bounded
+iteration; otherwise pass ordinary integer state.
 
 `vec-alloc-not-in-let`: a typed-vector allocation appeared somewhere other
 than the direct right-hand side of a `let` binding. Bind the vector first,
