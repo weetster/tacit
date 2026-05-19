@@ -49,8 +49,35 @@ enum Cmd {
         format: PrimerFormat,
 
         /// Verify a file's BLAKE3 hash against the installed primer metadata.
-        #[arg(long, value_name = "FILE")]
+        #[arg(
+            long,
+            value_name = "FILE",
+            conflicts_with_all = ["list_sections", "section", "search"]
+        )]
         check: Option<PathBuf>,
+
+        /// List selectable primer section ids and headings.
+        #[arg(
+            long,
+            conflicts_with_all = ["check", "section", "search"]
+        )]
+        list_sections: bool,
+
+        /// Print one primer section by id or heading.
+        #[arg(
+            long,
+            value_name = "ID_OR_HEADING",
+            conflicts_with_all = ["check", "list_sections", "search"]
+        )]
+        section: Option<String>,
+
+        /// Search primer lines and report matching sections.
+        #[arg(
+            long,
+            value_name = "TEXT",
+            conflicts_with_all = ["check", "list_sections", "section"]
+        )]
+        search: Option<String>,
     },
 
     /// Inspect or seed bundled source-level stdlib packages.
@@ -331,7 +358,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
     match cli.command {
         Cmd::Version { format } => cmd_version(format),
-        Cmd::Primer { format, check } => cmd_primer(format, check),
+        Cmd::Primer {
+            format,
+            check,
+            list_sections,
+            section,
+            search,
+        } => cmd_primer(format, check, list_sections, section, search),
         Cmd::Stdlib { command } => cmd_stdlib(command),
         Cmd::Init {
             path,
@@ -394,9 +427,66 @@ fn cmd_version(format: VersionFormat) -> Result<(), Box<dyn std::error::Error>> 
     Ok(())
 }
 
+const PRIMER_SEARCH_LIMIT: usize = 40;
+
+#[derive(Clone, Serialize)]
+struct PrimerSectionInfo {
+    id: String,
+    level: u8,
+    title: String,
+    line: usize,
+}
+
+#[derive(Clone)]
+struct PrimerSection {
+    info: PrimerSectionInfo,
+    start: usize,
+    end: usize,
+}
+
+#[derive(Serialize)]
+struct PrimerSectionsEnvelope {
+    format: &'static str,
+    toolchain_version: &'static str,
+    primer_hash: &'static str,
+    sections: Vec<PrimerSectionInfo>,
+}
+
+#[derive(Serialize)]
+struct PrimerSectionEnvelope {
+    format: &'static str,
+    toolchain_version: &'static str,
+    primer_hash: &'static str,
+    query: String,
+    section: PrimerSectionInfo,
+    text: String,
+}
+
+#[derive(Serialize)]
+struct PrimerSearchEnvelope {
+    format: &'static str,
+    toolchain_version: &'static str,
+    primer_hash: &'static str,
+    query: String,
+    total_matches: usize,
+    returned_matches: usize,
+    truncated: bool,
+    matches: Vec<PrimerSearchMatch>,
+}
+
+#[derive(Serialize)]
+struct PrimerSearchMatch {
+    section: PrimerSectionInfo,
+    line: usize,
+    text: String,
+}
+
 fn cmd_primer(
     format: PrimerFormat,
     check: Option<PathBuf>,
+    list_sections: bool,
+    section: Option<String>,
+    search: Option<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(path) = check {
         let result = release::primer_check(path)?;
@@ -420,6 +510,106 @@ fn cmd_primer(
         return Ok(());
     }
 
+    if list_sections {
+        let text = primer_text()?;
+        let sections = parse_primer_sections(text);
+        match format {
+            PrimerFormat::Json => {
+                let envelope = PrimerSectionsEnvelope {
+                    format: "tacit-primer-sections-v1",
+                    toolchain_version: release::PRIMER_TOOLCHAIN_VERSION,
+                    primer_hash: release::PRIMER_HASH,
+                    sections: sections.into_iter().map(|section| section.info).collect(),
+                };
+                println!("{}", serde_json::to_string_pretty(&envelope)?);
+            }
+            PrimerFormat::Text => {
+                for section in sections {
+                    println!(
+                        "{}\tline {}\t{} {}",
+                        section.info.id,
+                        section.info.line,
+                        "#".repeat(section.info.level as usize),
+                        section.info.title
+                    );
+                }
+            }
+        }
+        return Ok(());
+    }
+
+    if let Some(query) = section {
+        let text = primer_text()?;
+        let sections = parse_primer_sections(text);
+        let section = resolve_primer_section(&sections, &query)
+            .map_err(|err| format!("{err}; run `tacit primer --list-sections`"))?;
+        let section_text = text[section.start..section.end].to_string();
+        match format {
+            PrimerFormat::Json => {
+                let envelope = PrimerSectionEnvelope {
+                    format: "tacit-primer-section-v1",
+                    toolchain_version: release::PRIMER_TOOLCHAIN_VERSION,
+                    primer_hash: release::PRIMER_HASH,
+                    query,
+                    section: section.info.clone(),
+                    text: section_text,
+                };
+                println!("{}", serde_json::to_string_pretty(&envelope)?);
+            }
+            PrimerFormat::Text => {
+                use std::io::Write;
+                std::io::stdout().write_all(section_text.as_bytes())?;
+            }
+        }
+        return Ok(());
+    }
+
+    if let Some(query) = search {
+        let text = primer_text()?;
+        let sections = parse_primer_sections(text);
+        let (matches, total_matches) = search_primer_lines(text, &sections, &query)
+            .map_err(|err| format!("{err}; provide non-empty text to `--search`"))?;
+        let returned_matches = matches.len();
+        let truncated = total_matches > returned_matches;
+        match format {
+            PrimerFormat::Json => {
+                let envelope = PrimerSearchEnvelope {
+                    format: "tacit-primer-search-v1",
+                    toolchain_version: release::PRIMER_TOOLCHAIN_VERSION,
+                    primer_hash: release::PRIMER_HASH,
+                    query,
+                    total_matches,
+                    returned_matches,
+                    truncated,
+                    matches,
+                };
+                println!("{}", serde_json::to_string_pretty(&envelope)?);
+            }
+            PrimerFormat::Text => {
+                println!(
+                    "primer search for {:?}: {} match(es), showing {}",
+                    query, total_matches, returned_matches
+                );
+                if returned_matches > 0 {
+                    println!("use `tacit primer --section <id>` to read a matching section");
+                }
+                for m in matches {
+                    println!(
+                        "{}:{} [{}] {}",
+                        m.section.id, m.line, m.section.title, m.text
+                    );
+                }
+                if truncated {
+                    println!(
+                        "truncated after {} matches; refine the search text",
+                        PRIMER_SEARCH_LIMIT
+                    );
+                }
+            }
+        }
+        return Ok(());
+    }
+
     match format {
         PrimerFormat::Json => {
             println!(
@@ -433,6 +623,180 @@ fn cmd_primer(
         }
     }
     Ok(())
+}
+
+fn primer_text() -> Result<&'static str, Box<dyn std::error::Error>> {
+    Ok(std::str::from_utf8(release::PRIMER_BYTES)?)
+}
+
+fn parse_primer_sections(text: &str) -> Vec<PrimerSection> {
+    #[derive(Clone)]
+    struct Heading {
+        info: PrimerSectionInfo,
+        start: usize,
+    }
+
+    let mut headings = Vec::new();
+    let mut used_ids: BTreeMap<String, usize> = BTreeMap::new();
+    let mut offset = 0;
+    for (line_idx, raw_line) in text.split_inclusive('\n').enumerate() {
+        let line = raw_line.trim_end_matches('\n').trim_end_matches('\r');
+        if let Some((level, title)) = primer_heading(line) {
+            let base_id = slugify_primer_heading(title);
+            let next = used_ids.entry(base_id.clone()).or_insert(0);
+            *next += 1;
+            let id = if *next == 1 {
+                base_id
+            } else {
+                format!("{base_id}-{}", *next)
+            };
+            headings.push(Heading {
+                info: PrimerSectionInfo {
+                    id,
+                    level,
+                    title: title.to_string(),
+                    line: line_idx + 1,
+                },
+                start: offset,
+            });
+        }
+        offset += raw_line.len();
+    }
+
+    let mut sections = Vec::new();
+    for (idx, heading) in headings.iter().enumerate() {
+        let end = headings
+            .iter()
+            .skip(idx + 1)
+            .find(|next| next.info.level <= heading.info.level)
+            .map(|next| next.start)
+            .unwrap_or(text.len());
+        sections.push(PrimerSection {
+            info: heading.info.clone(),
+            start: heading.start,
+            end,
+        });
+    }
+    sections
+}
+
+fn primer_heading(line: &str) -> Option<(u8, &str)> {
+    if let Some(title) = line.strip_prefix("### ") {
+        Some((3, title.trim()))
+    } else {
+        line.strip_prefix("## ").map(|title| (2, title.trim()))
+    }
+}
+
+fn slugify_primer_heading(title: &str) -> String {
+    let mut out = String::new();
+    let mut pending_dash = false;
+    for ch in title.chars() {
+        if ch.is_ascii_alphanumeric() {
+            if pending_dash && !out.is_empty() {
+                out.push('-');
+            }
+            out.push(ch.to_ascii_lowercase());
+            pending_dash = false;
+        } else if !out.is_empty() {
+            pending_dash = true;
+        }
+    }
+    if out.is_empty() {
+        "section".to_string()
+    } else {
+        out
+    }
+}
+
+fn resolve_primer_section<'a>(
+    sections: &'a [PrimerSection],
+    query: &str,
+) -> Result<&'a PrimerSection, String> {
+    let query = query.trim();
+    if query.is_empty() {
+        return Err("empty primer section query".to_string());
+    }
+    let query_lower = query.to_ascii_lowercase();
+    let query_slug = slugify_primer_heading(query);
+
+    if let Some(section) = sections.iter().find(|section| {
+        section.info.id == query_lower
+            || section.info.id == query_slug
+            || section.info.title.eq_ignore_ascii_case(query)
+    }) {
+        return Ok(section);
+    }
+
+    let matches: Vec<&PrimerSection> = sections
+        .iter()
+        .filter(|section| {
+            section.info.id.contains(&query_lower)
+                || section
+                    .info
+                    .title
+                    .to_ascii_lowercase()
+                    .contains(&query_lower)
+        })
+        .collect();
+
+    match matches.as_slice() {
+        [section] => Ok(section),
+        [] => Err(format!("no primer section matched `{query}`")),
+        many => {
+            let ids = many
+                .iter()
+                .take(8)
+                .map(|section| section.info.id.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            Err(format!(
+                "ambiguous primer section `{query}`; matches: {ids}"
+            ))
+        }
+    }
+}
+
+fn search_primer_lines(
+    text: &str,
+    sections: &[PrimerSection],
+    query: &str,
+) -> Result<(Vec<PrimerSearchMatch>, usize), String> {
+    let needle = query.trim();
+    if needle.is_empty() {
+        return Err("empty primer search query".to_string());
+    }
+    let needle_lower = needle.to_ascii_lowercase();
+    let mut matches = Vec::new();
+    let mut total = 0;
+    let mut section_idx = 0;
+    let mut offset = 0;
+
+    for (line_idx, raw_line) in text.split_inclusive('\n').enumerate() {
+        while section_idx + 1 < sections.len() && sections[section_idx + 1].start <= offset {
+            section_idx += 1;
+        }
+        let line = raw_line.trim_end_matches('\n').trim_end_matches('\r');
+        if line.to_ascii_lowercase().contains(&needle_lower) {
+            total += 1;
+            if matches.len() < PRIMER_SEARCH_LIMIT {
+                let section = sections
+                    .get(section_idx)
+                    .filter(|section| section.start <= offset && offset < section.end)
+                    .or_else(|| sections.first());
+                if let Some(section) = section {
+                    matches.push(PrimerSearchMatch {
+                        section: section.info.clone(),
+                        line: line_idx + 1,
+                        text: line.to_string(),
+                    });
+                }
+            }
+        }
+        offset += raw_line.len();
+    }
+
+    Ok((matches, total))
 }
 
 fn cmd_stdlib(command: StdlibCmd) -> Result<(), Box<dyn std::error::Error>> {
@@ -720,7 +1084,7 @@ fn render_toolchain_pin(release_hash: &str, stdlib: &release::StdlibListEnvelope
 
 fn render_agent_doc(package_name: &str) -> String {
     format!(
-        "# {package_name} Agent Instructions\n\nThis is a Tacit project pinned by `tacit-toolchain.toml`.\n\n## Reading the language and workflow contracts\n\n- Run `tacit primer` to print the Tacit-Lite language primer that matches this toolchain. Read it before writing or editing source. Do not copy primer prose from another repository or another toolchain version.\n- The agent workflow companion is installed at `share/tacit/workflow/agent-workflow.md` in the toolchain prefix. Read it before running tools.\n\n## Editing source\n\nDo not hand-edit `.tac` files. The `.tac` format is canonical S-expression bytes with BLAKE3 definition-hash references; the primer teaches the authoring view (`.taca`), which is a different surface syntax. The two do not line up token for token, and `.tac` hashes change with every edit. Edit via the round-trip loop instead:\n\n1. Render existing source as authoring view to a scratch path outside the project, for example `tacit render src/main.tac --as authoring -o /tmp/{package_name}.taca`.\n2. Edit the scratch `.taca` using the authoring-view syntax from the primer.\n3. Canonicalize back into the project: `tacit canonicalize /tmp/{package_name}.taca -o src/main.tac --force`. That rewrites both `src/main.tac` and `src/main.tacd`.\n4. Delete the scratch `.taca`. Do not check `.taca` files into this project.\n\nAfter any source edit, definition hashes change. Run `tacit lock` to refresh `tacit.lock`, then update any `[exports]`, `[bin]`, or `[[tests]]` entries in `tacit.toml` that reference the old hashes. Use `tacit view src --as inspection --hashes` (or read `tacit.lock`) to look up the new ones.\n\n## Hand-off\n\nBefore handing off changes, run `tacit lock`, `tacit check .`, and `tacit test . --format json` when LLVM support is available.\n"
+        "# {package_name} Agent Instructions\n\nThis is a Tacit project pinned by `tacit-toolchain.toml`.\n\n## Reading the language and workflow contracts\n\n- Run `tacit primer` to print the full Tacit-Lite language primer that matches this toolchain. Do not copy primer prose from another repository or another toolchain version.\n- For targeted syntax refreshes, prefer selective primer commands before reading the full primer: `tacit primer --search <term>`, `tacit primer --list-sections`, then `tacit primer --section <id>`.\n- The agent workflow companion is installed at `share/tacit/workflow/agent-workflow.md` in the toolchain prefix. Read it before running tools.\n\n## Editing source\n\nDo not hand-edit `.tac` files. The `.tac` format is canonical S-expression bytes with BLAKE3 definition-hash references; the primer teaches the authoring view (`.taca`), which is a different surface syntax. The two do not line up token for token, and `.tac` hashes change with every edit. Edit via the round-trip loop instead:\n\n1. Render existing source as authoring view to a scratch path outside the project, for example `tacit render src/main.tac --as authoring -o /tmp/{package_name}.taca`.\n2. Edit the scratch `.taca` using authoring-view syntax from the primer.\n3. Canonicalize back into the project: `tacit canonicalize /tmp/{package_name}.taca -o src/main.tac --force`. That rewrites both `src/main.tac` and `src/main.tacd`.\n4. Delete the scratch `.taca`. Do not check `.taca` files into this project.\n\nAfter any source edit, definition hashes change. Run `tacit lock` to refresh `tacit.lock`, then update any `[exports]`, `[bin]`, or `[[tests]]` entries in `tacit.toml` that reference the old hashes. Use `tacit view src --as inspection --hashes` (or read `tacit.lock`) to look up the new ones.\n\n## Hand-off\n\nBefore handing off changes, run `tacit lock`, `tacit check .`, and `tacit test . --format json` when LLVM support is available.\n"
     )
 }
 

@@ -45,6 +45,18 @@ The `release_hash` from `tacit version` is the same value a project pin
 records under `[toolchain].release_hash`. Use that hash to decide whether a
 project's `tacit-toolchain.toml` matches the installed toolchain.
 
+For a targeted language-syntax refresh, prefer selective primer disclosure
+before loading the full primer:
+
+```
+tacit primer --search rec
+tacit primer --list-sections
+tacit primer --section helper-closure-and-callback-shapes
+```
+
+Use `tacit primer` without filters when you need the complete language
+contract.
+
 ## Starting or joining a project
 
 For a new project:

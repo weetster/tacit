@@ -192,6 +192,70 @@ fn primer_json_reports_hash_and_tokens() {
 }
 
 #[test]
+fn primer_list_section_and_search_support_selective_disclosure() {
+    let dir = tempfile::tempdir().expect("tempdir");
+
+    let sections = tacit(&["primer", "--list-sections"], dir.path());
+    assert!(
+        sections.status.success(),
+        "primer --list-sections failed\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&sections.stdout),
+        String::from_utf8_lossy(&sections.stderr)
+    );
+    let sections_text = String::from_utf8_lossy(&sections.stdout);
+    assert!(
+        sections_text.contains("primitive-surface"),
+        "{sections_text}"
+    );
+
+    let section = tacit(&["primer", "--section", "primitive-surface"], dir.path());
+    assert!(
+        section.status.success(),
+        "primer --section failed\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&section.stdout),
+        String::from_utf8_lossy(&section.stderr)
+    );
+    let section_text = String::from_utf8_lossy(&section.stdout);
+    assert!(
+        section_text.starts_with("### Primitive Surface"),
+        "{section_text}"
+    );
+    assert!(
+        section_text.contains("Legacy `Int` arithmetic"),
+        "{section_text}"
+    );
+
+    let search = tacit(
+        &["primer", "--search", "@u8vec-set", "--format", "json"],
+        dir.path(),
+    );
+    assert!(
+        search.status.success(),
+        "primer --search failed\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&search.stdout),
+        String::from_utf8_lossy(&search.stderr)
+    );
+    let json: Value = serde_json::from_slice(&search.stdout).expect("search json");
+    assert_eq!(json["format"], "tacit-primer-search-v1");
+    assert_eq!(json["query"], "@u8vec-set");
+    assert!(
+        json["total_matches"].as_u64().expect("total matches") > 0,
+        "{json}"
+    );
+    assert!(
+        json["matches"]
+            .as_array()
+            .expect("matches")
+            .iter()
+            .any(|m| m["text"]
+                .as_str()
+                .expect("match text")
+                .contains("@u8vec-set")),
+        "{json}"
+    );
+}
+
+#[test]
 fn primer_check_accepts_exact_bytes_and_rejects_edits() {
     let dir = tempfile::tempdir().expect("tempdir");
     let d = dir.path();

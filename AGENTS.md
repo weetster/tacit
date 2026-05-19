@@ -31,3 +31,14 @@ not these agent-level instructions.
 
 See [CLAUDE.md](CLAUDE.md) for the full development guide, repository
 layout, and ground rules.
+
+## Primer use
+
+For a targeted Tacit syntax refresh, prefer selective primer commands before
+loading the full primer:
+
+- `tacit primer --search <term>` finds matching primer lines and section ids.
+- `tacit primer --list-sections` lists selectable section ids.
+- `tacit primer --section <id>` prints only that section.
+- `tacit primer` remains the full byte-pinned primer when broader context is
+  needed.
