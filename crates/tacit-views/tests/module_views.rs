@@ -98,6 +98,31 @@ fn parses_authoring_unit_with_import_and_export() {
 }
 
 #[test]
+fn parses_authoring_unit_with_effectful_import_type() {
+    let import_hash = "1".repeat(64);
+    let src = format!(
+        "unit Math {{ import hi_byte : Int -> Int / {{Div}} from blake3:{}; export public pass : Int -> Int = lambda x. x }}",
+        import_hash
+    );
+    let (node, sidecar) = parse_authoring(src.as_bytes()).expect("parse effectful import");
+    let canonical = String::from_utf8(emit(&node)).unwrap();
+    assert!(canonical.contains("(eff-set Div)"), "{canonical}");
+    let authoring = emit_authoring(&node, Some(&sidecar));
+    assert!(
+        authoring.contains("import hi_byte : Int -> Int / {Div} from blake3:"),
+        "{authoring}"
+    );
+    assert_eq!(
+        sidecar
+            .import_aliases
+            .as_ref()
+            .and_then(|m| m.get(&import_hash))
+            .map(String::as_str),
+        Some("hi_byte")
+    );
+}
+
+#[test]
 fn parses_order_independent_private_local_reference() {
     let src = "unit Math { export public use_id : Int -> Int = lambda x. id x; private id : Int -> Int = lambda y. y }";
     let (node, sidecar) = parse_authoring(src.as_bytes()).expect("parse unit");

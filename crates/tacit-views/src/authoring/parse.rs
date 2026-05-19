@@ -310,12 +310,9 @@ impl Parser {
                     (alias, hash_hex(&host_import))
                 } else {
                     let alias = self.consume_ident("import alias")?;
-                    while !matches!(self.peek(), Some(Token::Hash(_))) {
-                        if matches!(self.peek(), Some(Token::Semicolon | Token::RBrace) | None) {
-                            return err("import declaration is missing blake3 hash");
-                        }
-                        self.advance();
-                    }
+                    self.consume(&Token::Colon, "':'")?;
+                    let _sig_type = self.parse_type_expr()?;
+                    self.consume_ident_exact("from")?;
                     (alias, self.consume_hash("definition hash")?)
                 };
                 if !seen_value_aliases.insert(alias.clone()) {
