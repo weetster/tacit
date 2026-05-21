@@ -10,6 +10,8 @@ use std::time::SystemTime;
 
 use serde_json::Value;
 
+const TOOLCHAIN_VERSION: &str = env!("TACIT_TOOLCHAIN_VERSION");
+
 fn tacit_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_tacit"))
 }
@@ -121,7 +123,7 @@ fn version_against_staged_share_reports_matched_manifest() {
     );
     must_succeed(&out, "version --format json");
     let json: Value = serde_json::from_slice(&out.stdout).expect("version json");
-    assert_eq!(json["toolchain_version"], "0.7.7");
+    assert_eq!(json["toolchain_version"], TOOLCHAIN_VERSION);
     assert_eq!(
         json["installed_manifest"]["status"], "matched",
         "expected staged manifest to match embedded copy"
