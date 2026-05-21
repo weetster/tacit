@@ -104,6 +104,19 @@ export LLVM_SYS_191_PREFIX="${LLVM_PREFIX}"
 unset LLVM_SYS_191_PREFER_DYNAMIC || true
 export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-12.0}"
 
+# LLVM@19 Homebrew bottles dynamically link zstd; override with a static-only
+# shim directory so the distributed binary does not require Homebrew at runtime.
+# When the linker resolves -lzstd, it finds only libzstd.a in the shim first.
+if command -v brew >/dev/null 2>&1; then
+    _ZSTD_PREFIX=$(brew --prefix zstd 2>/dev/null || true)
+    if [[ -n "${_ZSTD_PREFIX}" && -f "${_ZSTD_PREFIX}/lib/libzstd.a" ]]; then
+        _ZSTD_SHIM=$(mktemp -d)
+        ln -s "${_ZSTD_PREFIX}/lib/libzstd.a" "${_ZSTD_SHIM}/libzstd.a"
+        export RUSTFLAGS="${RUSTFLAGS:+${RUSTFLAGS} }-C link-search=native=${_ZSTD_SHIM}"
+        echo "==> forcing static zstd from ${_ZSTD_PREFIX}"
+    fi
+fi
+
 echo "==> MACOSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET}"
 echo "==> cargo build --release --features tacit-cli/llvm19-1 -p tacit-cli"
 cargo build --release --features tacit-cli/llvm19-1 -p tacit-cli
