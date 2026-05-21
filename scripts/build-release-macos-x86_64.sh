@@ -112,7 +112,7 @@ if command -v brew >/dev/null 2>&1; then
     if [[ -n "${_ZSTD_PREFIX}" && -f "${_ZSTD_PREFIX}/lib/libzstd.a" ]]; then
         _ZSTD_SHIM=$(mktemp -d)
         ln -s "${_ZSTD_PREFIX}/lib/libzstd.a" "${_ZSTD_SHIM}/libzstd.a"
-        export RUSTFLAGS="${RUSTFLAGS:+${RUSTFLAGS} }-C link-search=native=${_ZSTD_SHIM}"
+        export RUSTFLAGS="${RUSTFLAGS:+${RUSTFLAGS} }-L native=${_ZSTD_SHIM}"
         echo "==> forcing static zstd from ${_ZSTD_PREFIX}"
     fi
 fi
