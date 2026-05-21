@@ -10,7 +10,7 @@ publish = false
 # this crate compiles and tests without an installed LLVM. Pick a
 # feature when building the IR emitter:
 #
-#   cargo build --features llvm19-1   # LLVM 19 (pinned; Debian bookworm apt / arm64-macOS brew bottle)
+#   cargo build --features llvm19-1   # LLVM 19 (pinned; Debian bookworm apt / macOS brew bottle)
 #   cargo build --features llvm18-1   # LLVM 18 (older Linux apt)
 #   cargo build --features llvm15-0   # LLVM 15 (last x86_64 macOS prebuilt on llvm.org)
 #

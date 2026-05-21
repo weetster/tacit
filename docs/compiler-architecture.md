@@ -107,12 +107,15 @@ emitter uses `inkwell` over LLVM-C. Per
 
 Rationale: LLVM 19 is available in Debian bookworm's default apt repos
 (`llvm-19-dev`) and via apt.llvm.org on older Ubuntu LTS runners such as
-22.04. It is also available as a brew bottle for arm64 macOS. inkwell 0.9
-is the first release to support LLVM 19 via the `llvm19-1` feature.
+22.04. It is also available as Homebrew bottles on supported macOS hosts.
+inkwell 0.9 is the first release to support LLVM 19 via the `llvm19-1`
+feature.
 
-Contributors pass `--features llvm19-1` to build the IR emitter.
-CI installs `llvm-19-dev` via apt; the release workflow adds apt.llvm.org on
-Ubuntu 22.04 to keep the published binary on a glibc 2.35 baseline.
+Contributors pass `--features llvm19-1` to build the IR emitter. Linux CI
+installs `llvm-19-dev` via apt; the Linux release workflow adds apt.llvm.org
+on Ubuntu 22.04 to keep the published binary on a glibc 2.35 baseline. The
+macOS release workflow installs `llvm@19` through Homebrew's bottle path on a
+native Intel runner.
 
 ### Installing LLVM (dev-loop)
 
@@ -134,16 +137,17 @@ export LLVM_SYS_191_PREFIX="$(brew --prefix llvm@19)"
 
 ### Pre-flight bottle check
 
-**Always** verify a pre-built option exists before installing on macOS:
+**Always** verify a pre-built option exists before installing on macOS. In CI
+use Homebrew's bottle-only path:
 
 ```bash
-brew info llvm@19 | grep -A 2 'bottle:'
+brew fetch --force-bottle --deps llvm@19
+brew install --force-bottle llvm@19
 ```
 
-If only an `arm64` line is listed and you're on Intel — or if no
-bottle line appears for your macOS major version — switch to the
-LLVM.org tarball or use a different LLVM version. Source builds take
-hours and are not a supported path
+If Homebrew cannot fetch a bottle for your macOS major version and
+architecture, switch to the LLVM.org tarball or use a different LLVM version.
+Source builds take hours and are not a supported path
 ([ADR 0031 § 1](../decisions/0031-llvm-distribution-and-self-hosting.md)).
 
 ## `tacit compile` pipeline

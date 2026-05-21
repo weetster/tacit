@@ -1,6 +1,7 @@
 name: Release
 
-# Publishes a Linux x86_64 binary archive whenever a v* tag is pushed.
+# Publishes Linux x86_64 and macOS x86_64 binary archives whenever a v* tag
+# is pushed.
 # Can also be invoked manually (workflow_dispatch) for a dry-run that only
 # uploads the artifact without creating a GitHub Release.
 #
@@ -9,6 +10,8 @@ name: Release
 #
 # The runner is pinned to Ubuntu 22.04 to keep a stable glibc baseline
 # (2.35) for the published x86_64-unknown-linux-gnu artifact.
+# The macOS job uses a native Intel runner, not cross-compilation, and installs
+# LLVM through a bottle-only Homebrew path to avoid source-building LLVM.
 
 on:
   push:
@@ -86,13 +89,92 @@ jobs:
             release/tacit-*.SHA256SUMS
           if-no-files-found: error
 
-      - name: Publish GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+  macos-x86_64:
+    name: Build macOS x86_64 archive
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install LLVM 19 from Homebrew bottle
+        run: |
+          brew fetch --formula --force-bottle --deps llvm@19
+          brew install --formula --force-bottle llvm@19
+        env:
+          HOMEBREW_NO_BOTTLE_SOURCE_FALLBACK: "1"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo artifacts
+        uses: actions/cache@v4
         with:
-          files: |
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: release-${{ runner.os }}-macos-15-intel-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            release-${{ runner.os }}-macos-15-intel-cargo-
+
+      - name: Verify tag matches toolchain version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          version=$(awk -F' *= *' '
+            /^\[toolchain\]/ {in_section=1; next}
+            /^\[/             {in_section=0}
+            in_section && $1=="version" {gsub(/"/, "", $2); print $2; exit}
+          ' tacit-toolchain-release.toml)
+          if [[ "$tag" != "$version" ]]; then
+            echo "::error::tag v$tag does not match tacit-toolchain-release.toml version $version"
+            exit 1
+          fi
+          echo "tag and toolchain version both report $version"
+
+      - name: Build release archive
+        run: scripts/build-release-macos-x86_64.sh
+        env:
+          MACOSX_DEPLOYMENT_TARGET: "12.0"
+
+      - name: Show archive metadata
+        run: |
+          ls -lh release/
+          echo "--- sha256 ---"
+          cat release/tacit-*.sha256
+          echo "--- top of SHA256SUMS ---"
+          head -20 release/tacit-*.SHA256SUMS
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tacit-macos-x86_64
+          path: |
             release/tacit-*.tar.gz
             release/tacit-*.sha256
             release/tacit-*.SHA256SUMS
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [linux-x86_64, macos-x86_64]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: tacit-*
+          path: release-artifacts
+          merge-multiple: true
+
+      - name: Show release files
+        run: ls -lh release-artifacts/
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release-artifacts/tacit-*.tar.gz
+            release-artifacts/tacit-*.sha256
+            release-artifacts/tacit-*.SHA256SUMS
           fail_on_unmatched_files: true
           generate_release_notes: true

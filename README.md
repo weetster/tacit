@@ -53,7 +53,7 @@ The default target is **Tacit-Lite**, a smaller practical variant with structura
 - `corpus/` - Phase 3 evaluation corpus, with sealed held-out subset
 - `stdlib/` - source-level Tacit stdlib packages under `tacit/` (`core`, `bytes`, `array`, `text`, `collections`, `io`) plus `libc-effects.toml` for the typechecker
 - `tools/` - one-shot generators and dev utilities
-- `scripts/` - release scripts (e.g. `build-release.sh`)
+- `scripts/` - release scripts (e.g. `build-release.sh`, `build-release-macos-x86_64.sh`)
 - `share-assets/` - assets bundled into the toolchain `share/tacit/` tree (e.g. agent workflow)
 - `impls/` - auxiliary implementations (e.g. `py-canonicalizer`)
 - `tacit-toolchain-release.toml` - workspace-level release metadata pinning toolchain, primer, LLVM, and schema versions
@@ -72,7 +72,7 @@ Tacit-Lite surface now includes:
 - source-level stdlib packages (`tacit.core`, `.bytes`, `.array`, `.text`, `.collections`, `.io`) consumed through ordinary package resolution (Phase 6)
 - a constrained host-interface ABI with generated C headers and Rust bindings, plus a working Rust embedding demo (Phase 6)
 - record products, first-class closures, and compiler-recognized `@map`/`@fold`/`@for-each` over `I64Vec` prefixes (Phase 4 carry-over)
-- a versioned toolchain release with embedded release manifest, `tacit init`, `tacit-toolchain-pin-v1` enforcement, bundled stdlib seeding, and a Linux x86_64 GitHub Actions release pipeline (toolchain export)
+- a versioned toolchain release with embedded release manifest, `tacit init`, `tacit-toolchain-pin-v1` enforcement, bundled stdlib seeding, and Linux/macOS x86_64 GitHub Actions release pipelines (toolchain export)
 
 Phase 5 (the bounded maintenance/debugging validation gate) is frozen by
 [ADR 0078](decisions/0078-phase-5-decision.md), which accepted proceeding to
@@ -91,20 +91,22 @@ Start with:
 
 ## Trying Tacit in your own project
 
-The toolchain is shippable as a self-contained Linux x86_64 archive. A new
-project does not need to clone this repository, install LLVM, or know the
-internal repo layout.
+The toolchain is shippable as self-contained Linux x86_64 and macOS x86_64
+archives. A new project does not need to clone this repository, install LLVM,
+or know the internal repo layout.
 
 ### 1. Install the toolchain
 
-The first export targets **Linux x86_64**. The `tacit` binary links statically
-against LLVM 19, so no LLVM runtime is required. Runtime deps (`libc`,
-`libstdc++`, `libgcc_s`, `libm`, `libz`, `libzstd`, `libffi`) are present on a
-default Debian-bookworm / Ubuntu-22.04+ install. Published release artifacts
-are built on Ubuntu 22.04, so the glibc compatibility floor is 2.35.
+Release artifacts target **Linux x86_64** and **macOS x86_64**. The `tacit`
+binary links statically against LLVM 19, so no LLVM runtime is required.
+Linux runtime deps (`libc`, `libstdc++`, `libgcc_s`, `libm`, `libz`,
+`libzstd`, `libffi`) are present on a default Debian-bookworm /
+Ubuntu-22.04+ install. Published Linux artifacts are built on Ubuntu 22.04, so
+the glibc compatibility floor is 2.35. Published macOS artifacts are built on
+a native Intel macOS runner with deployment target 12.0.
 
 Download `tacit-<version>-x86_64-unknown-linux-gnu.tar.gz` and its `.sha256`
-companion from the release pipeline, then:
+companion from the release pipeline for Linux, then:
 
 ```sh
 sha256sum -c tacit-<version>-x86_64-unknown-linux-gnu.sha256
@@ -113,6 +115,9 @@ sudo cp tacit-<version>-x86_64-unknown-linux-gnu/bin/tacit /usr/local/bin/
 sudo cp -r tacit-<version>-x86_64-unknown-linux-gnu/share/tacit /usr/local/share/
 tacit version --format json
 ```
+
+On Intel macOS, use `tacit-<version>-x86_64-apple-darwin.tar.gz` and verify it
+with `shasum -a 256 -c`.
 
 For a per-user install with no root, use `~/.local/bin` and `~/.local/share`
 instead. `tacit version --format json` should report

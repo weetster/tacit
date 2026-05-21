@@ -10,9 +10,10 @@ foundations, and the constrained host-interface ABI. The
 2026-05-17 (six stages under [ADR 0090](decisions/0090-toolchain-release-contract.md)),
 shipping `tacit init`, `tacit-toolchain-pin-v1` enforcement, bundled stdlib
 seeding, a workflow asset, `scripts/build-release.sh`, and a Linux x86_64
-GitHub Actions release pipeline. Toolchain work runs outside the phase
-system; expansions (compatibility ranges, more targets, registries) require a
-new ADR. Phase 5 completed on
+GitHub Actions release pipeline. ADR 0097 additively extends the release
+pipeline with a native macOS x86_64 artifact. Toolchain work runs outside the
+phase system; expansions (compatibility ranges, more targets, registries)
+require a new ADR. Phase 5 completed on
 2026-05-09 via
 [ADR 0076](decisions/0076-phase-5-short-gate.md),
 [ADR 0077](decisions/0077-phase-5-metrics.md), and
@@ -166,13 +167,13 @@ Per [ADR 0089](decisions/0089-phase-6-frozen.md):
 ```
 plans/                          — phase plans, specs (canonical-text-format.md, inspection-view.md, sidecar-format.md, toolchain-export-plan.md), primer, test vectors, phase results
 docs/                           — design docs (compiler-architecture.md, effect-system.md, installation.md, phase-3-metrics.schema.json)
-decisions/                      — ADR-style decision log (0001–0090)
+decisions/                      — ADR-style decision log (0001–0097)
 crates/                         — Cargo workspace: tacit-canonical, tacit-views, tacit-typecheck, tacit-codegen, tacit-cli
 examples/                       — Phase 1 smoke corpus under smoke/; Phase 3 carry-over programs under phase-3/; Phase 4 examples under phase-4/; Phase 6 examples under phase-6/ (typed-memory, fixed-int, data-layout, package-tests, embedding-demo)
 corpus/                         — Phase 3 evaluation corpus (60 tasks, sealed held-out subset, Tacit references for the open 47)
 stdlib/                         — Source-level stdlib packages (Phase 6 Stage 9: tacit.core/.bytes/.array/.text/.collections/.io) plus the Phase 1–2 libc-effects.toml table consumed by tacit-typecheck
 tools/                          — one-shot generators and dev utilities (e.g. stage11_demo_gen for the embedding demo kernel)
-scripts/                        — release scripts (build-release.sh, csr-dry-run.sh)
+scripts/                        — release scripts (build-release.sh, build-release-macos-x86_64.sh, csr-dry-run.sh)
 share-assets/                   — assets staged into the toolchain share/tacit/ tree (e.g. workflow/agent-workflow.md)
 impls/                          — auxiliary implementations (e.g. py-canonicalizer)
 tacit-toolchain-release.toml    — workspace-level release metadata: toolchain/primer versions, LLVM feature, schema names, distribution layout
