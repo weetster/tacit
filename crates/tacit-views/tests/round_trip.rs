@@ -142,7 +142,7 @@ fn emit_identity_lambda() {
 fn emit_let_cascade() {
     check_emit(
         "(let (int 1) (let (int 2) (var 1)))",
-        "let v0 = 1 in let v1 = 2 in v0",
+        "let v0 = 1\nin\n  let v1 = 2\n  in\n    v0",
     );
 }
 
@@ -150,7 +150,7 @@ fn emit_let_cascade() {
 fn emit_mutual_rec() {
     check_emit(
         "(rec (lam (app (var 2) (var 0))) (lam (app (var 1) (var 0))) (app (var 0) (int 10)))",
-        "rec {B0 = lambda v0. B1 v0; B1 = lambda v0. B0 v0} in B0 10",
+        "rec {\n  B0 = lambda v0. B1 v0;\n  B1 = lambda v0. B0 v0\n} in\n  B0 10",
     );
 }
 
@@ -217,7 +217,7 @@ fn emit_sym() {
 
 #[test]
 fn emit_single_rec() {
-    check_emit("(rec (var 0) (var 0))", "rec {B0 = B0} in B0");
+    check_emit("(rec (var 0) (var 0))", "rec {\n  B0 = B0\n} in\n  B0");
 }
 
 #[test]
@@ -225,7 +225,7 @@ fn emit_lam_in_let_rhs_no_parens() {
     // rhs extends to `in`; lambda should NOT be wrapped in parens.
     check_emit(
         "(let (lam (var 0)) (app (var 0) (int 5)))",
-        "let v0 = lambda v1. v1 in v0 5",
+        "let v0 = lambda v1. v1\nin\n  v0 5",
     );
 }
 
@@ -343,7 +343,8 @@ fn sidecar_preserves_names() {
     let (node, sidecar) = parse_authoring(authoring.as_bytes()).unwrap();
     let roundtripped = emit_authoring(&node, Some(&sidecar));
     assert_eq!(
-        roundtripped, authoring,
+        roundtripped,
+        "let id = lambda x. x\nin\n  id 5",
         "sidecar names not preserved\n  original:     {}\n  roundtripped: {}",
         authoring, roundtripped
     );
@@ -355,7 +356,8 @@ fn sidecar_rec_names_preserved() {
     let (node, sidecar) = parse_authoring(authoring.as_bytes()).unwrap();
     let roundtripped = emit_authoring(&node, Some(&sidecar));
     assert_eq!(
-        roundtripped, authoring,
+        roundtripped,
+        "rec {\n  even = lambda n. odd n;\n  odd = lambda n. even n\n} in\n  even 10",
         "rec sidecar names not preserved\n  original:     {}\n  roundtripped: {}",
         authoring, roundtripped
     );
@@ -368,7 +370,8 @@ fn sidecar_names_preserved_inside_app_arg() {
     let (node, sidecar) = parse_authoring(authoring.as_bytes()).unwrap();
     let roundtripped = emit_authoring(&node, Some(&sidecar));
     assert_eq!(
-        roundtripped, authoring,
+        roundtripped,
+        "let f = lambda x. x\nin\n  f (lambda y. y)",
         "binder name inside app arg not preserved\n  original:     {}\n  roundtripped: {}",
         authoring, roundtripped
     );

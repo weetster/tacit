@@ -890,6 +890,7 @@ fn render_authoring_to_stdout() {
     );
     let rendered = String::from_utf8_lossy(&out2.stdout);
     assert!(!rendered.is_empty(), "stdout should not be empty");
+    assert_eq!(rendered, "let x = 7\nin\n  x");
 }
 
 /// render --as authoring rejects an output path that doesn't end in .taca.

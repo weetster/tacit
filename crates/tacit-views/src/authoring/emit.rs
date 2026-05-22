@@ -21,7 +21,7 @@ pub fn emit_authoring(node: &Node, sidecar: Option<&SidecarNode>) -> String {
         import_aliases: sidecar.and_then(|s| s.import_aliases.clone()),
         export_aliases: sidecar.and_then(|s| s.export_aliases.clone()),
     };
-    ctx.emit_expr(node, sidecar, &mut out);
+    ctx.emit_expr(node, sidecar, 0, &mut out);
     out
 }
 
@@ -36,24 +36,36 @@ struct EmitCtx {
 }
 
 impl EmitCtx {
-    fn emit_expr(&mut self, node: &Node, sc: Option<&SidecarNode>, out: &mut String) {
+    fn emit_expr(
+        &mut self,
+        node: &Node,
+        sc: Option<&SidecarNode>,
+        indent: usize,
+        out: &mut String,
+    ) {
         match node {
-            Node::Lam { body } => self.emit_lam(body, sc, out),
-            Node::Let { rhs, body } => self.emit_let(rhs, body, sc, out),
-            Node::Rec { bindings, body } => self.emit_rec(bindings, body, sc, out),
-            Node::Module { bindings } => self.emit_module(bindings, sc, out),
+            Node::Lam { body } => self.emit_lam(body, sc, indent, out),
+            Node::Let { rhs, body } => self.emit_let(rhs, body, sc, indent, out),
+            Node::Rec { bindings, body } => self.emit_rec(bindings, body, sc, indent, out),
+            Node::Module { bindings } => self.emit_module(bindings, sc, indent, out),
             Node::Unit {
                 imports,
                 exports,
                 defs,
-            } => self.emit_unit(imports, exports, defs, sc, out),
-            Node::If { cond, then, else_ } => self.emit_if(cond, then, else_, sc, out),
-            Node::Match { scrutinee, arms } => self.emit_match(scrutinee, arms, sc, out),
-            _ => self.emit_app_expr(node, sc, out),
+            } => self.emit_unit(imports, exports, defs, sc, indent, out),
+            Node::If { cond, then, else_ } => self.emit_if(cond, then, else_, sc, indent, out),
+            Node::Match { scrutinee, arms } => self.emit_match(scrutinee, arms, sc, indent, out),
+            _ => self.emit_app_expr(node, sc, indent, out),
         }
     }
 
-    fn emit_lam(&mut self, body: &Node, sc: Option<&SidecarNode>, out: &mut String) {
+    fn emit_lam(
+        &mut self,
+        body: &Node,
+        sc: Option<&SidecarNode>,
+        indent: usize,
+        out: &mut String,
+    ) {
         let name = sc
             .and_then(|s| s.binder.as_deref())
             .map(|s| s.to_string())
@@ -65,12 +77,24 @@ impl EmitCtx {
         let old_depth = self.lam_let_depth;
         self.lam_let_depth += 1;
         let body_sc = sc.and_then(|s| s.child(0));
-        self.emit_expr(body, body_sc, out);
+        if prefers_multiline(body) {
+            newline_and_indent(out, indent + 2);
+            self.emit_expr(body, body_sc, indent + 2, out);
+        } else {
+            self.emit_expr(body, body_sc, indent, out);
+        }
         self.lam_let_depth = old_depth;
         self.stack.pop();
     }
 
-    fn emit_let(&mut self, rhs: &Node, body: &Node, sc: Option<&SidecarNode>, out: &mut String) {
+    fn emit_let(
+        &mut self,
+        rhs: &Node,
+        body: &Node,
+        sc: Option<&SidecarNode>,
+        indent: usize,
+        out: &mut String,
+    ) {
         let name = sc
             .and_then(|s| s.binder.as_deref())
             .map(|s| s.to_string())
@@ -92,21 +116,35 @@ impl EmitCtx {
             out.push_str("let ");
             out.push_str(&name);
             out.push(':');
-            self.emit_expr(type_, type_sc, out);
-            out.push_str(" = ");
-            self.emit_expr(inner_rhs, inner_rhs_sc, out);
+            self.emit_expr(type_, type_sc, indent, out);
+            if prefers_multiline(inner_rhs) {
+                out.push_str(" =");
+                newline_and_indent(out, indent + 2);
+                self.emit_expr(inner_rhs, inner_rhs_sc, indent + 2, out);
+            } else {
+                out.push_str(" = ");
+                self.emit_expr(inner_rhs, inner_rhs_sc, indent, out);
+            }
         } else {
             let rhs_sc = sc.and_then(|s| s.child(0));
             out.push_str("let ");
             out.push_str(&name);
-            out.push_str(" = ");
-            self.emit_expr(rhs, rhs_sc, out);
+            if prefers_multiline(rhs) {
+                out.push_str(" =");
+                newline_and_indent(out, indent + 2);
+                self.emit_expr(rhs, rhs_sc, indent + 2, out);
+            } else {
+                out.push_str(" = ");
+                self.emit_expr(rhs, rhs_sc, indent, out);
+            }
         }
 
-        out.push_str(" in ");
+        newline_and_indent(out, indent);
+        out.push_str("in");
+        newline_and_indent(out, indent + 2);
         let body_sc = sc.and_then(|s| s.child(1));
         self.stack.push(name);
-        self.emit_expr(body, body_sc, out);
+        self.emit_expr(body, body_sc, indent + 2, out);
         self.lam_let_depth = old_depth;
         self.stack.pop();
     }
@@ -116,6 +154,7 @@ impl EmitCtx {
         bindings: &[Node],
         body: &Node,
         sc: Option<&SidecarNode>,
+        indent: usize,
         out: &mut String,
     ) {
         let n = bindings.len();
@@ -131,26 +170,37 @@ impl EmitCtx {
         }
 
         out.push_str("rec {");
+        let item_indent = indent + 2;
         for (k, (name, binding)) in names.iter().zip(bindings.iter()).enumerate() {
-            if k > 0 {
-                out.push_str("; ");
-            }
+            newline_and_indent(out, item_indent);
             out.push_str(name);
             out.push_str(" = ");
             let b_sc = sc.and_then(|s| s.child(k));
-            self.emit_expr(binding, b_sc, out);
+            self.emit_expr(binding, b_sc, item_indent, out);
+            if k + 1 < n {
+                out.push(';');
+            }
         }
-        out.push_str("} in ");
+        newline_and_indent(out, indent);
+        out.push('}');
+        out.push_str(" in");
+        newline_and_indent(out, indent + 2);
 
         let body_sc = sc.and_then(|s| s.child(n));
-        self.emit_expr(body, body_sc, out);
+        self.emit_expr(body, body_sc, indent + 2, out);
 
         for _ in 0..n {
             self.stack.pop();
         }
     }
 
-    fn emit_module(&mut self, bindings: &[Node], sc: Option<&SidecarNode>, out: &mut String) {
+    fn emit_module(
+        &mut self,
+        bindings: &[Node],
+        sc: Option<&SidecarNode>,
+        indent: usize,
+        out: &mut String,
+    ) {
         let n = bindings.len();
         let names: Vec<String> = if let Some(binders) = sc.and_then(|s| s.binders.as_ref()) {
             binders.clone()
@@ -163,15 +213,18 @@ impl EmitCtx {
         }
 
         out.push_str("module {");
+        let item_indent = indent + 2;
         for (k, (name, binding)) in names.iter().zip(bindings.iter()).enumerate() {
-            if k > 0 {
-                out.push_str("; ");
-            }
+            newline_and_indent(out, item_indent);
             out.push_str(name);
             out.push_str(" = ");
             let b_sc = sc.and_then(|s| s.child(k));
-            self.emit_expr(binding, b_sc, out);
+            self.emit_expr(binding, b_sc, item_indent, out);
+            if k + 1 < n {
+                out.push(';');
+            }
         }
+        newline_and_indent(out, indent);
         out.push('}');
 
         for _ in 0..n {
@@ -185,6 +238,7 @@ impl EmitCtx {
         exports: &[Node],
         defs: &[Node],
         sc: Option<&SidecarNode>,
+        indent: usize,
         out: &mut String,
     ) {
         let unit_alias = sc.and_then(|s| s.unit_alias.as_deref()).unwrap_or("Unit");
@@ -192,15 +246,17 @@ impl EmitCtx {
         out.push_str(unit_alias);
         out.push_str(" {");
 
-        let mut first = true;
+        let item_indent = indent + 2;
+        let mut wrote_entry = false;
         let mut ordered_imports: Vec<&Node> = imports.iter().collect();
         ordered_imports.sort_by_key(|entry| unit_entry_hash(entry));
         for import in ordered_imports {
             if let Node::Import { hash, sig } = import {
-                if !first {
-                    out.push_str("; ");
+                if wrote_entry {
+                    out.push(';');
                 }
-                first = false;
+                newline_and_indent(out, item_indent);
+                wrote_entry = true;
                 let alias = self
                     .import_alias(hash)
                     .unwrap_or_else(|| synthetic_hash_name("import", hash));
@@ -217,10 +273,11 @@ impl EmitCtx {
             } = import
             {
                 let hash = hash_hex(import);
-                if !first {
-                    out.push_str("; ");
+                if wrote_entry {
+                    out.push(';');
                 }
-                first = false;
+                newline_and_indent(out, item_indent);
+                wrote_entry = true;
                 let alias = self
                     .import_alias(&hash)
                     .unwrap_or_else(|| synthetic_hash_name("host_import", &hash));
@@ -242,10 +299,11 @@ impl EmitCtx {
         ordered_states.sort_by_key(|state| hash_hex(state));
         for state in ordered_states {
             if let Node::State { name, type_ } = state {
-                if !first {
-                    out.push_str("; ");
+                if wrote_entry {
+                    out.push(';');
                 }
-                first = false;
+                newline_and_indent(out, item_indent);
+                wrote_entry = true;
                 out.push_str("state ");
                 out.push_str(name);
                 out.push_str(" = ");
@@ -258,10 +316,11 @@ impl EmitCtx {
         ordered_defs.sort_by(|a, b| a.0.cmp(&b.0));
         for (hash, def) in ordered_defs {
             if let Node::Def { sig, body } = def {
-                if !first {
-                    out.push_str("; ");
+                if wrote_entry {
+                    out.push(';');
                 }
-                first = false;
+                newline_and_indent(out, item_indent);
+                wrote_entry = true;
                 if let Some(visibility) = export_vis.get(hash.as_str()) {
                     out.push_str("export ");
                     out.push_str(visibility);
@@ -276,11 +335,18 @@ impl EmitCtx {
                 out.push_str(&alias);
                 out.push_str(" : ");
                 emit_sig_type(sig, out);
-                out.push_str(" = ");
-                self.emit_expr(body, sc, out);
+                if prefers_multiline(body) {
+                    out.push_str(" =");
+                    newline_and_indent(out, item_indent + 2);
+                    self.emit_expr(body, sc, item_indent + 2, out);
+                } else {
+                    out.push_str(" = ");
+                    self.emit_expr(body, sc, item_indent, out);
+                }
             }
         }
 
+        newline_and_indent(out, indent);
         out.push('}');
     }
 
@@ -290,14 +356,15 @@ impl EmitCtx {
         then: &Node,
         else_: &Node,
         sc: Option<&SidecarNode>,
+        indent: usize,
         out: &mut String,
     ) {
         out.push_str("if ");
-        self.emit_app_expr(cond, sc.and_then(|s| s.child(0)), out);
+        self.emit_app_expr(cond, sc.and_then(|s| s.child(0)), indent, out);
         out.push_str(" then ");
-        self.emit_app_expr(then, sc.and_then(|s| s.child(1)), out);
+        self.emit_app_expr(then, sc.and_then(|s| s.child(1)), indent, out);
         out.push_str(" else ");
-        self.emit_expr(else_, sc.and_then(|s| s.child(2)), out);
+        self.emit_expr(else_, sc.and_then(|s| s.child(2)), indent, out);
     }
 
     fn emit_match(
@@ -305,19 +372,20 @@ impl EmitCtx {
         scrutinee: &Node,
         arms: &[Node],
         sc: Option<&SidecarNode>,
+        indent: usize,
         out: &mut String,
     ) {
         out.push_str("match ");
-        self.emit_app_expr(scrutinee, sc.and_then(|s| s.child(0)), out);
+        self.emit_app_expr(scrutinee, sc.and_then(|s| s.child(0)), indent, out);
         out.push_str(" with");
         for (i, arm) in arms.iter().enumerate() {
             out.push(' ');
             let arm_sc = sc.and_then(|s| s.child(i + 1));
-            self.emit_arm(arm, arm_sc, out);
+            self.emit_arm(arm, arm_sc, indent, out);
         }
     }
 
-    fn emit_arm(&mut self, arm: &Node, sc: Option<&SidecarNode>, out: &mut String) {
+    fn emit_arm(&mut self, arm: &Node, sc: Option<&SidecarNode>, indent: usize, out: &mut String) {
         let Node::Arm { pattern, body } = arm else {
             out.push_str("| _ => _");
             return;
@@ -334,7 +402,7 @@ impl EmitCtx {
             self.stack.push(name.clone());
         }
         let body_sc = sc.and_then(|s| s.child(1));
-        self.emit_expr(body, body_sc, out);
+        self.emit_expr(body, body_sc, indent, out);
         self.stack.truncate(save_len);
     }
 
@@ -342,7 +410,13 @@ impl EmitCtx {
     // Application-level and atoms
     // -------------------------------------------------------------------------
 
-    fn emit_app_expr(&mut self, node: &Node, sc: Option<&SidecarNode>, out: &mut String) {
+    fn emit_app_expr(
+        &mut self,
+        node: &Node,
+        sc: Option<&SidecarNode>,
+        indent: usize,
+        out: &mut String,
+    ) {
         match node {
             Node::App { fn_, arg } => {
                 // App sidecar children: [fn_sc, arg_sc].
@@ -351,24 +425,24 @@ impl EmitCtx {
                 // Function position: another App is fine (left-assoc); structural forms need parens.
                 if needs_parens_as_fn(fn_) {
                     out.push('(');
-                    self.emit_expr(fn_, fn_sc, out);
+                    self.emit_expr(fn_, fn_sc, indent, out);
                     out.push(')');
                 } else {
-                    self.emit_app_expr(fn_, fn_sc, out);
+                    self.emit_app_expr(fn_, fn_sc, indent, out);
                 }
                 out.push(' ');
                 if state_primitive_needs_field_arg(fn_) {
                     if let Node::Sym { name } = arg.as_ref() {
                         out.push_str(name);
                     } else {
-                        self.emit_proj_atom(arg, arg_sc, out);
+                        self.emit_proj_atom(arg, arg_sc, indent, out);
                     }
                 } else if needs_parens_as_arg(arg) {
                     out.push('(');
-                    self.emit_expr(arg, arg_sc, out);
+                    self.emit_expr(arg, arg_sc, indent, out);
                     out.push(')');
                 } else {
-                    self.emit_proj_atom(arg, arg_sc, out);
+                    self.emit_proj_atom(arg, arg_sc, indent, out);
                 }
             }
             Node::Ctor { name, args } => {
@@ -379,37 +453,49 @@ impl EmitCtx {
                     let arg_sc = sc.and_then(|s| s.child(k));
                     if needs_parens_as_arg(arg) {
                         out.push('(');
-                        self.emit_expr(arg, arg_sc, out);
+                        self.emit_expr(arg, arg_sc, indent, out);
                         out.push(')');
                     } else {
-                        self.emit_proj_atom(arg, arg_sc, out);
+                        self.emit_proj_atom(arg, arg_sc, indent, out);
                     }
                 }
             }
-            _ => self.emit_proj_atom(node, sc, out),
+            _ => self.emit_proj_atom(node, sc, indent, out),
         }
     }
 
-    fn emit_proj_atom(&mut self, node: &Node, sc: Option<&SidecarNode>, out: &mut String) {
+    fn emit_proj_atom(
+        &mut self,
+        node: &Node,
+        sc: Option<&SidecarNode>,
+        indent: usize,
+        out: &mut String,
+    ) {
         match node {
             Node::Proj { record, field } => {
                 let rec_sc = sc.and_then(|s| s.child(0));
                 // record needs parens if it's a structural form (rare but possible).
                 if needs_parens_as_fn(record) {
                     out.push('(');
-                    self.emit_expr(record, rec_sc, out);
+                    self.emit_expr(record, rec_sc, indent, out);
                     out.push(')');
                 } else {
-                    self.emit_proj_atom(record, rec_sc, out);
+                    self.emit_proj_atom(record, rec_sc, indent, out);
                 }
                 out.push('.');
                 out.push_str(field);
             }
-            _ => self.emit_atom(node, sc, out),
+            _ => self.emit_atom(node, sc, indent, out),
         }
     }
 
-    fn emit_atom(&mut self, node: &Node, sc: Option<&SidecarNode>, out: &mut String) {
+    fn emit_atom(
+        &mut self,
+        node: &Node,
+        sc: Option<&SidecarNode>,
+        indent: usize,
+        out: &mut String,
+    ) {
         match node {
             Node::Var { index } => {
                 let i = *index as usize;
@@ -472,7 +558,7 @@ impl EmitCtx {
                         out.push(':');
                         // Child index in sidecar for records: 2*canon_idx+1 (val after sym).
                         let val_sc = sc.and_then(|s| s.child(2 * canon_idx + 1));
-                        self.emit_as_arg(val, val_sc, out);
+                        self.emit_as_arg(val, val_sc, indent, out);
                     }
                 }
                 out.push('}');
@@ -480,9 +566,9 @@ impl EmitCtx {
             Node::Ann { expr, type_ } => {
                 // Standalone ann: (E : T)
                 out.push('(');
-                self.emit_expr(expr, sc.and_then(|s| s.child(0)), out);
+                self.emit_expr(expr, sc.and_then(|s| s.child(0)), indent, out);
                 out.push(':');
-                self.emit_expr(type_, sc.and_then(|s| s.child(1)), out);
+                self.emit_expr(type_, sc.and_then(|s| s.child(1)), indent, out);
                 out.push(')');
             }
             Node::Ctor { name, args } if args.is_empty() => {
@@ -510,20 +596,26 @@ impl EmitCtx {
             // Structural forms that shouldn't appear as bare atoms — wrap in parens.
             other => {
                 out.push('(');
-                self.emit_expr(other, sc, out);
+                self.emit_expr(other, sc, indent, out);
                 out.push(')');
             }
         }
     }
 
     /// Emit a node in argument position (parens if non-atomic).
-    fn emit_as_arg(&mut self, node: &Node, sc: Option<&SidecarNode>, out: &mut String) {
+    fn emit_as_arg(
+        &mut self,
+        node: &Node,
+        sc: Option<&SidecarNode>,
+        indent: usize,
+        out: &mut String,
+    ) {
         if needs_parens_as_arg(node) {
             out.push('(');
-            self.emit_expr(node, sc, out);
+            self.emit_expr(node, sc, indent, out);
             out.push(')');
         } else {
-            self.emit_proj_atom(node, sc, out);
+            self.emit_proj_atom(node, sc, indent, out);
         }
     }
 
@@ -617,6 +709,20 @@ fn emit_pattern_counted(
             vec![]
         }
     }
+}
+
+fn newline_and_indent(out: &mut String, indent: usize) {
+    out.push('\n');
+    for _ in 0..indent {
+        out.push(' ');
+    }
+}
+
+fn prefers_multiline(node: &Node) -> bool {
+    matches!(
+        node,
+        Node::Let { .. } | Node::Rec { .. } | Node::Module { .. } | Node::Unit { .. }
+    )
 }
 
 fn needs_parens_as_fn(node: &Node) -> bool {

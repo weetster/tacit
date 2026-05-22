@@ -127,6 +127,8 @@ fn parses_order_independent_private_local_reference() {
     let src = "unit Math { export public use_id : Int -> Int = lambda x. id x; private id : Int -> Int = lambda y. y }";
     let (node, sidecar) = parse_authoring(src.as_bytes()).expect("parse unit");
     let rendered = emit_authoring(&node, Some(&sidecar));
+    assert!(rendered.starts_with("unit Math {\n  "), "{rendered}");
+    assert!(rendered.ends_with("\n}"), "{rendered}");
     assert!(rendered.contains("private id : Int -> Int = lambda"));
     assert!(rendered.contains("export public use_id : Int -> Int = lambda"));
 }
