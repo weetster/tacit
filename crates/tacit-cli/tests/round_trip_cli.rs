@@ -1184,7 +1184,7 @@ fn test_package_json_reports_signature_mismatch_as_compile_fail() {
         defs: vec![def],
     };
     std::fs::write(d.join("src/tests.tac"), emit(&unit)).unwrap();
-    write_test_manifest(d, "not_bool", &def_hash, "");
+    write_test_manifest(d, "not_bool", &def_hash, "", "");
 
     let out = tacit(&["test", ".", "--format", "json"], d);
     assert_eq!(out.status.code(), Some(2));
@@ -1210,7 +1210,7 @@ fn test_package_json_reports_effect_violation() {
         defs: vec![def],
     };
     std::fs::write(d.join("src/tests.tac"), emit(&unit)).unwrap();
-    write_test_manifest(d, "io_test", &def_hash, "");
+    write_test_manifest(d, "io_test", &def_hash, "", "");
 
     let out = tacit(&["test", ".", "--format", "json"], d);
     assert_eq!(out.status.code(), Some(2));
@@ -1220,6 +1220,85 @@ fn test_package_json_reports_effect_violation() {
     assert_eq!(
         json["results"][0]["declared_effects"],
         serde_json::json!(["IO"])
+    );
+}
+
+#[cfg(feature = "llvm")]
+#[test]
+fn test_package_json_runs_div_test_with_default_budget() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let d = dir.path();
+    std::fs::create_dir_all(d.join("src")).unwrap();
+    let def = cli_loop_bool_def(3);
+    let def_hash = cli_hash(&def);
+    let unit = Node::Unit {
+        imports: vec![],
+        exports: vec![],
+        defs: vec![def],
+    };
+    std::fs::write(d.join("src/tests.tac"), emit(&unit)).unwrap();
+    write_test_manifest(d, "div_test", &def_hash, "\"Div\"", "");
+
+    let out = tacit(&["test", ".", "--format", "json"], d);
+    assert_eq!(out.status.code(), Some(0));
+    let json: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(json["summary"]["pass"], 1);
+    assert_eq!(json["results"][0]["status"], "pass");
+    assert_eq!(json["results"][0]["step_budget"], 100000);
+}
+
+#[cfg(feature = "llvm")]
+#[test]
+fn test_package_json_reports_div_effect_violation_without_opt_in() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let d = dir.path();
+    std::fs::create_dir_all(d.join("src")).unwrap();
+    let def = cli_loop_bool_def(1);
+    let def_hash = cli_hash(&def);
+    let unit = Node::Unit {
+        imports: vec![],
+        exports: vec![],
+        defs: vec![def],
+    };
+    std::fs::write(d.join("src/tests.tac"), emit(&unit)).unwrap();
+    write_test_manifest(d, "missing_div", &def_hash, "", "");
+
+    let out = tacit(&["test", ".", "--format", "json"], d);
+    assert_eq!(out.status.code(), Some(2));
+    let json: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(json["summary"]["effect_fail"], 1);
+    assert_eq!(json["results"][0]["status"], "effect-fail");
+    assert_eq!(
+        json["results"][0]["declared_effects"],
+        serde_json::json!(["Div"])
+    );
+}
+
+#[cfg(feature = "llvm")]
+#[test]
+fn test_package_json_reports_step_budget_exceeded() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let d = dir.path();
+    std::fs::create_dir_all(d.join("src")).unwrap();
+    let def = cli_loop_bool_def(3);
+    let def_hash = cli_hash(&def);
+    let unit = Node::Unit {
+        imports: vec![],
+        exports: vec![],
+        defs: vec![def],
+    };
+    std::fs::write(d.join("src/tests.tac"), emit(&unit)).unwrap();
+    write_test_manifest(d, "budgeted_div", &def_hash, "\"Div\"", "step_budget = 2\n");
+
+    let out = tacit(&["test", ".", "--format", "json"], d);
+    assert_eq!(out.status.code(), Some(2));
+    let json: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(json["summary"]["error"], 1);
+    assert_eq!(json["results"][0]["status"], "error");
+    assert_eq!(json["results"][0]["step_budget"], 2);
+    assert_eq!(
+        json["results"][0]["diagnostics"]["errors"][0]["kind"],
+        "test-step-budget-exceeded"
     );
 }
 
@@ -1237,7 +1316,7 @@ fn test_package_json_reports_runtime_error() {
         defs: vec![def],
     };
     std::fs::write(d.join("src/tests.tac"), emit(&unit)).unwrap();
-    write_test_manifest(d, "runtime_error", &def_hash, "");
+    write_test_manifest(d, "runtime_error", &def_hash, "", "");
 
     let out = tacit(&["test", ".", "--format", "json"], d);
     assert_eq!(out.status.code(), Some(2));
@@ -1328,11 +1407,11 @@ fn write_cli_test_package(
 
     std::fs::write(d.join("src/provider.tac"), emit(&provider_unit)).unwrap();
     std::fs::write(d.join("src/tests.tac"), emit(&test_unit)).unwrap();
-    write_test_manifest(d, "provider_matches", &test_hash, "");
+    write_test_manifest(d, "provider_matches", &test_hash, "", "");
     test_hash
 }
 
-fn write_test_manifest(d: &std::path::Path, name: &str, target: &str, effects: &str) {
+fn write_test_manifest(d: &std::path::Path, name: &str, target: &str, effects: &str, extras: &str) {
     let effects = if effects.is_empty() {
         String::new()
     } else {
@@ -1341,8 +1420,8 @@ fn write_test_manifest(d: &std::path::Path, name: &str, target: &str, effects: &
     std::fs::write(
         d.join("tacit.toml"),
         format!(
-            "[package]\nname = \"cli-test\"\n\n[[tests]]\nname = \"{}\"\ntarget = \"blake3:{}\"\n{}",
-            name, target, effects
+            "[package]\nname = \"cli-test\"\n\n[[tests]]\nname = \"{}\"\ntarget = \"blake3:{}\"\n{}{}",
+            name, target, effects, extras
         ),
     )
     .unwrap();
@@ -1423,6 +1502,64 @@ fn cli_bool_def_with_effect<const N: usize>(atoms: [&str; N]) -> Node {
     Node::Def {
         sig: Box::new(cli_bool_sig_with_effect(atoms)),
         body: Box::new(cli_eq_ints("1", "1")),
+    }
+}
+
+#[cfg(feature = "llvm")]
+fn cli_loop_bool_def(limit: i64) -> Node {
+    let loop_state = Node::Var { index: 0 };
+    let step_expr = Node::App {
+        fn_: Box::new(Node::Sym {
+            name: "loop-step".into(),
+        }),
+        arg: Box::new(Node::App {
+            fn_: Box::new(Node::App {
+                fn_: Box::new(Node::Sym { name: "add".into() }),
+                arg: Box::new(loop_state.clone()),
+            }),
+            arg: Box::new(Node::Int { value: "1".into() }),
+        }),
+    };
+    let exit_expr = Node::App {
+        fn_: Box::new(Node::Sym {
+            name: "loop-exit".into(),
+        }),
+        arg: Box::new(loop_state.clone()),
+    };
+    let loop_expr = Node::App {
+        fn_: Box::new(Node::App {
+            fn_: Box::new(Node::Sym {
+                name: "loop".into(),
+            }),
+            arg: Box::new(Node::Int { value: "0".into() }),
+        }),
+        arg: Box::new(Node::Lam {
+            body: Box::new(Node::If {
+                cond: Box::new(Node::App {
+                    fn_: Box::new(Node::App {
+                        fn_: Box::new(Node::Sym { name: "lt".into() }),
+                        arg: Box::new(loop_state),
+                    }),
+                    arg: Box::new(Node::Int {
+                        value: limit.to_string(),
+                    }),
+                }),
+                then: Box::new(step_expr),
+                else_: Box::new(exit_expr),
+            }),
+        }),
+    };
+    Node::Def {
+        sig: Box::new(cli_bool_sig_with_effect(["Div"])),
+        body: Box::new(Node::App {
+            fn_: Box::new(Node::App {
+                fn_: Box::new(Node::Sym { name: "eq".into() }),
+                arg: Box::new(loop_expr),
+            }),
+            arg: Box::new(Node::Int {
+                value: limit.to_string(),
+            }),
+        }),
     }
 }
 

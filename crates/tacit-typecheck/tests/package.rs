@@ -306,7 +306,7 @@ fn manifest_schema_errors_use_reserved_diagnostic_kinds() {
 }
 
 #[test]
-fn manifest_tests_parse_effect_policy_and_reject_div() {
+fn manifest_tests_parse_effect_policy_and_step_budget() {
     let dir = tempfile::tempdir().unwrap();
     let test_def = const_bool_def(true);
     let test_hash = hash(&test_def);
@@ -322,7 +322,8 @@ fn manifest_tests_parse_effect_policy_and_reject_div() {
             r#"[[tests]]
 name = "effectful"
 target = "blake3:{}"
-effects = ["Alloc", "IO", "Mut"]
+effects = ["Alloc", "Div", "IO", "Mut"]
+step_budget = 123
 "#,
             test_hash
         ),
@@ -337,22 +338,24 @@ effects = ["Alloc", "IO", "Mut"]
         .iter()
         .map(ToString::to_string)
         .collect();
-    assert_eq!(atoms, vec!["Alloc", "IO", "Mut"]);
+    assert_eq!(atoms, vec!["Alloc", "Div", "IO", "Mut"]);
+    assert_eq!(package.manifest.tests[0].step_budget, Some(123));
 
     std::fs::write(
         dir.path().join("tacit.toml"),
         format!(
             r#"[[tests]]
-name = "div"
+name = "bad-budget"
 target = "blake3:{}"
 effects = ["Div"]
+step_budget = 0
 "#,
             test_hash
         ),
     )
     .unwrap();
-    let div = load_package(dir.path()).expect_err("Div is not manifest-allowed");
-    assert!(div.iter().any(|d| d.kind == "manifest-parse"));
+    let invalid = load_package(dir.path()).expect_err("zero budget is rejected");
+    assert!(invalid.iter().any(|d| d.kind == "manifest-parse"));
 }
 
 #[test]

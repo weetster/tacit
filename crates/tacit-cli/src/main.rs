@@ -22,6 +22,10 @@ use tacit_views::{emit_inspection, InspectFlags};
 mod pin;
 mod release;
 
+const DEFAULT_TEST_STEP_BUDGET: u64 = 100_000;
+#[cfg(feature = "llvm")]
+const TEST_STEP_BUDGET_EXIT_CODE: i32 = 124;
+
 #[derive(Parser)]
 #[command(
     name = "tacit",
@@ -1438,6 +1442,7 @@ struct TestResult {
     status: String,
     declared_effects: Vec<String>,
     allowed_effects: Vec<String>,
+    step_budget: Option<u64>,
     observed: TestObserved,
     diagnostics: DiagOutput,
 }
@@ -1649,7 +1654,7 @@ fn run_one_package_test(
         }
     }
 
-    if declared.atoms.contains(&EffAtom::Div) || !declared.is_subset_of(&test.effects) {
+    if !declared.is_subset_of(&test.effects) {
         return effect_fail_result(
             test,
             unit_hash.clone(),
@@ -1685,7 +1690,13 @@ fn run_one_package_test(
         }
     };
 
-    match compile_and_run_test(&entry.expression, package_hash, &test.target, build_dir) {
+    match compile_and_run_test(
+        &entry.expression,
+        package_hash,
+        &test.target,
+        build_dir,
+        resolved_step_budget(test, &declared),
+    ) {
         Ok(value) => TestResult {
             name: test.name.clone(),
             definition_hash: prefixed(&test.target),
@@ -1693,6 +1704,7 @@ fn run_one_package_test(
             status: if value { "pass" } else { "fail" }.to_string(),
             declared_effects: effect_strings(&declared),
             allowed_effects: effect_strings(&test.effects),
+            step_budget: resolved_step_budget(test, &declared),
             observed: TestObserved { bool: Some(value) },
             diagnostics: DiagOutput::new(Vec::new()),
         },
@@ -1709,6 +1721,7 @@ fn compile_and_run_test(
     package_hash: &str,
     target_hash: &str,
     build_dir: &Path,
+    step_budget: Option<u64>,
 ) -> Result<bool, Box<Diagnostic>> {
     let module_name = format!("test_{}_{}", &package_hash[..12], &target_hash[..12]);
     let output = build_dir.join(format!("test-{}", &target_hash[..12]));
@@ -1718,6 +1731,7 @@ fn compile_and_run_test(
         Some(output.clone()),
         false,
         Some(build_dir),
+        step_budget,
     )
     .map_err(|error| {
         Box::new(test_diag(
@@ -1743,6 +1757,19 @@ fn compile_and_run_test(
     match status.code() {
         Some(1) => Ok(true),
         Some(0) => Ok(false),
+        Some(code) if code == TEST_STEP_BUDGET_EXIT_CODE => Err(Box::new(test_diag(
+            "test-step-budget-exceeded",
+            match step_budget {
+                Some(step_budget) => format!(
+                    "test blake3:{} exceeded step budget {}",
+                    target_hash, step_budget
+                ),
+                None => format!("test blake3:{} exceeded its step budget", target_hash),
+            },
+            Some(package_hash),
+            None,
+            None,
+        ))),
         Some(code) => Err(Box::new(test_diag(
             "test-runtime-error",
             format!(
@@ -1772,6 +1799,7 @@ fn compile_and_run_test(
     package_hash: &str,
     target_hash: &str,
     _build_dir: &Path,
+    _step_budget: Option<u64>,
 ) -> Result<bool, Box<Diagnostic>> {
     Err(Box::new(test_diag(
         "test-compile-failure",
@@ -1867,6 +1895,7 @@ fn static_result(
         status: status.to_string(),
         declared_effects,
         allowed_effects: effect_strings(&test.effects),
+        step_budget: test.step_budget,
         observed: TestObserved { bool: None },
         diagnostics: DiagOutput::new(diags),
     }
@@ -2310,6 +2339,7 @@ fn cmd_compile_project(
             output,
             emit_llvm_ir,
             Some(&derived_root.join("build")),
+            None,
         )
     }
     #[cfg(not(feature = "llvm"))]
@@ -2326,7 +2356,7 @@ fn compile_with_llvm_node(
     output: Option<PathBuf>,
     emit_llvm_ir: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    compile_with_llvm_node_in_dir(node, module_name, output, emit_llvm_ir, None)
+    compile_with_llvm_node_in_dir(node, module_name, output, emit_llvm_ir, None, None)
 }
 
 #[cfg(feature = "llvm")]
@@ -2336,8 +2366,11 @@ fn compile_with_llvm_node_in_dir(
     output: Option<PathBuf>,
     emit_llvm_ir: bool,
     object_dir: Option<&Path>,
+    step_budget: Option<u64>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    use tacit_codegen::{compile_to_ir_string, compile_to_object};
+    use tacit_codegen::{
+        compile_to_ir_string, compile_to_object, compile_to_object_with_options, CompileOptions,
+    };
 
     if emit_llvm_ir {
         let ir = compile_to_ir_string(node, module_name)?;
@@ -2354,7 +2387,18 @@ fn compile_with_llvm_node_in_dir(
             _tmp = tempfile::tempdir()?;
             _tmp.path().join(format!("{}.o", module_name))
         };
-        compile_to_object(node, module_name, &obj_path)?;
+        if step_budget.is_some() {
+            compile_to_object_with_options(
+                node,
+                module_name,
+                &obj_path,
+                CompileOptions {
+                    loop_step_budget: step_budget,
+                },
+            )?;
+        } else {
+            compile_to_object(node, module_name, &obj_path)?;
+        }
 
         let linker = pick_linker()
             .ok_or("no C linker found (cc/clang/gcc); install build-essential or Xcode CLT")?;
@@ -2369,6 +2413,14 @@ fn compile_with_llvm_node_in_dir(
         }
     }
     Ok(())
+}
+
+fn resolved_step_budget(test: &PackageTest, declared: &EffSet) -> Option<u64> {
+    if declared.atoms.contains(&EffAtom::Div) {
+        Some(test.step_budget.unwrap_or(DEFAULT_TEST_STEP_BUDGET))
+    } else {
+        test.step_budget
+    }
 }
 
 #[cfg(feature = "llvm")]

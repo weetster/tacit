@@ -5,6 +5,9 @@ These packages demonstrate the Stage 5 `[[tests]]` manifest surface.
 - `pure/` contains a pure `Bool` test.
 - `effectful/` shows a manifest entry that explicitly opts in to allocation
   and mutation effects for a runnable test target.
+- `Div` targets are also supported when the manifest opts in to `effects =
+  ["Div"]`; `[[tests]].step_budget` can lower or raise the per-test loop
+  budget, and omitted budgets default to a bounded runner limit.
 
 Run either package with:
 

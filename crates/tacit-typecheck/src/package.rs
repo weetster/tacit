@@ -61,6 +61,7 @@ pub struct PackageTest {
     pub name: String,
     pub target: String,
     pub effects: EffSet,
+    pub step_budget: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -1425,7 +1426,7 @@ fn parse_tests(value: &toml::Value, path: &Path) -> Result<Vec<PackageTest>, Dia
     for (index, value) in entries.iter().enumerate() {
         let table = expect_table(value, path, &format!("[[tests]] entry {index}"))?;
         for key in table.keys() {
-            if !matches!(key.as_str(), "name" | "target" | "effects") {
+            if !matches!(key.as_str(), "name" | "target" | "effects" | "step_budget") {
                 return Err(package_diag(
                     "manifest-unknown-field",
                     format!("[[tests]] entry {} contains unknown field {}", index, key),
@@ -1467,10 +1468,15 @@ fn parse_tests(value: &toml::Value, path: &Path) -> Result<Vec<PackageTest>, Dia
             .map(|value| parse_test_effects(value, path, &name))
             .transpose()?
             .unwrap_or_default();
+        let step_budget = table
+            .get("step_budget")
+            .map(|value| parse_test_step_budget(value, path, &name))
+            .transpose()?;
         out.push(PackageTest {
             name,
             target,
             effects,
+            step_budget,
         });
     }
     Ok(out)
@@ -1500,13 +1506,14 @@ fn parse_test_effects(value: &toml::Value, path: &Path, name: &str) -> Result<Ef
         };
         let (atom, rank) = match atom {
             "Alloc" => (EffAtom::Alloc, 0),
-            "IO" => (EffAtom::IO, 1),
-            "Mut" => (EffAtom::Mut, 2),
+            "Div" => (EffAtom::Div, 1),
+            "IO" => (EffAtom::IO, 2),
+            "Mut" => (EffAtom::Mut, 3),
             other => {
                 return Err(package_diag(
                     "manifest-parse",
                     format!(
-                        "[[tests]].{} effects contains {}; valid atoms are Alloc, IO, Mut",
+                        "[[tests]].{} effects contains {}; valid atoms are Alloc, Div, IO, Mut",
                         name, other
                     ),
                     Some(name),
@@ -1519,7 +1526,7 @@ fn parse_test_effects(value: &toml::Value, path: &Path, name: &str) -> Result<Ef
             return Err(package_diag(
                 "manifest-parse",
                 format!(
-                    "[[tests]].{} effects must be sorted without duplicates as Alloc, IO, Mut",
+                    "[[tests]].{} effects must be sorted without duplicates as Alloc, Div, IO, Mut",
                     name
                 ),
                 Some(name),
@@ -1531,6 +1538,37 @@ fn parse_test_effects(value: &toml::Value, path: &Path, name: &str) -> Result<Ef
         effects.atoms.insert(atom);
     }
     Ok(effects)
+}
+
+fn parse_test_step_budget(value: &toml::Value, path: &Path, name: &str) -> Result<u64, Diagnostic> {
+    let Some(step_budget) = value.as_integer() else {
+        return Err(package_diag(
+            "manifest-parse",
+            format!("[[tests]].{} step_budget must be a positive integer", name),
+            Some(name),
+            None,
+            Some(path),
+        ));
+    };
+    let Ok(step_budget) = u64::try_from(step_budget) else {
+        return Err(package_diag(
+            "manifest-parse",
+            format!("[[tests]].{} step_budget must be a positive integer", name),
+            Some(name),
+            None,
+            Some(path),
+        ));
+    };
+    if step_budget == 0 {
+        return Err(package_diag(
+            "manifest-parse",
+            format!("[[tests]].{} step_budget must be greater than zero", name),
+            Some(name),
+            None,
+            Some(path),
+        ));
+    }
+    Ok(step_budget)
 }
 
 fn validate_manifest_entries(manifest: &PackageManifest, graph: &ProjectGraph) -> Vec<Diagnostic> {

@@ -82,12 +82,27 @@ use crate::error::CodegenError;
 use crate::primitives::{ArithOp, CmpOp, PrimKind};
 
 type Result<T> = std::result::Result<T, CodegenError>;
+const TEST_STEP_BUDGET_EXIT_CODE: u64 = 124;
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct CompileOptions {
+    pub loop_step_budget: Option<u64>,
+}
 
 /// Top-level entry: build an `inkwell::Module` from a Tacit AST and emit it
 /// to an object file at `out_path`. Returns the path the object was written to.
 pub fn compile_to_object(node: &Node, module_name: &str, out_path: &Path) -> Result<()> {
+    compile_to_object_with_options(node, module_name, out_path, CompileOptions::default())
+}
+
+pub fn compile_to_object_with_options(
+    node: &Node,
+    module_name: &str,
+    out_path: &Path,
+    options: CompileOptions,
+) -> Result<()> {
     let context = Context::create();
-    let mut compiler = Compiler::new(&context, module_name);
+    let mut compiler = Compiler::new_with_options(&context, module_name, options);
     compiler.compile_program(node)?;
     compiler.write_object(out_path)
 }
@@ -120,6 +135,7 @@ pub struct Compiler<'ctx> {
     /// represented by `FunctionBinding::param_tys`.
     host_import_abis: std::collections::BTreeMap<String, HostImportBinding<'ctx>>,
     state_runtime: Option<StateRuntime<'ctx>>,
+    options: CompileOptions,
 }
 
 #[derive(Clone)]
@@ -417,6 +433,14 @@ struct LamSpec<'a> {
 
 impl<'ctx> Compiler<'ctx> {
     pub fn new(context: &'ctx Context, module_name: &str) -> Self {
+        Self::new_with_options(context, module_name, CompileOptions::default())
+    }
+
+    pub fn new_with_options(
+        context: &'ctx Context,
+        module_name: &str,
+        options: CompileOptions,
+    ) -> Self {
         let module = context.create_module(module_name);
         let builder = context.create_builder();
         Compiler {
@@ -427,6 +451,7 @@ impl<'ctx> Compiler<'ctx> {
             host_imports: std::collections::BTreeMap::new(),
             host_import_abis: std::collections::BTreeMap::new(),
             state_runtime: None,
+            options,
         }
     }
 
@@ -4004,6 +4029,40 @@ impl<'ctx> Compiler<'ctx> {
             .build_phi(state_llvm_ty, "loop_state")
             .map_err(|e| CodegenError::Llvm(e.to_string()))?;
         let state_val = state_phi.as_basic_value();
+        let budget_phi = if let Some(loop_step_budget) = self.options.loop_step_budget {
+            let budget_ok_bb = self.context.append_basic_block(cur_fn, "loop_budget_ok");
+            let budget_phi = self
+                .builder
+                .build_phi(self.context.i64_type(), "loop_budget")
+                .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+            let remaining = budget_phi.as_basic_value().into_int_value();
+            let has_budget = self
+                .builder
+                .build_int_compare(
+                    IntPredicate::NE,
+                    remaining,
+                    self.context.i64_type().const_zero(),
+                    "loop_has_budget",
+                )
+                .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+            let budget_exhausted_bb = self
+                .context
+                .append_basic_block(cur_fn, "loop_budget_exhausted");
+            self.builder
+                .build_conditional_branch(has_budget, budget_ok_bb, budget_exhausted_bb)
+                .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+            self.builder.position_at_end(budget_exhausted_bb);
+            self.emit_loop_budget_exceeded(cur_fn)?;
+            budget_phi.add_incoming(&[(
+                &self.context.i64_type().const_int(loop_step_budget, false)
+                    as &dyn BasicValue<'ctx>,
+                entry_bb,
+            )]);
+            self.builder.position_at_end(budget_ok_bb);
+            Some(budget_phi)
+        } else {
+            None
+        };
 
         let state_compiled = CompiledValue {
             ty: state_ty.clone(),
@@ -4050,6 +4109,17 @@ impl<'ctx> Compiler<'ctx> {
             .map_err(|e| CodegenError::Llvm(e.to_string()))?;
 
         self.builder.position_at_end(cont_bb);
+        if let Some(budget_phi) = &budget_phi {
+            let budget_next = self
+                .builder
+                .build_int_sub(
+                    budget_phi.as_basic_value().into_int_value(),
+                    self.context.i64_type().const_int(1, false),
+                    "loop_budget_next",
+                )
+                .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+            budget_phi.add_incoming(&[(&budget_next as &dyn BasicValue<'ctx>, cont_bb)]);
+        }
         self.builder
             .build_unconditional_branch(hdr_bb)
             .map_err(|e| CodegenError::Llvm(e.to_string()))?;
@@ -4064,6 +4134,25 @@ impl<'ctx> Compiler<'ctx> {
             ty: state_ty,
             value: next_value,
         })
+    }
+
+    fn emit_loop_budget_exceeded(&mut self, _cur_fn: FunctionValue<'ctx>) -> Result<()> {
+        let f = self.libc_exit();
+        let code = self
+            .context
+            .i32_type()
+            .const_int(TEST_STEP_BUDGET_EXIT_CODE, false);
+        self.builder
+            .build_call(
+                f,
+                &[BasicMetadataValueEnum::IntValue(code)],
+                "loop_budget_exit",
+            )
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        self.builder
+            .build_unreachable()
+            .map_err(|e| CodegenError::Llvm(e.to_string()))?;
+        Ok(())
     }
 
     /// `@loop-step value` / `@loop-exit value` → build the loop-directive
