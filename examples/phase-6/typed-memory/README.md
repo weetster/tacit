@@ -12,3 +12,11 @@ multi-byte typed loads and stores compose with the Stage 6 cast primitives.
 `register-file.tac` allocates a small `u32vec` register file, writes one
 register, and reads it back to demonstrate the uniform per-width primitive
 surface.
+
+`memory-bus-helper.tac` factors a `u8vec` "memory bus" into helper functions
+that take the vector handle as a parameter — a store helper that writes a
+32-bit word and a read helper that reads one byte. A typed vector handle is a
+call-local borrow (ADR 0098): it travels *down* the call tree as a
+direct-call argument but is never returned or stored. The program writes a
+32-bit value through the store helper and reads one byte back through the
+read helper; the result is that byte.

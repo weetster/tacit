@@ -216,6 +216,60 @@ impl fmt::Display for ValueTy {
     }
 }
 
+/// A typed-vector-handle parameter kind. A handle is a *call-local borrow*
+/// (ADR 0098): it may travel *down* the call tree as a direct-call argument,
+/// but it may not be returned, stored in a record, or captured by an escaping
+/// closure. Handles have no first-class `ValueTy` representation.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum HandleTy {
+    /// Writable byte buffer handle (`Buf`); a single machine word.
+    Buf,
+    /// Opaque `i64` vector handle (`I64Vec`); a single machine word.
+    I64Vec,
+    /// Length-carrying typed mutable vector handle; a two-word `(ptr, len)`
+    /// pair, the same representation as a `rec` hidden capture (ADR 0085).
+    Vec(FixedIntTy),
+}
+
+impl fmt::Display for HandleTy {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            HandleTy::Buf => write!(f, "Buf"),
+            HandleTy::I64Vec => write!(f, "I64Vec"),
+            HandleTy::Vec(elem) => write!(f, "{}vec", elem),
+        }
+    }
+}
+
+/// A direct-call function parameter: either a first-class value, or a
+/// call-local handle borrow (ADR 0098). Handles are not `ValueTy`s, so a
+/// parameter list is a `ParamTy` list rather than a `ValueTy` list. A handle
+/// parameter is only ever valid on a direct-call function; a function that
+/// declares one cannot be reified into a first-class closure value.
+#[derive(Clone, PartialEq, Eq, Debug)]
+enum ParamTy {
+    Value(ValueTy),
+    Handle(HandleTy),
+}
+
+impl ParamTy {
+    fn as_value(&self) -> Option<&ValueTy> {
+        match self {
+            ParamTy::Value(ty) => Some(ty),
+            ParamTy::Handle(_) => None,
+        }
+    }
+}
+
+impl fmt::Display for ParamTy {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ParamTy::Value(ty) => write!(f, "{}", ty),
+            ParamTy::Handle(handle) => write!(f, "{}", handle),
+        }
+    }
+}
+
 #[derive(Clone)]
 struct CompiledValue<'ctx> {
     ty: ValueTy,
@@ -237,6 +291,45 @@ impl<'ctx> CompiledValue<'ctx> {
             });
         }
         Ok(self.value.into_int_value())
+    }
+}
+
+/// A compiled call argument for a direct-call function: either a first-class
+/// value, or a call-local handle borrow lowered to its `(ptr[, len])` words.
+/// There is one internal handle calling convention (ADR 0098): a handle
+/// argument, a handle parameter, and a `rec` hidden handle capture all lower
+/// to the same words.
+enum CompiledArg<'ctx> {
+    Value(CompiledValue<'ctx>),
+    Handle {
+        ptr: PointerValue<'ctx>,
+        /// `Some` for typed vectors (which carry an explicit length), `None`
+        /// for `Buf` / `I64Vec`.
+        len: Option<IntValue<'ctx>>,
+        ty: HandleTy,
+    },
+}
+
+impl<'ctx> CompiledArg<'ctx> {
+    /// The parameter type this argument satisfies.
+    fn param_ty(&self) -> ParamTy {
+        match self {
+            CompiledArg::Value(v) => ParamTy::Value(v.ty.clone()),
+            CompiledArg::Handle { ty, .. } => ParamTy::Handle(*ty),
+        }
+    }
+
+    /// Append this argument's LLVM call word(s) to `out`.
+    fn push_call_words(&self, out: &mut Vec<BasicMetadataValueEnum<'ctx>>) {
+        match self {
+            CompiledArg::Value(v) => out.push(v.value.into()),
+            CompiledArg::Handle { ptr, len, .. } => {
+                out.push(BasicMetadataValueEnum::PointerValue(*ptr));
+                if let Some(len) = len {
+                    out.push(BasicMetadataValueEnum::IntValue(*len));
+                }
+            }
+        }
     }
 }
 
@@ -266,7 +359,7 @@ enum AsciiCase {
 #[derive(Clone)]
 struct FunctionBinding<'ctx> {
     value: FunctionValue<'ctx>,
-    param_tys: Vec<ValueTy>,
+    param_tys: Vec<ParamTy>,
     ret_ty: ValueTy,
     captures: Vec<Binding<'ctx>>,
     closure_template: Option<ClosureTemplate<'ctx>>,
@@ -275,6 +368,25 @@ struct FunctionBinding<'ctx> {
 impl<'ctx> FunctionBinding<'ctx> {
     fn arity(&self) -> usize {
         self.param_tys.len()
+    }
+
+    /// Whether any declared parameter is a call-local handle (ADR 0098).
+    /// Such a function is direct-call only — it cannot be reified into a
+    /// first-class closure value.
+    fn has_handle_param(&self) -> bool {
+        self.param_tys
+            .iter()
+            .any(|p| matches!(p, ParamTy::Handle(_)))
+    }
+
+    /// The parameter list as `ValueTy`s, or `None` if any parameter is a
+    /// handle. Used by closure-conversion paths that only accept first-class
+    /// parameters.
+    fn value_param_tys(&self) -> Option<Vec<ValueTy>> {
+        self.param_tys
+            .iter()
+            .map(|p| p.as_value().cloned())
+            .collect()
     }
 }
 
@@ -298,7 +410,7 @@ struct CaptureValue<'ctx> {
 }
 
 struct LamSpec<'a> {
-    param_tys: Vec<ValueTy>,
+    param_tys: Vec<ParamTy>,
     ret_ty: ValueTy,
     body: &'a Node,
 }
@@ -627,9 +739,9 @@ impl<'ctx> Compiler<'ctx> {
         lam_body: &Node,
         arity: usize,
         ann_ty: Option<&Node>,
-        supplied_param_tys: &[ValueTy],
+        supplied_param_tys: &[ParamTy],
         outer_env_tys: &[BindingTy],
-    ) -> Result<(Vec<ValueTy>, ValueTy)> {
+    ) -> Result<(Vec<ParamTy>, ValueTy)> {
         if let Some(type_node) = ann_ty {
             let (param_tys, ret_ty) = function_signature_from_type_node(type_node)?;
             if param_tys.len() != arity {
@@ -644,13 +756,19 @@ impl<'ctx> Compiler<'ctx> {
         let param_tys = if supplied_param_tys.len() == arity {
             supplied_param_tys.to_vec()
         } else {
-            vec![ValueTy::Int; arity]
+            vec![ParamTy::Value(ValueTy::Int); arity]
         };
+        // A handle parameter has no first-class type; in the body-type
+        // environment it stands as a non-escapable `Ptr` so that any attempt
+        // to use it as a value fails the same way an `@<ty>vec-alloc` binding
+        // would (ADR 0098).
         let mut body_env: Vec<BindingTy> = param_tys
             .iter()
             .rev()
-            .cloned()
-            .map(BindingTy::Value)
+            .map(|p| match p {
+                ParamTy::Value(ty) => BindingTy::Value(ty.clone()),
+                ParamTy::Handle(_) => BindingTy::Ptr,
+            })
             .collect();
         body_env.extend_from_slice(outer_env_tys);
         let ret_ty = self
@@ -675,15 +793,23 @@ impl<'ctx> Compiler<'ctx> {
             let (param_tys, ret_ty) =
                 self.signature_for_lam(lam_body, arity, ann_ty, &[], &env_tys)?;
             if check_closed(lam_body, arity as u64).is_ok() {
-                let fn_ty = nested_fn_ty(&param_tys, ret_ty.clone());
-                let fn_val =
-                    self.hoist_lambda(lam_body, param_tys, ret_ty, "let", Some((rhs, fn_ty)))?;
+                // A handle-parameter helper has no first-class function type,
+                // so it carries no closure template; reifying it later fails
+                // cleanly (ADR 0098).
+                let template =
+                    try_nested_fn_ty(&param_tys, ret_ty.clone()).map(|fn_ty| (rhs, fn_ty));
+                let fn_val = self.hoist_lambda(lam_body, param_tys, ret_ty, "let", template)?;
                 let mut new_env = env.to_vec();
                 new_env.insert(0, Binding::Function(fn_val));
                 return self.compile_value_expr(body, &new_env, cur_fn);
             }
 
-            let closure_ty = nested_fn_ty(&param_tys, ret_ty);
+            // A non-closed `let` lambda becomes a first-class closure value;
+            // a handle parameter is forbidden there (ADR 0098 — handles do
+            // not escape into closure values).
+            let closure_ty = try_nested_fn_ty(&param_tys, ret_ty).ok_or(
+                CodegenError::Unsupported("handle-typed parameter on a non-direct-call function"),
+            )?;
             let closure = self.compile_closure_value(rhs, Some(closure_ty), env, cur_fn)?;
             let mut new_env = env.to_vec();
             new_env.insert(0, Binding::Value(closure));
@@ -990,7 +1116,9 @@ impl<'ctx> Compiler<'ctx> {
                 if let Some(binding) = self.host_imports.get(hash).cloned() {
                     let arg_vals = self.compile_call_args(&args, env, cur_fn)?;
                     if args.len() == binding.arity() {
-                        self.call_function(&binding, &arg_vals)
+                        let call_args: Vec<CompiledArg<'ctx>> =
+                            arg_vals.into_iter().map(CompiledArg::Value).collect();
+                        self.call_function(&binding, &call_args)
                     } else {
                         let closure = self.reify_function_binding(&binding, cur_fn)?;
                         self.call_closure_spine(closure, &arg_vals)
@@ -1005,15 +1133,24 @@ impl<'ctx> Compiler<'ctx> {
                 let (arity, lam_body, ann_ty) =
                     collect_annotated_lam_chain(head).ok_or(CodegenError::AppNonFunction)?;
                 if args.len() == arity && check_closed(lam_body, arity as u64).is_ok() {
-                    let arg_vals = self.compile_call_args(&args, env, cur_fn)?;
-                    let arg_tys: Vec<ValueTy> = arg_vals.iter().map(|v| v.ty.clone()).collect();
+                    // Saturated direct call: the inlined `App(Lam, ...)` form
+                    // `package_library` produces (ADR 0098). Arguments may
+                    // include call-local handle borrows.
+                    let call_args = self.compile_call_args_mixed(&args, env, cur_fn)?;
+                    let supplied: Vec<ParamTy> = call_args.iter().map(|a| a.param_ty()).collect();
                     let (param_tys, ret_ty) =
-                        self.signature_for_lam(lam_body, arity, ann_ty, &arg_tys, &[])?;
+                        self.signature_for_lam(lam_body, arity, ann_ty, &supplied, &[])?;
                     let fn_val = self.hoist_lambda(lam_body, param_tys, ret_ty, "anon", None)?;
-                    return self.call_function(&fn_val, &arg_vals);
+                    return self.call_function(&fn_val, &call_args);
                 }
+                // Non-saturated / non-closed: a first-class closure value.
+                // Handle arguments are forbidden here (ADR 0098); a handle
+                // argument fails `compile_call_args` as a non-value.
                 let arg_vals = self.compile_call_args(&args, env, cur_fn)?;
-                let arg_tys: Vec<ValueTy> = arg_vals.iter().map(|v| v.ty.clone()).collect();
+                let arg_tys: Vec<ParamTy> = arg_vals
+                    .iter()
+                    .map(|v| ParamTy::Value(v.ty.clone()))
+                    .collect();
                 let (param_tys, ret_ty) = self.signature_for_lam(
                     lam_body,
                     arity,
@@ -1021,7 +1158,10 @@ impl<'ctx> Compiler<'ctx> {
                     &arg_tys,
                     &binding_tys_from_env(env),
                 )?;
-                let closure_ty = nested_fn_ty(&param_tys, ret_ty);
+                let closure_ty =
+                    try_nested_fn_ty(&param_tys, ret_ty).ok_or(CodegenError::Unsupported(
+                        "handle-typed parameter on a non-direct-call function",
+                    ))?;
                 let closure = self.compile_closure_value(head, Some(closure_ty), env, cur_fn)?;
                 self.call_closure_spine(closure, &arg_vals)
             }
@@ -1029,10 +1169,14 @@ impl<'ctx> Compiler<'ctx> {
                 let binding = lookup_var(env, *index)?;
                 match binding {
                     Binding::Function(fn_val) => {
-                        let arg_vals = self.compile_call_args(&args, env, cur_fn)?;
                         if args.len() == fn_val.arity() {
-                            self.call_function(fn_val, &arg_vals)
+                            let call_args = self.compile_call_args_mixed(&args, env, cur_fn)?;
+                            self.call_function(fn_val, &call_args)
                         } else {
+                            // Partial application reifies the function as a
+                            // closure value; a handle-parameter function
+                            // cannot be reified (ADR 0098).
+                            let arg_vals = self.compile_call_args(&args, env, cur_fn)?;
                             let closure = self.reify_function_binding(fn_val, cur_fn)?;
                             self.call_closure_spine(closure, &arg_vals)
                         }
@@ -1068,10 +1212,62 @@ impl<'ctx> Compiler<'ctx> {
         Ok(values)
     }
 
+    /// Compile direct-call arguments, classifying each as a first-class value
+    /// or a call-local handle borrow (ADR 0098).
+    fn compile_call_args_mixed(
+        &mut self,
+        args: &[&Node],
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<Vec<CompiledArg<'ctx>>> {
+        let mut out = Vec::with_capacity(args.len());
+        for arg in args {
+            out.push(self.compile_call_arg(arg, env, cur_fn)?);
+        }
+        Ok(out)
+    }
+
+    fn compile_call_arg(
+        &mut self,
+        arg: &Node,
+        env: &[Binding<'ctx>],
+        cur_fn: FunctionValue<'ctx>,
+    ) -> Result<CompiledArg<'ctx>> {
+        // A handle has no first-class value, so the only expression that can
+        // denote one is a `Var` resolving to a handle binding — the same
+        // anti-escape rule `resolve_vec_arg` enforces for vec primitives.
+        if let Node::Var { index } = arg {
+            match lookup_var(env, *index)? {
+                Binding::Ptr { ptr, kind } => {
+                    let ty = match kind {
+                        PtrKind::Buf => HandleTy::Buf,
+                        PtrKind::I64Vec => HandleTy::I64Vec,
+                    };
+                    return Ok(CompiledArg::Handle {
+                        ptr: *ptr,
+                        len: None,
+                        ty,
+                    });
+                }
+                Binding::VecHandle { ptr, len, ty } => {
+                    return Ok(CompiledArg::Handle {
+                        ptr: *ptr,
+                        len: Some(*len),
+                        ty: HandleTy::Vec(*ty),
+                    });
+                }
+                _ => {}
+            }
+        }
+        Ok(CompiledArg::Value(
+            self.compile_value_expr(arg, env, cur_fn)?,
+        ))
+    }
+
     fn call_function(
         &mut self,
         fn_binding: &FunctionBinding<'ctx>,
-        args: &[CompiledValue<'ctx>],
+        args: &[CompiledArg<'ctx>],
     ) -> Result<CompiledValue<'ctx>> {
         if args.len() != fn_binding.param_tys.len() {
             return Err(CodegenError::FunctionArity {
@@ -1080,16 +1276,19 @@ impl<'ctx> Compiler<'ctx> {
             });
         }
         for (arg, expected) in args.iter().zip(&fn_binding.param_tys) {
-            if &arg.ty != expected {
+            let actual = arg.param_ty();
+            if &actual != expected {
                 return Err(CodegenError::ValueTypeMismatch {
                     expected: expected.to_string(),
-                    actual: arg.ty.to_string(),
+                    actual: actual.to_string(),
                 });
             }
         }
 
-        let mut call_args: Vec<BasicMetadataValueEnum<'ctx>> =
-            args.iter().map(|v| v.value.into()).collect();
+        let mut call_args: Vec<BasicMetadataValueEnum<'ctx>> = Vec::with_capacity(args.len());
+        for arg in args {
+            arg.push_call_words(&mut call_args);
+        }
         for capture in &fn_binding.captures {
             match capture {
                 Binding::Value(v) => call_args.push(v.value.into()),
@@ -7118,7 +7317,7 @@ impl<'ctx> Compiler<'ctx> {
     fn hoist_lambda(
         &mut self,
         lam_body: &Node,
-        param_tys: Vec<ValueTy>,
+        param_tys: Vec<ParamTy>,
         ret_ty: ValueTy,
         name_hint: &str,
         closure_template: Option<(&Node, ValueTy)>,
@@ -7149,6 +7348,13 @@ impl<'ctx> Compiler<'ctx> {
         fn_binding: &FunctionBinding<'ctx>,
         cur_fn: FunctionValue<'ctx>,
     ) -> Result<CompiledValue<'ctx>> {
+        // A function with a call-local handle parameter is direct-call only;
+        // it has no first-class function value (ADR 0098).
+        if fn_binding.has_handle_param() {
+            return Err(CodegenError::Unsupported(
+                "function with a handle-typed parameter used as a first-class value",
+            ));
+        }
         if let Some(template) = &fn_binding.closure_template {
             return self.compile_closure_value(
                 template.expr.as_ref(),
@@ -7192,7 +7398,12 @@ impl<'ctx> Compiler<'ctx> {
             ));
         }
 
-        let fn_ty = nested_fn_ty(&direct.param_tys[supplied_count..], direct.ret_ty.clone());
+        // Reachable only for all-value functions: `reify_function_binding`
+        // rejects handle-parameter functions before any adapter is built.
+        let fn_ty = try_nested_fn_ty(&direct.param_tys[supplied_count..], direct.ret_ty.clone())
+            .ok_or(CodegenError::Unsupported(
+                "function with a handle-typed parameter used as a first-class value",
+            ))?;
         let mut capture_values = supplied_args;
         capture_values.extend(hidden_captures);
         let captures: Vec<CaptureValue<'ctx>> = capture_values
@@ -7343,8 +7554,14 @@ impl<'ctx> Compiler<'ctx> {
         let hidden_count = direct.captures.len();
         let loaded_supplied = loaded_captures[..supplied_count].to_vec();
         let loaded_hidden = loaded_captures[supplied_count..supplied_count + hidden_count].to_vec();
+        // All-value only: handle-parameter functions never reach adapter
+        // construction (`reify_function_binding` rejects them first).
         let current_arg = CompiledValue {
-            ty: direct.param_tys[supplied_count].clone(),
+            ty: direct.param_tys[supplied_count].as_value().cloned().ok_or(
+                CodegenError::Unsupported(
+                    "function with a handle-typed parameter used as a first-class value",
+                ),
+            )?,
             value: arg,
         };
 
@@ -7543,15 +7760,26 @@ impl<'ctx> Compiler<'ctx> {
     fn add_tacit_function(
         &self,
         name: &str,
-        param_tys: &[ValueTy],
+        param_tys: &[ParamTy],
         ret_ty: &ValueTy,
         captures: &[Binding<'ctx>],
     ) -> Result<FunctionValue<'ctx>> {
         let ptr_t = self.context.ptr_type(AddressSpace::default());
-        let mut params: Vec<BasicMetadataTypeEnum<'ctx>> = param_tys
-            .iter()
-            .map(|ty| self.llvm_type(ty).map(BasicMetadataTypeEnum::from))
-            .collect::<Result<Vec<_>>>()?;
+        let mut params: Vec<BasicMetadataTypeEnum<'ctx>> = Vec::with_capacity(param_tys.len());
+        // A handle parameter lowers to the same word(s) as a `rec` hidden
+        // handle capture — one internal handle calling convention (ADR 0098).
+        for pt in param_tys {
+            match pt {
+                ParamTy::Value(ty) => params.push(self.llvm_type(ty)?.into()),
+                ParamTy::Handle(HandleTy::Buf) | ParamTy::Handle(HandleTy::I64Vec) => {
+                    params.push(BasicMetadataTypeEnum::PointerType(ptr_t));
+                }
+                ParamTy::Handle(HandleTy::Vec(_)) => {
+                    params.push(BasicMetadataTypeEnum::PointerType(ptr_t));
+                    params.push(BasicMetadataTypeEnum::IntType(self.context.i64_type()));
+                }
+            }
+        }
         for capture in captures {
             match capture {
                 Binding::Value(v) => params.push(self.llvm_type(&v.ty)?.into()),
@@ -7570,27 +7798,79 @@ impl<'ctx> Compiler<'ctx> {
             .add_function(name, fn_ty, Some(Linkage::Private)))
     }
 
+    /// Bind a direct-call function's declared parameters from its LLVM
+    /// parameter list (ADR 0098). Returns the per-source-parameter bindings in
+    /// source order, together with the number of LLVM parameter slots
+    /// consumed — a handle parameter may occupy two slots, so hidden capture
+    /// parameters start after this count rather than after the arity.
+    fn bind_param_slots(
+        &self,
+        fn_val: FunctionValue<'ctx>,
+        param_tys: &[ParamTy],
+    ) -> Result<(Vec<Binding<'ctx>>, u32)> {
+        let nth = |idx: u32| {
+            fn_val
+                .get_nth_param(idx)
+                .ok_or_else(|| CodegenError::Llvm(format!("lambda missing param slot {idx}")))
+        };
+        let mut bindings = Vec::with_capacity(param_tys.len());
+        let mut slot = 0u32;
+        for pt in param_tys {
+            match pt {
+                ParamTy::Value(ty) => {
+                    let value = nth(slot)?;
+                    slot += 1;
+                    bindings.push(Binding::Value(CompiledValue {
+                        ty: ty.clone(),
+                        value,
+                    }));
+                }
+                ParamTy::Handle(HandleTy::Buf) => {
+                    let ptr = nth(slot)?.into_pointer_value();
+                    slot += 1;
+                    bindings.push(Binding::Ptr {
+                        ptr,
+                        kind: PtrKind::Buf,
+                    });
+                }
+                ParamTy::Handle(HandleTy::I64Vec) => {
+                    let ptr = nth(slot)?.into_pointer_value();
+                    slot += 1;
+                    bindings.push(Binding::Ptr {
+                        ptr,
+                        kind: PtrKind::I64Vec,
+                    });
+                }
+                ParamTy::Handle(HandleTy::Vec(elem)) => {
+                    let ptr = nth(slot)?.into_pointer_value();
+                    let len = nth(slot + 1)?.into_int_value();
+                    slot += 2;
+                    bindings.push(Binding::VecHandle {
+                        ptr,
+                        len,
+                        ty: *elem,
+                    });
+                }
+            }
+        }
+        Ok((bindings, slot))
+    }
+
     fn compile_lambda_body(
         &mut self,
         fn_val: FunctionValue<'ctx>,
         body: &Node,
-        param_tys: &[ValueTy],
+        param_tys: &[ParamTy],
         ret_ty: &ValueTy,
     ) -> Result<()> {
         let saved_block = self.builder.get_insert_block();
         let entry = self.context.append_basic_block(fn_val, "entry");
         self.builder.position_at_end(entry);
 
-        let mut env = Vec::with_capacity(param_tys.len());
-        for i in (0..param_tys.len()).rev() {
-            let param = fn_val
-                .get_nth_param(i as u32)
-                .ok_or_else(|| CodegenError::Llvm(format!("lambda missing param {i}")))?;
-            env.push(Binding::Value(CompiledValue {
-                ty: param_tys[i].clone(),
-                value: param,
-            }));
-        }
+        // Innermost binder is DeBruijn 0, so the env stacks parameters in
+        // reverse source order.
+        let (param_bindings, _slots) = self.bind_param_slots(fn_val, param_tys)?;
+        let env: Vec<Binding<'ctx>> = param_bindings.into_iter().rev().collect();
 
         let v = if matches!(body, Node::Lam { .. } | Node::Ann { .. })
             && matches!(ret_ty, ValueTy::Fn(_, _))
@@ -7647,13 +7927,11 @@ impl<'ctx> Compiler<'ctx> {
                         &binding_tys_from_env(env),
                     )?
                 } else {
-                    let param_tys = vec![ValueTy::Int; arity];
-                    let lambda_env: Vec<BindingTy> = param_tys
-                        .iter()
-                        .rev()
-                        .cloned()
-                        .map(BindingTy::Value)
-                        .collect();
+                    // An un-annotated rec member takes only first-class
+                    // integer parameters; a handle parameter on a rec member
+                    // requires an explicit signature (ADR 0098).
+                    let param_tys = vec![ParamTy::Value(ValueTy::Int); arity];
+                    let lambda_env: Vec<BindingTy> = vec![BindingTy::Value(ValueTy::Int); arity];
                     let ret_ty = self
                         .infer_value_ty(lam_body, &lambda_env)
                         .unwrap_or(ValueTy::Int);
@@ -7725,17 +8003,19 @@ impl<'ctx> Compiler<'ctx> {
         &mut self,
         fn_binding: &FunctionBinding<'ctx>,
         body: &Node,
-        param_tys: &[ValueTy],
+        param_tys: &[ParamTy],
         ret_ty: &ValueTy,
         rec_fns: &[FunctionBinding<'ctx>],
         outer_env: &[Binding<'ctx>],
     ) -> Result<()> {
         let fn_val = fn_binding.value;
-        let arity = param_tys.len();
         let saved_block = self.builder.get_insert_block();
         let entry = self.context.append_basic_block(fn_val, "entry");
         self.builder.position_at_end(entry);
-        let captured_env = self.capture_env_from_params(fn_val, arity, outer_env)?;
+        // Hidden capture parameters start after every declared-parameter LLVM
+        // slot — a handle parameter consumes two (ADR 0098).
+        let (param_bindings, param_slots) = self.bind_param_slots(fn_val, param_tys)?;
+        let captured_env = self.capture_env_from_params(fn_val, param_slots, outer_env)?;
         let mut rec_env: Vec<Binding<'ctx>> =
             Vec::with_capacity(rec_fns.len() + captured_env.len());
         for f in rec_fns {
@@ -7749,16 +8029,9 @@ impl<'ctx> Compiler<'ctx> {
         }
         rec_env.extend_from_slice(&captured_env);
 
-        let mut body_env: Vec<Binding<'ctx>> = Vec::with_capacity(arity + rec_env.len());
-        for i in (0..arity).rev() {
-            let param = fn_val
-                .get_nth_param(i as u32)
-                .ok_or_else(|| CodegenError::Llvm(format!("lambda missing param {i}")))?;
-            body_env.push(Binding::Value(CompiledValue {
-                ty: param_tys[i].clone(),
-                value: param,
-            }));
-        }
+        let mut body_env: Vec<Binding<'ctx>> =
+            Vec::with_capacity(param_bindings.len() + rec_env.len());
+        body_env.extend(param_bindings.into_iter().rev());
         body_env.extend_from_slice(&rec_env);
         let v = if matches!(body, Node::Lam { .. } | Node::Ann { .. })
             && matches!(ret_ty, ValueTy::Fn(_, _))
@@ -7785,10 +8058,10 @@ impl<'ctx> Compiler<'ctx> {
     fn capture_env_from_params(
         &self,
         fn_val: FunctionValue<'ctx>,
-        arity: usize,
+        param_slots: u32,
         outer_env: &[Binding<'ctx>],
     ) -> Result<Vec<Binding<'ctx>>> {
-        let mut param_index = arity as u32;
+        let mut param_index = param_slots;
         let mut captured = Vec::with_capacity(outer_env.len());
         for binding in outer_env {
             match binding {
@@ -8018,18 +8291,47 @@ fn direct_loop_callback_body(node: &Node) -> Option<&Node> {
     }
 }
 
-fn function_signature_from_type_node(type_node: &Node) -> Result<(Vec<ValueTy>, ValueTy)> {
+fn function_signature_from_type_node(type_node: &Node) -> Result<(Vec<ParamTy>, ValueTy)> {
     let ty = ty_from_type_node(type_node)?;
     let mut params = Vec::new();
     let mut cur = ty;
     loop {
         match cur {
             Ty::Fn(arg, ret, _) => {
-                params.push(value_ty_from_ty(&arg)?);
+                params.push(param_ty_from_ty(&arg)?);
                 cur = *ret;
             }
+            // The result type goes through `value_ty_from_ty`, which rejects
+            // handle types: a handle may not be *returned* (ADR 0098 — up is
+            // forbidden).
             other => return Ok((params, value_ty_from_ty(&other)?)),
         }
+    }
+}
+
+/// Like `function_signature_from_type_node`, but fails if any parameter is a
+/// handle. Best-effort value-type inference has no `ParamTy` representation,
+/// so its callers degrade gracefully (`unwrap_or`) when this fails.
+fn value_signature_from_type_node(type_node: &Node) -> Result<(Vec<ValueTy>, ValueTy)> {
+    let (params, ret_ty) = function_signature_from_type_node(type_node)?;
+    let mut values = Vec::with_capacity(params.len());
+    for param in params {
+        values.push(param.as_value().cloned().ok_or(CodegenError::Unsupported(
+            "handle-typed parameter in value-position type inference",
+        ))?);
+    }
+    Ok((values, ret_ty))
+}
+
+/// Map a parameter-position `Ty` to a `ParamTy`. Handle types (`Buf`,
+/// `I64Vec`, `Vec`) become `ParamTy::Handle`; everything else routes through
+/// `value_ty_from_ty` (ADR 0098).
+fn param_ty_from_ty(ty: &Ty) -> Result<ParamTy> {
+    match ty {
+        Ty::Buf => Ok(ParamTy::Handle(HandleTy::Buf)),
+        Ty::I64Vec => Ok(ParamTy::Handle(HandleTy::I64Vec)),
+        Ty::Vec(elem) => Ok(ParamTy::Handle(HandleTy::Vec(*elem))),
+        other => Ok(ParamTy::Value(value_ty_from_ty(other)?)),
     }
 }
 
@@ -8037,6 +8339,17 @@ fn nested_fn_ty(param_tys: &[ValueTy], ret_ty: ValueTy) -> ValueTy {
     param_tys.iter().rev().fold(ret_ty, |acc, param| {
         ValueTy::Fn(Box::new(param.clone()), Box::new(acc))
     })
+}
+
+/// Build a closure `ValueTy::Fn` chain from a `ParamTy` list, or `None` if any
+/// parameter is a handle — a function with a handle parameter has no
+/// first-class function type and cannot be reified (ADR 0098).
+fn try_nested_fn_ty(param_tys: &[ParamTy], ret_ty: ValueTy) -> Option<ValueTy> {
+    let mut values = Vec::with_capacity(param_tys.len());
+    for param in param_tys {
+        values.push(param.as_value()?.clone());
+    }
+    Some(nested_fn_ty(&values, ret_ty))
 }
 
 fn apply_fn_spine_ty(mut ty: ValueTy, arg_count: usize) -> Result<ValueTy> {
@@ -8053,9 +8366,15 @@ fn binding_tys_from_env(env: &[Binding<'_>]) -> Vec<BindingTy> {
     env.iter()
         .map(|binding| match binding {
             Binding::Value(v) => BindingTy::Value(v.ty.clone()),
-            Binding::Function(f) => BindingTy::Function {
-                param_tys: f.param_tys.clone(),
-                ret_ty: f.ret_ty.clone(),
+            // A handle-parameter function has no first-class function type;
+            // it is recorded as a non-value `Ptr` so any value-position use
+            // is rejected (ADR 0098). It is still callable in App position.
+            Binding::Function(f) => match f.value_param_tys() {
+                Some(param_tys) => BindingTy::Function {
+                    param_tys,
+                    ret_ty: f.ret_ty.clone(),
+                },
+                None => BindingTy::Ptr,
             },
             Binding::Ptr { .. } => BindingTy::Ptr,
             Binding::VecHandle { .. } => BindingTy::Ptr,
@@ -8207,7 +8526,7 @@ impl<'ctx> Compiler<'ctx> {
             Node::Let { rhs, body } => {
                 if let Some((arity, lam_body, ann_ty)) = collect_annotated_lam_chain(rhs) {
                     let (param_tys, ret_ty) = if let Some(type_node) = ann_ty {
-                        let sig = function_signature_from_type_node(type_node)?;
+                        let sig = value_signature_from_type_node(type_node)?;
                         if sig.0.len() != arity {
                             return Err(CodegenError::FunctionArity {
                                 expected: sig.0.len(),
@@ -8318,7 +8637,7 @@ impl<'ctx> Compiler<'ctx> {
                     let (arity, _lam_body, ann_ty) = collect_annotated_lam_chain(binding)
                         .ok_or(CodegenError::Unsupported("rec member that is not a lambda"))?;
                     let (param_tys, ret_ty) = if let Some(type_node) = ann_ty {
-                        function_signature_from_type_node(type_node)?
+                        value_signature_from_type_node(type_node)?
                     } else {
                         (vec![ValueTy::Int; arity], ValueTy::Int)
                     };
@@ -8396,7 +8715,12 @@ impl<'ctx> Compiler<'ctx> {
             // handle case stays unsupported because such imports are not
             // registered as reifiable bindings).
             Node::Ref { hash } => match self.host_imports.get(hash) {
-                Some(binding) => Ok(nested_fn_ty(&binding.param_tys, binding.ret_ty.clone())),
+                Some(binding) => binding
+                    .value_param_tys()
+                    .map(|param_tys| nested_fn_ty(&param_tys, binding.ret_ty.clone()))
+                    .ok_or(CodegenError::Unsupported(
+                        "host import with a handle-typed parameter in value position",
+                    )),
                 None => Err(CodegenError::Unsupported(
                     "unit artifact node in value position",
                 )),
@@ -9688,7 +10012,7 @@ impl<'ctx> Compiler<'ctx> {
                 param_tys: import
                     .params
                     .iter()
-                    .map(Self::internal_value_ty_for_abi)
+                    .map(|param| Ok(ParamTy::Value(Self::internal_value_ty_for_abi(param)?)))
                     .collect::<Result<Vec<_>>>()?,
                 ret_ty: Self::internal_value_ty_for_abi(&import.result)?,
                 captures: Vec::new(),

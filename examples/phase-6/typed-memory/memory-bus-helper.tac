@@ -1,0 +1,1 @@
+(let (app (sym u8vec-alloc) (int 8)) (let (app (app (app (lam (lam (lam (app (app (app (sym u8vec-store-u32-le) (var 2)) (var 1)) (var 0))))) (var 0)) (int 0)) (int 3405691582)) (app (app (lam (lam (app (app (sym u8vec-get) (var 1)) (var 0)))) (var 1)) (int 1))))

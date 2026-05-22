@@ -398,6 +398,80 @@ fn library_codegen_reifies_host_import_inside_callback_lambda() {
 }
 
 #[test]
+fn library_codegen_accepts_typed_vector_handle_helper_parameter() {
+    // Regression for ADR 0098: a package-internal helper whose explicit
+    // signature takes a typed vector handle (`u8vec -> Int -> u8`). After
+    // `package_library` inlines the helper's `Ref`, the export body is the
+    // saturated `App(Lam, handle_arg, idx)` form, which previously failed
+    // codegen with "typed vector handle used in integer-value position".
+    let dir = tempfile::tempdir().unwrap();
+
+    // helper : u8vec -> Int -> u8  —  `lam v. lam i. @u8vec-get v i`.
+    let helper_sig = Node::Sig {
+        type_: Box::new(Node::FnTy {
+            arg: Box::new(sym("u8vec")),
+            ret: Box::new(Node::FnTy {
+                arg: Box::new(sym("Int")),
+                ret: Box::new(sym("u8")),
+                eff: Box::new(Node::EffSet { atoms: vec![] }),
+            }),
+            eff: Box::new(Node::EffSet { atoms: vec![] }),
+        }),
+        eval_eff: Box::new(Node::EffSet { atoms: vec![] }),
+    };
+    let helper_def = Node::Def {
+        sig: Box::new(helper_sig),
+        body: Box::new(Node::Lam {
+            body: Box::new(Node::Lam {
+                body: Box::new(app(
+                    app(sym("u8vec-get"), Node::Var { index: 1 }),
+                    Node::Var { index: 0 },
+                )),
+            }),
+        }),
+    };
+    let helper_hash = hash(&helper_def);
+
+    // export : u8vec -> u8  —  `lam v. helper v 0`.
+    let export_def = Node::Def {
+        sig: Box::new(sig("u8vec", "u8", &[])),
+        body: Box::new(Node::Lam {
+            body: Box::new(app(
+                app(
+                    Node::Ref {
+                        hash: helper_hash.clone(),
+                    },
+                    Node::Var { index: 0 },
+                ),
+                Node::Int { value: "0".into() },
+            )),
+        }),
+    };
+    let export_hash = hash(&export_def);
+    let unit = Node::Unit {
+        imports: vec![],
+        exports: vec![Node::Export {
+            visibility: "public".into(),
+            hash: export_hash,
+        }],
+        defs: vec![helper_def, export_def],
+    };
+    write_unit(dir.path(), &unit);
+
+    let package = load_package(dir.path()).expect("package loads");
+    let (interface, library) =
+        package_library(&package, HostTarget::Native).expect("library spec builds");
+    assert_eq!(interface.exports[0].parameters[0].kind, "borrowed_vector");
+
+    let ir = compile_library_to_ir_string(&library, "handle_param_helper")
+        .expect("library IR generates");
+    assert!(ir.contains(&library.exports[0].symbol), "{ir}");
+    // The inlined helper hoists to a direct-call function whose handle
+    // parameter is the two-word `(ptr, i64)` pair (ADR 0098).
+    assert!(ir.contains("define private i64 @tacit_fn_"), "{ir}");
+}
+
+#[test]
 fn stateful_library_codegen_emits_instance_lifecycle_and_method_wrapper() {
     let dir = tempfile::tempdir().unwrap();
     let body = Node::Let {
