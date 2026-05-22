@@ -744,6 +744,83 @@ fn check_reports_body_errors_when_lockfile_is_stale() {
 }
 
 #[test]
+fn check_reports_signature_mismatch_when_lockfile_is_stale() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let d = dir.path();
+    std::fs::create_dir_all(d.join("src")).unwrap();
+
+    let valid = cli_const_int_def("0");
+    let valid_hash = cli_hash(&valid);
+    std::fs::write(
+        d.join("src/main.tac"),
+        emit(&Node::Unit {
+            imports: vec![],
+            exports: vec![Node::Export {
+                visibility: "public".into(),
+                hash: valid_hash.clone(),
+            }],
+            defs: vec![valid],
+        }),
+    )
+    .unwrap();
+    std::fs::write(
+        d.join("tacit.toml"),
+        format!("[package]\nname = \"stale-signature\"\n\n[exports]\nmain = \"blake3:{valid_hash}\"\n"),
+    )
+    .unwrap();
+
+    let lock = tacit(&["lock", "."], d);
+    assert!(
+        lock.status.success(),
+        "lock failed\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&lock.stdout),
+        String::from_utf8_lossy(&lock.stderr)
+    );
+
+    let invalid = cli_int_sig_bool_body_def();
+    let invalid_hash = cli_hash(&invalid);
+    std::fs::write(
+        d.join("src/main.tac"),
+        emit(&Node::Unit {
+            imports: vec![],
+            exports: vec![Node::Export {
+                visibility: "public".into(),
+                hash: invalid_hash,
+            }],
+            defs: vec![invalid],
+        }),
+    )
+    .unwrap();
+
+    let check = tacit(&["check", ".", "--format", "json"], d);
+    assert!(
+        !check.status.success(),
+        "check should fail\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&check.stdout),
+        String::from_utf8_lossy(&check.stderr)
+    );
+    let envelope: Value = serde_json::from_slice(&check.stdout).expect("check json");
+    let errors = envelope["errors"].as_array().expect("errors array");
+    assert!(
+        errors.iter().any(|err| err["kind"] == "lockfile-drift"),
+        "expected lockfile-drift, got {errors:?}"
+    );
+    assert!(
+        errors.iter().any(|err| err["kind"] == "unresolved-entry"),
+        "expected unresolved-entry, got {errors:?}"
+    );
+    assert!(
+        errors.iter().any(|err| {
+            err["kind"] == "signature-mismatch"
+                && err["message"]
+                    .as_str()
+                    .is_some_and(|message| message.contains("definition body"))
+        }),
+        "expected definition-body signature mismatch, got {errors:?}"
+    );
+}
+
+#[test]
 fn check_fails_when_pin_schema_is_wrong() {
     let dir = tempfile::tempdir().expect("tempdir");
     let out = tacit(&["init", "hello"], dir.path());
@@ -1635,6 +1712,13 @@ fn cli_invalid_capture_def() -> Node {
     Node::Def {
         sig: Box::new(cli_int_alloc_sig()),
         body: Box::new(body),
+    }
+}
+
+fn cli_int_sig_bool_body_def() -> Node {
+    Node::Def {
+        sig: Box::new(cli_int_sig()),
+        body: Box::new(cli_eq_ints("0", "0")),
     }
 }
 
