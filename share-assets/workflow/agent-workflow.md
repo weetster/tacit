@@ -84,11 +84,12 @@ references; the primer teaches the authoring view (`.taca`), which is a
 different surface syntax. Do not hand-edit `.tac`. Round-trip through
 `tacit canonicalize` instead:
 
-1. Render existing source as authoring view to a scratch path outside the
-   project: `tacit render <unit.tac> --as authoring -o /tmp/<scratch>.taca`.
+1. Render existing source as authoring view into the project's `.scratch/`
+   directory: `tacit render <unit.tac> --as authoring -o .scratch/<scratch>.taca`.
+   Create `.scratch/` if it does not exist; it is excluded by `.gitignore`.
 2. Edit the scratch `.taca` using authoring-view syntax from the primer.
 3. Canonicalize back into the project:
-   `tacit canonicalize /tmp/<scratch>.taca -o <unit.tac> --force`. That
+   `tacit canonicalize .scratch/<scratch>.taca -o <unit.tac> --force`. That
    rewrites both `<unit.tac>` and the `<unit.tacd>` sidecar.
 4. Delete the scratch `.taca`. Do not check `.taca` files in.
 
