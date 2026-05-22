@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde_json::json;
+use tacit_typecheck::error::{Edit, Fix, Location, SourceSpan};
 use tacit_typecheck::Diagnostic;
 
 use crate::release;
@@ -17,6 +18,31 @@ pub const PIN_SCHEMA: &str = "tacit-toolchain-pin-v1";
 
 pub fn pin_path(root: &Path) -> PathBuf {
     root.join(PIN_FILE_NAME)
+}
+
+pub fn render_toolchain_pin(release_hash: &str, stdlib: &release::StdlibListEnvelope) -> String {
+    let mut out = String::new();
+    out.push_str("format = \"tacit-toolchain-pin-v1\"\n\n");
+    out.push_str("[toolchain]\n");
+    out.push_str(&format!("version = \"{}\"\n", release::TOOLCHAIN_VERSION));
+    out.push_str(&format!("release_hash = \"{}\"\n\n", release_hash));
+    out.push_str("[primer]\n");
+    out.push_str(&format!("id = \"{}\"\n", release::PRIMER_ID));
+    out.push_str(&format!("version = \"{}\"\n", release::PRIMER_VERSION));
+    out.push_str(&format!(
+        "toolchain_version = \"{}\"\n",
+        release::PRIMER_TOOLCHAIN_VERSION
+    ));
+    out.push_str(&format!("hash = \"{}\"\n\n", release::PRIMER_HASH));
+    out.push_str("[stdlib]\n");
+    for package in &stdlib.packages {
+        out.push_str(&format!(
+            "\"{}\" = \"{}\"\n",
+            toml_escape(&package.name),
+            package.hash
+        ));
+    }
+    out
 }
 
 #[derive(Debug, Clone)]
@@ -72,7 +98,7 @@ pub fn enforce_pin(root: &Path) -> Result<(), Vec<Diagnostic>> {
         )]
     })?;
     let stdlib = release::stdlib_list()?;
-    let diags = validate_pin(&pin, &release, &stdlib, &path);
+    let diags = validate_pin(&pin, text, &release, &stdlib, &path);
     if diags.is_empty() {
         Ok(())
     } else {
@@ -82,11 +108,13 @@ pub fn enforce_pin(root: &Path) -> Result<(), Vec<Diagnostic>> {
 
 fn validate_pin(
     pin: &ToolchainPin,
+    text: &str,
     release: &release::VersionEnvelope,
     stdlib: &release::StdlibListEnvelope,
     path: &Path,
 ) -> Vec<Diagnostic> {
     let mut diags = Vec::new();
+    let repin_fix = pin_repin_fix(text, release, stdlib);
 
     if pin.toolchain_version != release.toolchain_version {
         diags.push(pin_mismatch(
@@ -95,6 +123,7 @@ fn validate_pin(
             &pin.toolchain_version,
             release.toolchain_version,
             path,
+            Some(repin_fix.clone()),
         ));
     }
     if pin.release_hash != release.release_hash {
@@ -104,6 +133,7 @@ fn validate_pin(
             &pin.release_hash,
             &release.release_hash,
             path,
+            Some(repin_fix.clone()),
         ));
     }
 
@@ -115,6 +145,7 @@ fn validate_pin(
             &pin.primer_id,
             primer.id,
             path,
+            Some(repin_fix.clone()),
         ));
     }
     if pin.primer_version != primer.version {
@@ -124,6 +155,7 @@ fn validate_pin(
             &pin.primer_version,
             primer.version,
             path,
+            Some(repin_fix.clone()),
         ));
     }
     if pin.primer_toolchain_version != primer.toolchain_version {
@@ -133,6 +165,7 @@ fn validate_pin(
             &pin.primer_toolchain_version,
             primer.toolchain_version,
             path,
+            Some(repin_fix.clone()),
         ));
     }
     if pin.primer_hash != primer.hash {
@@ -142,6 +175,7 @@ fn validate_pin(
             &pin.primer_hash,
             primer.hash,
             path,
+            Some(repin_fix.clone()),
         ));
     }
 
@@ -161,6 +195,7 @@ fn validate_pin(
                     hash,
                     expected,
                     path,
+                    Some(repin_fix.clone()),
                 ));
             }
             None => {
@@ -483,6 +518,27 @@ fn parse_string_value(raw: &str) -> Result<String, String> {
     Ok(inner.to_string())
 }
 
+fn pin_repin_fix(
+    text: &str,
+    release: &release::VersionEnvelope,
+    stdlib: &release::StdlibListEnvelope,
+) -> Fix {
+    Fix {
+        description: "Rewrite tacit-toolchain.toml to match the installed toolchain pin"
+            .to_string(),
+        edits: vec![Edit {
+            location: Location {
+                ast_path: Vec::new(),
+                source_span: Some(SourceSpan {
+                    start: 0,
+                    end: text.len(),
+                }),
+            },
+            replacement: render_toolchain_pin(&release.release_hash, stdlib),
+        }],
+    }
+}
+
 fn strip_comment(line: &str) -> &str {
     // A `#` outside a string starts a comment. The pin schema does not embed
     // `#` inside any string value, so this minimal rule is enough.
@@ -513,8 +569,15 @@ fn pin_parse_error(path: &Path, line: usize, message: impl Into<String>) -> Diag
     )
 }
 
-fn pin_mismatch(kind: &str, field: &str, actual: &str, expected: &str, path: &Path) -> Diagnostic {
-    pin_diag(
+fn pin_mismatch(
+    kind: &str,
+    field: &str,
+    actual: &str,
+    expected: &str,
+    path: &Path,
+    fix: Option<Fix>,
+) -> Diagnostic {
+    let mut diag = pin_diag(
         kind,
         format!(
             "{}: {} expected `{}` from installed toolchain but pin records `{}`",
@@ -529,12 +592,18 @@ fn pin_mismatch(kind: &str, field: &str, actual: &str, expected: &str, path: &Pa
             "actual": actual,
             "path": path.display().to_string(),
         })),
-    )
+    );
+    diag.fix = fix;
+    diag
 }
 
 fn pin_diag(kind: &str, message: String, details: Option<serde_json::Value>) -> Diagnostic {
     let details = details.unwrap_or_else(|| json!({}));
     Diagnostic::package_error(kind, message, details)
+}
+
+fn toml_escape(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
 #[cfg(test)]

@@ -597,12 +597,22 @@ fn check_fails_when_pin_toolchain_version_mismatches() {
     let stderr = String::from_utf8_lossy(&check.stderr);
     let envelope: Value = serde_json::from_str(stderr.trim()).expect("pin diagnostics json");
     let errors = envelope["errors"].as_array().expect("errors array");
-    assert!(
-        errors
-            .iter()
-            .any(|err| err["kind"] == "toolchain-pin-version-mismatch"),
-        "expected toolchain-pin-version-mismatch, got {errors:?}"
+    let mismatch = errors
+        .iter()
+        .find(|err| err["kind"] == "toolchain-pin-version-mismatch")
+        .expect("expected toolchain-pin-version-mismatch");
+    assert_eq!(
+        mismatch["fix"]["description"],
+        "Rewrite tacit-toolchain.toml to match the installed toolchain pin"
     );
+    assert_eq!(
+        mismatch["fix"]["edits"][0]["location"]["source_span"]["start"],
+        0
+    );
+    let replacement = mismatch["fix"]["edits"][0]["replacement"]
+        .as_str()
+        .expect("replacement text");
+    assert!(replacement.contains(&format!("version = \"{TOOLCHAIN_VERSION}\"")));
 }
 
 #[test]

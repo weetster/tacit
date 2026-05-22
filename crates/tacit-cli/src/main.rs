@@ -883,7 +883,7 @@ fn cmd_init(
         .write(&sidecar_path)
         .map_err(|e| format!("{}: {}", sidecar_path.display(), e))?;
 
-    let toolchain_pin = render_toolchain_pin(&version.release_hash, &stdlib);
+    let toolchain_pin = pin::render_toolchain_pin(&version.release_hash, &stdlib);
     write_text_file(&root.join("tacit-toolchain.toml"), &toolchain_pin)?;
     write_text_file(
         &root.join("tacit.toml"),
@@ -1062,31 +1062,6 @@ fn render_init_manifest(
     out.push_str("[[tests]]\n");
     out.push_str("name = \"template-smoke-test\"\n");
     out.push_str(&format!("target = \"blake3:{}\"\n", project.test_hash));
-    out
-}
-
-fn render_toolchain_pin(release_hash: &str, stdlib: &release::StdlibListEnvelope) -> String {
-    let mut out = String::new();
-    out.push_str("format = \"tacit-toolchain-pin-v1\"\n\n");
-    out.push_str("[toolchain]\n");
-    out.push_str(&format!("version = \"{}\"\n", release::TOOLCHAIN_VERSION));
-    out.push_str(&format!("release_hash = \"{}\"\n\n", release_hash));
-    out.push_str("[primer]\n");
-    out.push_str(&format!("id = \"{}\"\n", release::PRIMER_ID));
-    out.push_str(&format!("version = \"{}\"\n", release::PRIMER_VERSION));
-    out.push_str(&format!(
-        "toolchain_version = \"{}\"\n",
-        release::PRIMER_TOOLCHAIN_VERSION
-    ));
-    out.push_str(&format!("hash = \"{}\"\n\n", release::PRIMER_HASH));
-    out.push_str("[stdlib]\n");
-    for package in &stdlib.packages {
-        out.push_str(&format!(
-            "\"{}\" = \"{}\"\n",
-            toml_escape(&package.name),
-            package.hash
-        ));
-    }
     out
 }
 
