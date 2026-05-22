@@ -577,17 +577,30 @@ let get = lambda i. @u8vec-get bytes i in
 get 0
 ```
 
-When a helper needs a buffer or vector from the surrounding expression, make
-it a direct `rec` member instead:
+When a helper needs a handle from the surrounding expression, use one of the
+direct-call shapes. A direct `rec` member may use the handle from the
+surrounding scope:
 
 ```tacit
 let bytes = @u8vec-alloc 1 in
 rec {get = lambda i. @u8vec-get bytes i} in get 0
 ```
 
-This direct `rec` shape may use earlier runtime values such as `buf`, `xs`,
-or `n` through the compiler-managed direct-call path. A first-class closure
-must not capture those handles or store them for later.
+An explicit handle parameter on a direct-call helper is also valid and is the
+preferred way to factor larger handle-using functions:
+
+```tacit
+let peek = lambda buf. lambda i. @u8vec-get buf i in
+let bytes = @u8vec-alloc 1 in
+peek bytes 0
+```
+
+Handle parameters are down-only call-local borrows. Pass the handle down into
+direct-call helpers and, if needed, forward it to other direct-call helpers.
+Do not return a handle, store it in a record, use it as `@loop` state, or
+capture it in a first-class closure that escapes. Handle parameters on
+first-class closure values are not part of Tacit-Lite; keep handle-using
+helpers in direct-call form.
 
 Do not bind a whole `rec` group as if it were an ordinary expression:
 
@@ -791,18 +804,27 @@ still local scratch storage, so it is not a reason to allocate hundreds of
 megabytes.
 
 For recursive scans over storage, allocate the vector or byte scratch handle
-outside the `rec` group and refer to that handle by name inside the helper.
-Use source-level helper parameters for changing integer state: offsets,
-lengths, counters, flags, and accumulators. Do not make the storage handle
-itself a lambda parameter in a recursive helper. A source-level helper
-parameter is an integer parameter; shapes such as `lambda mat. @u8vec-get mat
-i` are not the right executable pattern. If you need the same logic for two
-vectors, duplicate the small helper or use separate helpers named for each
-vector.
+outside the `rec` group. Then either refer to that handle by name inside the
+helper, or pass it down as an explicit direct-call helper parameter when that
+gives a cleaner factoring. Use source-level helper parameters for changing
+integer state: offsets, lengths, counters, flags, and accumulators. A handle
+parameter is for sharing the stable storage borrow with a helper body, not for
+representing changing loop state. Keep handle parameters in direct-call
+helpers only; do not return them, store them, use them as `@loop` state, or
+put them on first-class closure values.
 
 ```text
 let bytes = @u8vec-alloc n in
 rec {scan = lambda i. lambda acc. ... @u8vec-get bytes i ... scan next_i next_acc} in scan 0 0
+```
+
+```text
+let bytes = @u8vec-alloc n in
+rec {
+  read = lambda buf. lambda i. @u8vec-get buf i;
+  scan = lambda buf. lambda i. lambda acc.
+    ... read buf i ... scan buf next_i next_acc
+} in scan bytes 0 0
 ```
 
 When a table must store indexes or offsets, use a typed integer vector instead
