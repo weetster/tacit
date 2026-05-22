@@ -653,7 +653,9 @@ impl<'ctx> Compiler<'ctx> {
             .map(BindingTy::Value)
             .collect();
         body_env.extend_from_slice(outer_env_tys);
-        let ret_ty = infer_value_ty(lam_body, &body_env).unwrap_or(ValueTy::Int);
+        let ret_ty = self
+            .infer_value_ty(lam_body, &body_env)
+            .unwrap_or(ValueTy::Int);
         Ok((param_tys, ret_ty))
     }
 
@@ -7232,7 +7234,7 @@ impl<'ctx> Compiler<'ctx> {
                 let fn_ty = if let Some(ty) = expected_ty {
                     ty
                 } else {
-                    infer_value_ty(node, &binding_tys_from_env(env))?
+                    self.infer_value_ty(node, &binding_tys_from_env(env))?
                 };
                 self.compile_lambda_closure(body, fn_ty, env, cur_fn)
             }
@@ -7652,7 +7654,9 @@ impl<'ctx> Compiler<'ctx> {
                         .cloned()
                         .map(BindingTy::Value)
                         .collect();
-                    let ret_ty = infer_value_ty(lam_body, &lambda_env).unwrap_or(ValueTy::Int);
+                    let ret_ty = self
+                        .infer_value_ty(lam_body, &lambda_env)
+                        .unwrap_or(ValueTy::Int);
                     (param_tys, ret_ty)
                 };
                 specs.push(LamSpec {
@@ -8186,102 +8190,31 @@ fn value_ty_from_ty(ty: &Ty) -> Result<ValueTy> {
     }
 }
 
-fn infer_value_ty(node: &Node, env: &[BindingTy]) -> Result<ValueTy> {
-    match node {
-        Node::Int { .. } => Ok(ValueTy::Int),
-        Node::Str { .. } => Err(CodegenError::UnsupportedValueType { ty: "Str".into() }),
-        Node::Var { index } => match lookup_binding_ty(env, *index)? {
-            BindingTy::Value(ty) => Ok(ty.clone()),
-            BindingTy::Function { param_tys, ret_ty } => {
-                Ok(nested_fn_ty(param_tys, ret_ty.clone()))
-            }
-            BindingTy::Ptr => Err(CodegenError::UnsupportedValueType {
-                ty: "non-escapable pointer handle".into(),
-            }),
-        },
-        Node::Let { rhs, body } => {
-            if let Some((arity, lam_body, ann_ty)) = collect_annotated_lam_chain(rhs) {
-                let (param_tys, ret_ty) = if let Some(type_node) = ann_ty {
-                    let sig = function_signature_from_type_node(type_node)?;
-                    if sig.0.len() != arity {
-                        return Err(CodegenError::FunctionArity {
-                            expected: sig.0.len(),
-                            got: arity,
-                        });
-                    }
-                    sig
-                } else {
-                    let param_tys = vec![ValueTy::Int; arity];
-                    let lambda_env: Vec<BindingTy> = param_tys
-                        .iter()
-                        .rev()
-                        .cloned()
-                        .map(BindingTy::Value)
-                        .collect();
-                    let ret_ty = infer_value_ty(lam_body, &lambda_env).unwrap_or(ValueTy::Int);
-                    (param_tys, ret_ty)
-                };
-                if check_closed(lam_body, arity as u64).is_ok() {
-                    let mut body_env = vec![BindingTy::Function { param_tys, ret_ty }];
-                    body_env.extend_from_slice(env);
-                    infer_value_ty(body, &body_env)
-                } else {
-                    let rhs_ty = nested_fn_ty(&param_tys, ret_ty);
-                    let mut body_env = vec![BindingTy::Value(rhs_ty)];
-                    body_env.extend_from_slice(env);
-                    infer_value_ty(body, &body_env)
+impl<'ctx> Compiler<'ctx> {
+    fn infer_value_ty(&self, node: &Node, env: &[BindingTy]) -> Result<ValueTy> {
+        match node {
+            Node::Int { .. } => Ok(ValueTy::Int),
+            Node::Str { .. } => Err(CodegenError::UnsupportedValueType { ty: "Str".into() }),
+            Node::Var { index } => match lookup_binding_ty(env, *index)? {
+                BindingTy::Value(ty) => Ok(ty.clone()),
+                BindingTy::Function { param_tys, ret_ty } => {
+                    Ok(nested_fn_ty(param_tys, ret_ty.clone()))
                 }
-            } else {
-                let rhs_ty = infer_value_ty(rhs, env)?;
-                let mut body_env = vec![BindingTy::Value(rhs_ty)];
-                body_env.extend_from_slice(env);
-                infer_value_ty(body, &body_env)
-            }
-        }
-        Node::If { then, else_, .. } => {
-            let then_ty = infer_value_ty(then, env)?;
-            let else_ty = infer_value_ty(else_, env)?;
-            if then_ty == else_ty {
-                Ok(then_ty)
-            } else {
-                Err(CodegenError::ValueTypeMismatch {
-                    expected: then_ty.to_string(),
-                    actual: else_ty.to_string(),
-                })
-            }
-        }
-        Node::App { .. } => {
-            let (head, args) = unfold_app(node);
-            match head {
-                Node::Sym { name } => {
-                    // ADR 0093: @loop and @loop-step / @loop-exit have
-                    // result types that depend on argument types, not a
-                    // fixed scalar.  Recurse to infer init/value types.
-                    match name.as_str() {
-                        "loop" if args.len() == 2 => return infer_value_ty(args[0], env),
-                        "loop-step" | "loop-exit" if args.len() == 1 => {
-                            let inner = infer_value_ty(args[0], env)?;
-                            return Ok(ValueTy::Record(vec![
-                                ("tag".to_string(), ValueTy::Int),
-                                ("value".to_string(), inner),
-                            ]));
+                BindingTy::Ptr => Err(CodegenError::UnsupportedValueType {
+                    ty: "non-escapable pointer handle".into(),
+                }),
+            },
+            Node::Let { rhs, body } => {
+                if let Some((arity, lam_body, ann_ty)) = collect_annotated_lam_chain(rhs) {
+                    let (param_tys, ret_ty) = if let Some(type_node) = ann_ty {
+                        let sig = function_signature_from_type_node(type_node)?;
+                        if sig.0.len() != arity {
+                            return Err(CodegenError::FunctionArity {
+                                expected: sig.0.len(),
+                                got: arity,
+                            });
                         }
-                        _ => {}
-                    }
-                    primitive_value_ty(name, args.len())
-                }
-                Node::Var { index } => match lookup_binding_ty(env, *index)? {
-                    BindingTy::Function { param_tys, ret_ty } => {
-                        apply_fn_spine_ty(nested_fn_ty(param_tys, ret_ty.clone()), args.len())
-                    }
-                    BindingTy::Value(ty) => apply_fn_spine_ty(ty.clone(), args.len()),
-                    BindingTy::Ptr => Err(CodegenError::AppNonFunction),
-                },
-                Node::Lam { .. } | Node::Ann { .. } => {
-                    let (arity, lam_body, ann_ty) =
-                        collect_annotated_lam_chain(head).ok_or(CodegenError::AppNonFunction)?;
-                    let fn_ty = if let Some(type_node) = ann_ty {
-                        value_ty_from_ty(&ty_from_type_node(type_node)?)?
+                        sig
                     } else {
                         let param_tys = vec![ValueTy::Int; arity];
                         let lambda_env: Vec<BindingTy> = param_tys
@@ -8290,109 +8223,196 @@ fn infer_value_ty(node: &Node, env: &[BindingTy]) -> Result<ValueTy> {
                             .cloned()
                             .map(BindingTy::Value)
                             .collect();
-                        let ret_ty = infer_value_ty(lam_body, &lambda_env)?;
-                        nested_fn_ty(&param_tys, ret_ty)
+                        let ret_ty = self
+                            .infer_value_ty(lam_body, &lambda_env)
+                            .unwrap_or(ValueTy::Int);
+                        (param_tys, ret_ty)
                     };
-                    apply_fn_spine_ty(fn_ty, args.len())
-                }
-                _ => apply_fn_spine_ty(infer_value_ty(head, env)?, args.len()),
-            }
-        }
-        Node::Lam { body } => {
-            let param_ty = ValueTy::Int;
-            let mut body_env = vec![BindingTy::Value(param_ty.clone())];
-            body_env.extend_from_slice(env);
-            let ret_ty = infer_value_ty(body, &body_env)?;
-            Ok(ValueTy::Fn(Box::new(param_ty), Box::new(ret_ty)))
-        }
-        Node::Rec { bindings, body } => {
-            let mut rec_types = Vec::with_capacity(bindings.len());
-            for binding in bindings {
-                let (arity, _lam_body, ann_ty) = collect_annotated_lam_chain(binding)
-                    .ok_or(CodegenError::Unsupported("rec member that is not a lambda"))?;
-                let (param_tys, ret_ty) = if let Some(type_node) = ann_ty {
-                    function_signature_from_type_node(type_node)?
+                    if check_closed(lam_body, arity as u64).is_ok() {
+                        let mut body_env = vec![BindingTy::Function { param_tys, ret_ty }];
+                        body_env.extend_from_slice(env);
+                        self.infer_value_ty(body, &body_env)
+                    } else {
+                        let rhs_ty = nested_fn_ty(&param_tys, ret_ty);
+                        let mut body_env = vec![BindingTy::Value(rhs_ty)];
+                        body_env.extend_from_slice(env);
+                        self.infer_value_ty(body, &body_env)
+                    }
                 } else {
-                    (vec![ValueTy::Int; arity], ValueTy::Int)
-                };
-                rec_types.push(BindingTy::Function { param_tys, ret_ty });
+                    let rhs_ty = self.infer_value_ty(rhs, env)?;
+                    let mut body_env = vec![BindingTy::Value(rhs_ty)];
+                    body_env.extend_from_slice(env);
+                    self.infer_value_ty(body, &body_env)
+                }
             }
-            let mut body_env = rec_types;
-            body_env.extend_from_slice(env);
-            infer_value_ty(body, &body_env)
-        }
-        Node::Module { .. } => Err(CodegenError::Unsupported("module binding group")),
-        Node::Unit { .. } => Err(CodegenError::Unsupported("logical unit artifact")),
-        Node::Match { arms, .. } => {
-            let mut result_ty = None;
-            for arm in arms {
-                let Node::Arm { body, .. } = arm else {
-                    return Err(CodegenError::Unsupported("match child must be arm"));
-                };
-                let arm_ty = infer_value_ty(body, env)?;
-                remember_match_type(&mut result_ty, &arm_ty)?;
+            Node::If { then, else_, .. } => {
+                let then_ty = self.infer_value_ty(then, env)?;
+                let else_ty = self.infer_value_ty(else_, env)?;
+                if then_ty == else_ty {
+                    Ok(then_ty)
+                } else {
+                    Err(CodegenError::ValueTypeMismatch {
+                        expected: then_ty.to_string(),
+                        actual: else_ty.to_string(),
+                    })
+                }
             }
-            Ok(result_ty.unwrap_or(ValueTy::Int))
+            Node::App { .. } => {
+                let (head, args) = unfold_app(node);
+                match head {
+                    Node::Sym { name } => {
+                        // ADR 0093: @loop and @loop-step / @loop-exit have
+                        // result types that depend on argument types, not a
+                        // fixed scalar.  Recurse to infer init/value types.
+                        match name.as_str() {
+                            "loop" if args.len() == 2 => return self.infer_value_ty(args[0], env),
+                            "loop-step" | "loop-exit" if args.len() == 1 => {
+                                let inner = self.infer_value_ty(args[0], env)?;
+                                return Ok(ValueTy::Record(vec![
+                                    ("tag".to_string(), ValueTy::Int),
+                                    ("value".to_string(), inner),
+                                ]));
+                            }
+                            _ => {}
+                        }
+                        primitive_value_ty(name, args.len())
+                    }
+                    Node::Var { index } => match lookup_binding_ty(env, *index)? {
+                        BindingTy::Function { param_tys, ret_ty } => {
+                            apply_fn_spine_ty(nested_fn_ty(param_tys, ret_ty.clone()), args.len())
+                        }
+                        BindingTy::Value(ty) => apply_fn_spine_ty(ty.clone(), args.len()),
+                        BindingTy::Ptr => Err(CodegenError::AppNonFunction),
+                    },
+                    Node::Lam { .. } | Node::Ann { .. } => {
+                        let (arity, lam_body, ann_ty) = collect_annotated_lam_chain(head)
+                            .ok_or(CodegenError::AppNonFunction)?;
+                        let fn_ty = if let Some(type_node) = ann_ty {
+                            value_ty_from_ty(&ty_from_type_node(type_node)?)?
+                        } else {
+                            let param_tys = vec![ValueTy::Int; arity];
+                            let lambda_env: Vec<BindingTy> = param_tys
+                                .iter()
+                                .rev()
+                                .cloned()
+                                .map(BindingTy::Value)
+                                .collect();
+                            let ret_ty = self.infer_value_ty(lam_body, &lambda_env)?;
+                            nested_fn_ty(&param_tys, ret_ty)
+                        };
+                        apply_fn_spine_ty(fn_ty, args.len())
+                    }
+                    _ => apply_fn_spine_ty(self.infer_value_ty(head, env)?, args.len()),
+                }
+            }
+            Node::Lam { body } => {
+                let param_ty = ValueTy::Int;
+                let mut body_env = vec![BindingTy::Value(param_ty.clone())];
+                body_env.extend_from_slice(env);
+                let ret_ty = self.infer_value_ty(body, &body_env)?;
+                Ok(ValueTy::Fn(Box::new(param_ty), Box::new(ret_ty)))
+            }
+            Node::Rec { bindings, body } => {
+                let mut rec_types = Vec::with_capacity(bindings.len());
+                for binding in bindings {
+                    let (arity, _lam_body, ann_ty) = collect_annotated_lam_chain(binding)
+                        .ok_or(CodegenError::Unsupported("rec member that is not a lambda"))?;
+                    let (param_tys, ret_ty) = if let Some(type_node) = ann_ty {
+                        function_signature_from_type_node(type_node)?
+                    } else {
+                        (vec![ValueTy::Int; arity], ValueTy::Int)
+                    };
+                    rec_types.push(BindingTy::Function { param_tys, ret_ty });
+                }
+                let mut body_env = rec_types;
+                body_env.extend_from_slice(env);
+                self.infer_value_ty(body, &body_env)
+            }
+            Node::Module { .. } => Err(CodegenError::Unsupported("module binding group")),
+            Node::Unit { .. } => Err(CodegenError::Unsupported("logical unit artifact")),
+            Node::Match { arms, .. } => {
+                let mut result_ty = None;
+                for arm in arms {
+                    let Node::Arm { body, .. } = arm else {
+                        return Err(CodegenError::Unsupported("match child must be arm"));
+                    };
+                    let arm_ty = self.infer_value_ty(body, env)?;
+                    remember_match_type(&mut result_ty, &arm_ty)?;
+                }
+                Ok(result_ty.unwrap_or(ValueTy::Int))
+            }
+            Node::Arm { .. } => Err(CodegenError::Unsupported("bare arm outside match")),
+            Node::Record { fields } => {
+                let mut ordered: Vec<&(String, Node)> = fields.iter().collect();
+                ordered.sort_by(|a, b| a.0.as_bytes().cmp(b.0.as_bytes()));
+                ordered
+                    .into_iter()
+                    .map(|(name, value)| Ok((name.clone(), self.infer_value_ty(value, env)?)))
+                    .collect::<Result<Vec<_>>>()
+                    .map(ValueTy::Record)
+            }
+            Node::Proj { record, field } => {
+                let rec_ty = self.infer_value_ty(record, env)?;
+                let ValueTy::Record(fields) = rec_ty else {
+                    return Err(CodegenError::InvalidProjection {
+                        field: field.clone(),
+                        actual: rec_ty.to_string(),
+                    });
+                };
+                fields
+                    .iter()
+                    .find(|(name, _)| name == field)
+                    .map(|(_, ty)| ty.clone())
+                    .ok_or_else(|| CodegenError::MissingField {
+                        field: field.clone(),
+                    })
+            }
+            Node::Ctor { .. } => Err(CodegenError::Unsupported("ctor in expression position")),
+            Node::Ann { expr, type_ } => {
+                let _ = expr;
+                value_ty_from_ty(&ty_from_type_node(type_)?)
+            }
+            Node::Sym { .. } => Err(CodegenError::Unsupported(
+                "bare sym outside primitive-call head",
+            )),
+            Node::Hole { diag_id, .. } => Err(CodegenError::Hole {
+                diag_id: diag_id.clone(),
+            }),
+            Node::PatWild | Node::PatVar | Node::PatCtor { .. } | Node::PatInt { .. } => {
+                Err(CodegenError::Unsupported("pattern outside match arm"))
+            }
+            Node::FnTy { .. }
+            | Node::TyVar { .. }
+            | Node::Forall { .. }
+            | Node::EffSet { .. }
+            | Node::EffVar { .. } => Err(CodegenError::Unsupported(
+                "type expression in value position",
+            )),
+            // A bare reference to an imported definition in value position.
+            // Internal package refs are expanded inline before codegen, so a
+            // surviving `Ref` is a host import: recover its function type from
+            // the registered host-import binding so it can be passed as a
+            // first-class callback value (ADR 0098 lineage; the typed-vector
+            // handle case stays unsupported because such imports are not
+            // registered as reifiable bindings).
+            Node::Ref { hash } => match self.host_imports.get(hash) {
+                Some(binding) => Ok(nested_fn_ty(&binding.param_tys, binding.ret_ty.clone())),
+                None => Err(CodegenError::Unsupported(
+                    "unit artifact node in value position",
+                )),
+            },
+            Node::Imports { .. }
+            | Node::Import { .. }
+            | Node::HostImport { .. }
+            | Node::Exports { .. }
+            | Node::Export { .. }
+            | Node::Defs { .. }
+            | Node::Def { .. }
+            | Node::State { .. }
+            | Node::Sig { .. } => Err(CodegenError::Unsupported(
+                "unit artifact node in value position",
+            )),
         }
-        Node::Arm { .. } => Err(CodegenError::Unsupported("bare arm outside match")),
-        Node::Record { fields } => {
-            let mut ordered: Vec<&(String, Node)> = fields.iter().collect();
-            ordered.sort_by(|a, b| a.0.as_bytes().cmp(b.0.as_bytes()));
-            ordered
-                .into_iter()
-                .map(|(name, value)| Ok((name.clone(), infer_value_ty(value, env)?)))
-                .collect::<Result<Vec<_>>>()
-                .map(ValueTy::Record)
-        }
-        Node::Proj { record, field } => {
-            let rec_ty = infer_value_ty(record, env)?;
-            let ValueTy::Record(fields) = rec_ty else {
-                return Err(CodegenError::InvalidProjection {
-                    field: field.clone(),
-                    actual: rec_ty.to_string(),
-                });
-            };
-            fields
-                .iter()
-                .find(|(name, _)| name == field)
-                .map(|(_, ty)| ty.clone())
-                .ok_or_else(|| CodegenError::MissingField {
-                    field: field.clone(),
-                })
-        }
-        Node::Ctor { .. } => Err(CodegenError::Unsupported("ctor in expression position")),
-        Node::Ann { expr, type_ } => {
-            let _ = expr;
-            value_ty_from_ty(&ty_from_type_node(type_)?)
-        }
-        Node::Sym { .. } => Err(CodegenError::Unsupported(
-            "bare sym outside primitive-call head",
-        )),
-        Node::Hole { diag_id, .. } => Err(CodegenError::Hole {
-            diag_id: diag_id.clone(),
-        }),
-        Node::PatWild | Node::PatVar | Node::PatCtor { .. } | Node::PatInt { .. } => {
-            Err(CodegenError::Unsupported("pattern outside match arm"))
-        }
-        Node::FnTy { .. }
-        | Node::TyVar { .. }
-        | Node::Forall { .. }
-        | Node::EffSet { .. }
-        | Node::EffVar { .. } => Err(CodegenError::Unsupported(
-            "type expression in value position",
-        )),
-        Node::Imports { .. }
-        | Node::Import { .. }
-        | Node::HostImport { .. }
-        | Node::Exports { .. }
-        | Node::Export { .. }
-        | Node::Defs { .. }
-        | Node::Def { .. }
-        | Node::State { .. }
-        | Node::Sig { .. }
-        | Node::Ref { .. } => Err(CodegenError::Unsupported(
-            "unit artifact node in value position",
-        )),
     }
 }
 

@@ -324,6 +324,80 @@ fn library_codegen_accepts_borrowed_u8vec_host_callback_parameter() {
 }
 
 #[test]
+fn library_codegen_reifies_host_import_inside_callback_lambda() {
+    // Regression: a host import referenced inside an un-annotated callback
+    // lambda forced codegen's static value-type inference to type a bare
+    // `Ref`, which previously failed with "unit artifact node in value
+    // position". The import must instead be typed from its host-import
+    // binding so it can be passed as a first-class callback value.
+    let dir = tempfile::tempdir().unwrap();
+    let host_import = Node::HostImport {
+        capability: "demo.rom".into(),
+        operation: "read-byte".into(),
+        sig: Box::new(sig("u8", "u8", &["IO"])),
+    };
+    let host_hash = hash(&host_import);
+
+    // helper : (u8 -> u8 / IO) -> u8 / IO  —  applies the callback to a byte.
+    let cb_ty = Node::FnTy {
+        arg: Box::new(sym("u8")),
+        ret: Box::new(sym("u8")),
+        eff: Box::new(Node::EffSet {
+            atoms: vec!["IO".into()],
+        }),
+    };
+    let helper_def = Node::Def {
+        sig: Box::new(sig_node(cb_ty, sym("u8"), &["IO"])),
+        body: Box::new(Node::Lam {
+            body: Box::new(app(Node::Var { index: 0 }, ann_int("0", "u8"))),
+        }),
+    };
+    let helper_hash = hash(&helper_def);
+
+    // export : Int -> u8 / IO  —  passes `lam z. host z` to the helper.
+    let callback_lambda = Node::Lam {
+        body: Box::new(app(
+            Node::Ref {
+                hash: host_hash.clone(),
+            },
+            Node::Var { index: 0 },
+        )),
+    };
+    let export_def = Node::Def {
+        sig: Box::new(sig("Int", "u8", &["IO"])),
+        body: Box::new(Node::Lam {
+            body: Box::new(app(
+                Node::Ref {
+                    hash: helper_hash.clone(),
+                },
+                callback_lambda,
+            )),
+        }),
+    };
+    let export_hash = hash(&export_def);
+    let unit = Node::Unit {
+        imports: vec![host_import],
+        exports: vec![Node::Export {
+            visibility: "public".into(),
+            hash: export_hash,
+        }],
+        defs: vec![helper_def, export_def],
+    };
+    write_unit(dir.path(), &unit);
+
+    let package = load_package(dir.path()).expect("package loads");
+    let (_interface, library) =
+        package_library(&package, HostTarget::Native).expect("library spec builds");
+    let ir =
+        compile_library_to_ir_string(&library, "import_callback").expect("library IR generates");
+    assert!(ir.contains(&library.exports[0].symbol), "{ir}");
+    assert!(
+        ir.contains(&format!("{}_dispatch", library.imports[0].callback)),
+        "{ir}"
+    );
+}
+
+#[test]
 fn stateful_library_codegen_emits_instance_lifecycle_and_method_wrapper() {
     let dir = tempfile::tempdir().unwrap();
     let body = Node::Let {

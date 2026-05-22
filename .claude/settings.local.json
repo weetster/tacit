@@ -8,7 +8,8 @@
       "Bash(cargo check *)",
       "Bash(./target/debug/tacit compile *)",
       "Bash(uv run *)",
-      "Bash(cargo run *)"
+      "Bash(cargo run *)",
+      "Bash(gh run *)"
     ]
   }
 }
