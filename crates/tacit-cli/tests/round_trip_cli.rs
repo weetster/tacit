@@ -481,6 +481,60 @@ fn init_executable_project_passes_lock_check_test_and_compile() {
     assert!(String::from_utf8_lossy(&compile.stdout).contains("ret i32 0"));
 }
 
+#[test]
+fn init_executable_project_authoring_round_trip_succeeds() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let out = tacit(&["init", "hello"], dir.path());
+    assert!(
+        out.status.success(),
+        "init failed\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let project = dir.path().join("hello");
+    let manifest = std::fs::read_to_string(project.join("tacit.toml")).unwrap();
+    assert!(manifest.contains("name = \"template_smoke_test\""), "{manifest}");
+
+    let render = tacit(
+        &[
+            "render",
+            "src/main.tac",
+            "--as",
+            "authoring",
+            "-o",
+            ".scratch/main.taca",
+        ],
+        &project,
+    );
+    assert!(
+        render.status.success(),
+        "render failed\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&render.stdout),
+        String::from_utf8_lossy(&render.stderr)
+    );
+
+    let rendered = std::fs::read_to_string(project.join(".scratch/main.taca")).unwrap();
+    assert!(rendered.contains("template_smoke_test"), "{rendered}");
+
+    let canonicalize = tacit(
+        &[
+            "canonicalize",
+            ".scratch/main.taca",
+            "-o",
+            "src/main.tac",
+            "--force",
+        ],
+        &project,
+    );
+    assert!(
+        canonicalize.status.success(),
+        "canonicalize failed\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&canonicalize.stdout),
+        String::from_utf8_lossy(&canonicalize.stderr)
+    );
+}
+
 #[cfg(feature = "llvm")]
 #[test]
 fn init_library_with_stdlib_passes_lock_check_test_and_interface_library() {

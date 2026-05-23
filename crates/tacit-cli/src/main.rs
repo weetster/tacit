@@ -925,11 +925,13 @@ struct InitProject {
     unit_alias: &'static str,
 }
 
+const INIT_TEMPLATE_TEST_ALIAS: &str = "template_smoke_test";
+
 impl InitProject {
     fn sidecar(&self, canonical_bytes: &[u8]) -> Sidecar {
         let mut definition_aliases = BTreeMap::new();
         definition_aliases.insert(self.export_hash.clone(), self.export_alias.to_string());
-        definition_aliases.insert(self.test_hash.clone(), "template-smoke-test".to_string());
+        definition_aliases.insert(self.test_hash.clone(), INIT_TEMPLATE_TEST_ALIAS.to_string());
 
         let mut export_aliases = BTreeMap::new();
         export_aliases.insert(self.export_hash.clone(), self.export_alias.to_string());
@@ -1060,7 +1062,7 @@ fn render_init_manifest(
     }
 
     out.push_str("[[tests]]\n");
-    out.push_str("name = \"template-smoke-test\"\n");
+    out.push_str(&format!("name = \"{INIT_TEMPLATE_TEST_ALIAS}\"\n"));
     out.push_str(&format!("target = \"blake3:{}\"\n", project.test_hash));
     out
 }
