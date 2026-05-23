@@ -590,7 +590,7 @@ An explicit handle parameter on a direct-call helper is also valid and is the
 preferred way to factor larger handle-using functions:
 
 ```tacit
-let peek = lambda buf. lambda i. @u8vec-get buf i in
+let peek: u8vec -> Int -> u8 = lambda buf. lambda i. @u8vec-get buf i in
 let bytes = @u8vec-alloc 1 in
 peek bytes 0
 ```
