@@ -54,6 +54,9 @@ tacit primer --list-sections
 tacit primer --section helper-closure-and-callback-shapes
 ```
 
+`tacit primer --search` uses case-insensitive plain substring matching, not
+regex, so search alternation or pattern syntax literally will not work there.
+
 Use `tacit primer` without filters when you need the complete language
 contract.
 

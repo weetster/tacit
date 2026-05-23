@@ -127,7 +127,7 @@ Per [ADR 0089](decisions/0089-phase-6-frozen.md):
 - **Spec ambiguities are bugs against the relevant frozen artifact.** Resolve via a new ADR, not in-line spec edits.
 - **Two views from day one.** Authoring and inspection grammars exist together. Round-trip and rendering tests are the load-bearing checks.
 - **Decision log is load-bearing.** Every non-trivial design choice gets an ADR-style entry in `decisions/NNNN-title.md`.
-- **Use primer selective disclosure.** For a targeted Tacit syntax refresh, prefer `tacit primer --search <term>`, `tacit primer --list-sections`, and `tacit primer --section <id>` before loading the full `tacit primer` output. Use the full primer when writing unfamiliar Tacit or when selective context is insufficient.
+- **Use primer selective disclosure.** For a targeted Tacit syntax refresh, prefer `tacit primer --search <term>`, `tacit primer --list-sections`, and `tacit primer --section <id>` before loading the full `tacit primer` output. `tacit primer --search` uses case-insensitive plain substring matching, not regex. Use the full primer when writing unfamiliar Tacit or when selective context is insufficient.
 
 ## Key design commitments (do not relitigate)
 

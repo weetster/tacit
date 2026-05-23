@@ -38,6 +38,7 @@ For a targeted Tacit syntax refresh, prefer selective primer commands before
 loading the full primer:
 
 - `tacit primer --search <term>` finds matching primer lines and section ids.
+  It uses case-insensitive plain substring matching, not regex.
 - `tacit primer --list-sections` lists selectable section ids.
 - `tacit primer --section <id>` prints only that section.
 - `tacit primer` remains the full byte-pinned primer when broader context is
