@@ -494,7 +494,10 @@ fn init_executable_project_authoring_round_trip_succeeds() {
 
     let project = dir.path().join("hello");
     let manifest = std::fs::read_to_string(project.join("tacit.toml")).unwrap();
-    assert!(manifest.contains("name = \"template_smoke_test\""), "{manifest}");
+    assert!(
+        manifest.contains("name = \"template_smoke_test\""),
+        "{manifest}"
+    );
 
     let render = tacit(
         &[
@@ -829,7 +832,9 @@ fn check_reports_signature_mismatch_when_lockfile_is_stale() {
     .unwrap();
     std::fs::write(
         d.join("tacit.toml"),
-        format!("[package]\nname = \"stale-signature\"\n\n[exports]\nmain = \"blake3:{valid_hash}\"\n"),
+        format!(
+            "[package]\nname = \"stale-signature\"\n\n[exports]\nmain = \"blake3:{valid_hash}\"\n"
+        ),
     )
     .unwrap();
 

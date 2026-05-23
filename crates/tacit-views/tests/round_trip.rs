@@ -343,8 +343,7 @@ fn sidecar_preserves_names() {
     let (node, sidecar) = parse_authoring(authoring.as_bytes()).unwrap();
     let roundtripped = emit_authoring(&node, Some(&sidecar));
     assert_eq!(
-        roundtripped,
-        "let id = lambda x. x\nin\n  id 5",
+        roundtripped, "let id = lambda x. x\nin\n  id 5",
         "sidecar names not preserved\n  original:     {}\n  roundtripped: {}",
         authoring, roundtripped
     );
@@ -356,8 +355,7 @@ fn sidecar_rec_names_preserved() {
     let (node, sidecar) = parse_authoring(authoring.as_bytes()).unwrap();
     let roundtripped = emit_authoring(&node, Some(&sidecar));
     assert_eq!(
-        roundtripped,
-        "rec {\n  even = lambda n. odd n;\n  odd = lambda n. even n\n} in\n  even 10",
+        roundtripped, "rec {\n  even = lambda n. odd n;\n  odd = lambda n. even n\n} in\n  even 10",
         "rec sidecar names not preserved\n  original:     {}\n  roundtripped: {}",
         authoring, roundtripped
     );
@@ -370,8 +368,7 @@ fn sidecar_names_preserved_inside_app_arg() {
     let (node, sidecar) = parse_authoring(authoring.as_bytes()).unwrap();
     let roundtripped = emit_authoring(&node, Some(&sidecar));
     assert_eq!(
-        roundtripped,
-        "let f = lambda x. x\nin\n  f (lambda y. y)",
+        roundtripped, "let f = lambda x. x\nin\n  f (lambda y. y)",
         "binder name inside app arg not preserved\n  original:     {}\n  roundtripped: {}",
         authoring, roundtripped
     );

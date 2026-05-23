@@ -59,13 +59,7 @@ impl EmitCtx {
         }
     }
 
-    fn emit_lam(
-        &mut self,
-        body: &Node,
-        sc: Option<&SidecarNode>,
-        indent: usize,
-        out: &mut String,
-    ) {
+    fn emit_lam(&mut self, body: &Node, sc: Option<&SidecarNode>, indent: usize, out: &mut String) {
         let name = sc
             .and_then(|s| s.binder.as_deref())
             .map(|s| s.to_string())
