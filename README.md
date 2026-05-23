@@ -178,6 +178,9 @@ needs to be copied out of this repository:
 ```sh
 tacit primer                        # print the primer markdown
 tacit primer --format json          # primer id, version, hash, token count
+tacit primer --search rec           # find matching primer lines and section ids
+tacit primer --list-sections        # list selectable primer sections
+tacit primer --section primitive-surface
 tacit primer --check primer.md      # verify a copy matches the installed bytes
 cat $(dirname $(which tacit))/../share/tacit/workflow/agent-workflow.md
 ```

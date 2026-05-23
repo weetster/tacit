@@ -441,6 +441,9 @@ fn init_executable_project_passes_lock_check_test_and_compile() {
     assert!(pin.contains("\"tacit.text\" = \"blake3:"), "{pin}");
     let agents = std::fs::read_to_string(project.join("AGENTS.md")).unwrap();
     assert!(agents.contains("tacit primer"), "{agents}");
+    assert!(agents.contains("tacit primer --search <term>"), "{agents}");
+    assert!(agents.contains("tacit primer --list-sections"), "{agents}");
+    assert!(agents.contains("tacit primer --section <id>"), "{agents}");
     assert_eq!(
         agents,
         std::fs::read_to_string(project.join("CLAUDE.md")).unwrap()
